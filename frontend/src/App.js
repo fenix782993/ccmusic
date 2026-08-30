@@ -3,7 +3,7 @@ import {
   Home, Search, Library, Heart, 
   Play, Pause, SkipBack, SkipForward, Volume2, 
   Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle, Send,
-  Music, User, Clock, Radio, ListMusic, Download, Sparkles
+  Headphones, User, Clock, Radio, ListMusic, Download, Sparkles
 } from 'lucide-react';
 
 export default function App() {
