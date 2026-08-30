@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "scripts": {
     "start": "node server.js",
-    "build": "cd ../frontend && npm install && npm run build && mkdir -p ../backend/dist && cp -r dist/* ../backend/dist/"
+    "build": "cd ../frontend && npm install && npm run build && mkdir -p ../backend/dist && cp -r build/* ../backend/dist/"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
