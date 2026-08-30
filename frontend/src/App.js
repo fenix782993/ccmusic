@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Home, Search, Library, Heart, Disc, User, 
   Play, Pause, SkipBack, SkipForward, Volume2, 
-  Repeat, Shuffle, Crown, Flame, Clock, Menu, X, Shield, PhoneCall 
+  Repeat, Shuffle, Crown, Flame, Menu, X, Shield, PhoneCall 
 } from 'lucide-react';
 
 export default function App() {
