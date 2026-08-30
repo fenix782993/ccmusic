@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Home, Search, Library, Heart, Disc, User, 
   Play, Pause, SkipBack, SkipForward, Volume2, 
-  Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, Lock, CheckCircle 
+  Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle 
 } from 'lucide-react';
 
 export default function App() {
@@ -38,7 +38,7 @@ export default function App() {
   const [selectedTier, setSelectedTier] = useState('premium');
   const [adminStatus, setAdminStatus] = useState('');
 
-  // Форма загрузки трека (доступна всем или админу)
+  // Форма загрузки трека
   const [newTrackTitle, setNewTrackTitle] = useState('');
   const [newTrackArtist, setNewTrackArtist] = useState('');
   const [newTrackGenre, setNewTrackGenre] = useState('');
@@ -61,7 +61,6 @@ export default function App() {
         }
       })
       .catch(() => {
-        // Запасной вариант, если бэкенд недоступен
         setTracks([
           { id: 1, title: 'Neon Horizon', artist_name: 'CyberPulse', cover_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=80', genre: 'Synthwave' }
         ]);
@@ -143,16 +142,15 @@ export default function App() {
       body: formData
     })
     .then(res => res.json())
-    .then(data => {
+    .then(() => {
       setUploadStatus('Трек успешно загружен в базу данных навсегда!');
       setNewTrackTitle('');
       setNewTrackArtist('');
       setNewTrackGenre('');
       setNewTrackFile(null);
-      fetchTracks(); // Обновляем список
+      fetchTracks();
     })
     .catch(() => {
-      // Имитация успешной загрузки для фронтенда
       const mockNewTrack = {
         id: Date.now(),
         title: newTrackTitle,
@@ -167,7 +165,6 @@ export default function App() {
     });
   };
 
-  // Экран авторизации / регистрации, если юзер не вошел
   if (!isLoggedIn) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e] font-sans text-white p-4">
@@ -213,7 +210,7 @@ export default function App() {
             <div>
               <label className="block text-xs text-zinc-400 mb-1">Пароль</label>
               <input 
-                type="password5" 
+                type="password" 
                 placeholder="••••••••" 
                 value={regPassword}
                 onChange={(e) => setRegPassword(e.target.value)}
@@ -222,7 +219,6 @@ export default function App() {
               />
             </div>
 
-            {/* Капча */}
             <div className="space-y-1">
               <label className="block text-xs text-zinc-400">Введите капчу: <span className="bg-violet-600/40 px-2 py-0.5 rounded font-mono font-bold tracking-widest text-violet-200">{captchaCode}</span></label>
               <input 
@@ -239,7 +235,7 @@ export default function App() {
               type="submit"
               className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-pink-600 font-bold text-sm shadow-lg shadow-violet-600/30 hover:opacity-90 transition"
             >
-              {authMode === 'login' ? 'Войти' зарегистироваться='Зарегистрироваться'}
+              {authMode === 'login' ? 'Войти' : 'Зарегистрироваться'}
             </button>
           </form>
 
@@ -256,10 +252,8 @@ export default function App() {
     );
   }
 
-  // Основной интерфейс приложения после входа
   return (
     <div className="flex h-screen text-white font-sans overflow-hidden bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e]">
-      {/* Sidebar */}
       <aside className="hidden md:flex flex-col w-64 bg-[#121216]/80 backdrop-blur-xl border-r border-white/10 p-6 justify-between">
         <div>
           <div className="flex items-center gap-3 mb-10">
@@ -303,7 +297,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 flex flex-col h-full overflow-y-auto pb-24">
         <header className="flex justify-between items-center px-8 py-6 sticky top-0 bg-[#0a0a0c]/60 backdrop-blur-md z-10 border-b border-white/10">
           <div className="hidden md:flex items-center gap-2 bg-white/10 px-4 py-2 rounded-full w-96 border border-white/10">
@@ -546,7 +539,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* Persistent Bottom Audio Player */}
       <footer className="fixed bottom-0 left-0 right-0 h-20 bg-[#121216]/90 backdrop-blur-xl border-t border-white/10 px-6 flex items-center justify-between z-30">
         <div className="flex items-center gap-4 w-1/4">
           <img src={currentTrack.cover_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=80'} alt="Cover" className="w-12 h-12 rounded-xl object-cover" />
