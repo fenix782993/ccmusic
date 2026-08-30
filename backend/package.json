@@ -1,6 +1,10 @@
 {
   "name": "fenix-music-backend",
   "version": "2.0.0",
+  "scripts": {
+    "start": "node server.js",
+    "build": "cd ../frontend && npm install && npm run build && mkdir -p ../backend/dist && cp -r dist/* ../backend/dist/"
+  },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
