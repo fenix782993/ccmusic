@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Home, Search, Library, Heart, Disc, 
   Play, Pause, SkipBack, SkipForward, Volume2, 
-  Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle 
+  Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle, Send
 } from 'lucide-react';
 
 export default function App() {
@@ -19,11 +19,13 @@ export default function App() {
 
   const [currentTab, setCurrentTab] = useState('home');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
   const [currentTrack, setCurrentTrack] = useState({
-    title: 'Neon Horizon',
-    artist_name: 'CyberPulse',
-    cover_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=80',
-    duration: 214
+    title: 'Cyber Pulse',
+    artist_name: 'Fenix Sound',
+    cover_url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80',
+    duration: 200
   });
   
   const [tracks, setTracks] = useState([]);
@@ -31,12 +33,6 @@ export default function App() {
   const [phoneInput, setPhoneInput] = useState('');
   const [selectedTier, setSelectedTier] = useState('premium');
   const [adminStatus, setAdminStatus] = useState('');
-
-  const [newTrackTitle, setNewTrackTitle] = useState('');
-  const [newTrackArtist, setNewTrackArtist] = useState('');
-  const [newTrackGenre, setNewTrackGenre] = useState('');
-  const [newTrackFile, setNewTrackFile] = useState(null);
-  const [uploadStatus, setUploadStatus] = useState('');
 
   useEffect(() => {
     if (isLoggedIn) {
@@ -49,12 +45,15 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
-          setTracks(data);
+          // Исключаем Neon Horizon на всякий случай
+          const filtered = data.filter(t => t.title !== 'Neon Horizon');
+          setTracks(filtered);
         }
       })
       .catch(() => {
         setTracks([
-          { id: 1, title: 'Neon Horizon', artist_name: 'CyberPulse', cover_url: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=80', genre: 'Synthwave' }
+          { id: 1, title: 'Cyber Pulse', artist_name: 'Fenix Sound', cover_url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80', genre: 'Synthwave' },
+          { id: 2, title: 'Night City', artist_name: 'RetroWave', cover_url: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&auto=format&fit=crop&q=80', genre: 'Electronic' }
         ]);
       });
   };
@@ -62,7 +61,7 @@ export default function App() {
   const handleAuthSubmit = (e) => {
     e.preventDefault();
     if (captchaInput !== captchaCode) {
-      alert('Неверная капча! Попробуйте снова.');
+      alert('Неверная капча!');
       return;
     }
 
@@ -103,55 +102,27 @@ export default function App() {
     .then(data => {
       if (data.success) {
         setAdminStatus(`Успешно! Подписка ${selectedTier.toUpperCase()} выдана на номер ${phoneInput}`);
+        // Обновляем текущего пользователя, если это он сам
+        if (currentUser && currentUser.phone === phoneInput) {
+          setCurrentUser({ ...currentUser, subscription_tier: selectedTier });
+        }
       } else {
         setAdminStatus(`Ошибка: ${data.error || 'Не найдено'}`);
       }
     })
-    .catch(() => setAdminStatus('Ошибка подключения к серверу'));
-  };
-
-  const handleUploadTrack = (e) => {
-    e.preventDefault();
-    if (!newTrackTitle || !newTrackArtist) {
-      setUploadStatus('Заполните название и автора!');
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('title', newTrackTitle);
-    formData.append('artist_name', newTrackArtist);
-    formData.append('genre', newTrackGenre);
-    if (newTrackFile) {
-      formData.append('file', newTrackFile);
-    }
-
-    fetch('http://localhost:5000/api/tracks', {
-      method: 'POST',
-      body: formData
-    })
-    .then(res => res.json())
-    .then(() => {
-      setUploadStatus('Трек успешно загружен в базу данных навсегда!');
-      setNewTrackTitle('');
-      setNewTrackArtist('');
-      setNewTrackGenre('');
-      setNewTrackFile(null);
-      fetchTracks();
-    })
     .catch(() => {
-      const mockNewTrack = {
-        id: Date.now(),
-        title: newTrackTitle,
-        artist_name: newTrackArtist,
-        genre: newTrackGenre || 'Pop',
-        cover_url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=80'
-      };
-      setTracks([mockNewTrack, ...tracks]);
-      setUploadStatus('Трек добавлен локально (бэкенд не отвечает)');
-      setNewTrackTitle('');
-      setNewTrackArtist('');
+      // Локальная имитация выдачи подписки, если бэкенд недоступен
+      if (currentUser && currentUser.phone === phoneInput) {
+        setCurrentUser({ ...currentUser, subscription_tier: selectedTier });
+      }
+      setAdminStatus(`Подписка ${selectedTier.toUpperCase()} локально применена для ${phoneInput}`);
     });
   };
+
+  const filteredTracks = tracks.filter(track => 
+    track.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    track.artist_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   if (!isLoggedIn) {
     return (
@@ -211,7 +182,7 @@ export default function App() {
               <label className="block text-xs text-zinc-400">Введите капчу: <span className="bg-violet-600/40 px-2 py-0.5 rounded font-mono font-bold tracking-widest text-violet-200">{captchaCode}</span></label>
               <input 
                 type="text" 
-                placeholder="Введите цифры с картинки" 
+                placeholder="Цифры с картинки" 
                 value={captchaInput}
                 onChange={(e) => setCaptchaInput(e.target.value)}
                 required
@@ -257,7 +228,7 @@ export default function App() {
             <NavItem icon={<Home />} label="Главная" active={currentTab === 'home'} onClick={() => setCurrentTab('home')} />
             <NavItem icon={<Search />} label="Поиск" active={currentTab === 'search'} onClick={() => setCurrentTab('search')} />
             <NavItem icon={<Library />} label="Библиотека" active={currentTab === 'library'} onClick={() => setCurrentTab('library')} />
-            <NavItem icon={<Upload />} label="Загрузить трек" active={currentTab === 'upload'} onClick={() => setCurrentTab('upload')} />
+            <NavItem icon={<Upload />} label="Загрузить через бота" active={currentTab === 'upload'} onClick={() => setCurrentTab('upload')} />
             {currentUser.is_admin && (
               <NavItem icon={<Shield />} label="Админка" active={currentTab === 'admin'} onClick={() => setCurrentTab('admin')} />
             )}
@@ -291,7 +262,9 @@ export default function App() {
             <Search className="w-4 h-4 text-zinc-300" />
             <input 
               type="text" 
-              placeholder="Треки, альбомы, артисты..." 
+              placeholder="Поиск по библиотеке..." 
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); if(currentTab !== 'library' && currentTab !== 'search') setCurrentTab('library'); }}
               className="bg-transparent border-none outline-none text-sm w-full text-white placeholder-zinc-400" 
             />
           </div>
@@ -300,7 +273,7 @@ export default function App() {
               onClick={() => setCurrentTab('premium')}
               className="px-4 py-2 rounded-full bg-gradient-to-r from-violet-600 to-pink-600 font-medium text-sm shadow-lg shadow-violet-500/30 hover:opacity-90 transition"
             >
-              💎 Подписка
+              💎 Подписка ({currentUser.subscription_tier.toUpperCase()})
             </button>
             <div className="w-10 h-10 rounded-full bg-violet-800 border border-white/20 overflow-hidden flex items-center justify-center font-bold text-violet-200">
               {currentUser.name ? currentUser.name[0].toUpperCase() : 'FX'}
@@ -312,9 +285,9 @@ export default function App() {
           {currentTab === 'home' && (
             <div className="space-y-8">
               <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-violet-900/60 via-purple-900/40 to-pink-900/60 border border-white/20 p-8 flex flex-col justify-end min-h-[260px] shadow-2xl">
-                <span className="text-xs font-bold uppercase tracking-wider text-violet-300 mb-2">✨ Аудиостриминг V2 с базой данных</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-violet-300 mb-2">✨ Аудиостриминг V2</span>
                 <h1 className="text-3xl md:text-5xl font-extrabold mb-3">Привет, {currentUser.name}!</h1>
-                <p className="text-zinc-200 max-w-xl text-sm mb-6">Слушайте треки, загружайте свои файлы в постоянную базу данных и наслаждайтесь музыкой.</p>
+                <p className="text-zinc-200 max-w-xl text-sm mb-6">Слушайте треки, ищите музыку в библиотеке и загружайте треки через Telegram-бота.</p>
                 <button 
                   onClick={() => setIsPlaying(true)}
                   className="flex items-center gap-2 bg-white text-black font-bold px-6 py-3 rounded-full w-fit hover:bg-zinc-200 transition shadow-lg"
@@ -325,16 +298,16 @@ export default function App() {
 
               <div>
                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                  <Flame className="text-pink-400 w-5 h-5" /> Треки из базы данных навсегда
+                  <Flame className="text-pink-400 w-5 h-5"/ > Популярные треки
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {tracks.map((track) => (
+                  {tracks.slice(0, 6).map((track) => (
                     <div 
                       key={track.id} 
                       onClick={() => { setCurrentTrack(track); setIsPlaying(true); }}
                       className="flex items-center gap-4 bg-white/10 p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition cursor-pointer group"
                     >
-                      <img src={track.cover_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=80'} alt={track.title} className="w-14 h-14 rounded-xl object-cover" />
+                      <img src={track.cover_url} alt={track.title} className="w-14 h-14 rounded-xl object-cover" />
                       <div className="flex-1 min-w-0">
                         <h4 className="font-semibold text-sm truncate group-hover:text-violet-300 transition">{track.title}</h4>
                         <p className="text-xs text-zinc-300 truncate">{track.artist_name}</p>
@@ -349,74 +322,60 @@ export default function App() {
             </div>
           )}
 
-          {currentTab === 'upload' && (
-            <div className="max-w-xl mx-auto bg-white/10 border border-white/20 p-8 rounded-3xl space-y-6 backdrop-blur-md">
-              <div className="flex items-center gap-3 text-violet-300">
-                <Upload className="w-8 h-8" />
-                <h2 className="text-2xl font-bold">Загрузка трека в базу данных</h2>
+          {currentTab === 'library' && (
+            <div className="space-y-6">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <h2 className="text-2xl font-bold">Библиотека треков</h2>
+                <input 
+                  type="text" 
+                  placeholder="Поиск по названию или артисту..." 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-white/5 border border-white/10 px-4 py-2.5 rounded-xl text-white text-sm outline-none w-full md:w-80"
+                />
               </div>
-              <p className="text-sm text-zinc-300">Загруженный трек сразу попадет в приложение и останется там навсегда.</p>
 
-              <form onSubmit={handleUploadTrack} className="space-y-4">
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Название трека</label>
-                  <input 
-                    type="text" 
-                    placeholder="Например: Cyber Sunrise" 
-                    value={newTrackTitle}
-                    onChange={(e) => setNewTrackTitle(e.target.value)}
-                    required
-                    className="w-full bg-white/5 border border-white/10 px-4 py-2.5 rounded-xl text-white text-sm outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Артист / Исполнитель</label>
-                  <input 
-                    type="text" 
-                    placeholder="Например: CyberPulse" 
-                    value={newTrackArtist}
-                    onChange={(e) => setNewTrackArtist(e.target.value)}
-                    required
-                    className="w-full bg-white/5 border border-white/10 px-4 py-2.5 rounded-xl text-white text-sm outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Жанр</label>
-                  <input 
-                    type="text" 
-                    placeholder="Synthwave" 
-                    value={newTrackGenre}
-                    onChange={(e) => setNewTrackGenre(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 px-4 py-2.5 rounded-xl text-white text-sm outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Файл трека (MP3)</label>
-                  <input 
-                    type="file" 
-                    accept="audio/*"
-                    onChange={(e) => setNewTrackFile(e.target.files[0])}
-                    className="w-full bg-white/5 border border-white/10 px-4 py-2 rounded-xl text-white text-sm outline-none file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-violet-600 file:text-white hover:file:bg-violet-500"
-                  />
-                </div>
-
-                <button 
-                  type="submit"
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-pink-600 font-bold text-sm shadow-lg shadow-violet-600/30 hover:opacity-90 transition"
-                >
-                  Загрузить и сохранить в базу
-                </button>
-
-                {uploadStatus && (
-                  <div className="p-3 rounded-xl bg-violet-900/40 border border-violet-500/30 text-xs text-violet-200 text-center flex items-center justify-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-green-400" />
-                    <span>{uploadStatus}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredTracks.map((track) => (
+                  <div 
+                    key={track.id} 
+                    onClick={() => { setCurrentTrack(track); setIsPlaying(true); }}
+                    className="flex items-center gap-4 bg-white/10 p-3 rounded-2xl border border-white/10 hover:bg-white/20 transition cursor-pointer group"
+                  >
+                    <img src={track.cover_url} alt={track.title} className="w-14 h-14 rounded-xl object-cover" />
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-sm truncate group-hover:text-violet-300 transition">{track.title}</h4>
+                      <p className="text-xs text-zinc-300 truncate">{track.artist_name}</p>
+                    </div>
+                    <button className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                      <Play className="w-4 h-4 fill-current" />
+                    </button>
                   </div>
+                ))}
+                {filteredTracks.length === 0 && (
+                  <p className="text-zinc-400 text-sm col-span-full text-center py-10">Треки не найдены</p>
                 )}
-              </form>
+              </div>
+            </div>
+          )}
+
+          {currentTab === 'upload' && (
+            <div className="max-w-xl mx-auto bg-white/10 border border-white/20 p-8 rounded-3xl space-y-6 backdrop-blur-md text-center">
+              <div className="w-16 h-16 rounded-2xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center mx-auto text-sky-400">
+                <Send className="w-8 h-8" />
+              </div>
+              <h2 className="text-2xl font-bold">Загрузка через Telegram-бота</h2>
+              <p className="text-sm text-zinc-300 leading-relaxed">
+                Чтобы загрузить песню в приложение, отправьте аудиофайл нашему официальному Telegram-боту. Трек автоматически появится в вашей библиотеке навсегда!
+              </p>
+              <a 
+                href="https://t.me/fenix_music_bot" 
+                target="_blank" 
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 font-bold text-sm shadow-lg shadow-sky-600/30 transition text-white"
+              >
+                <Send className="w-4 h-4" /> Открыть Telegram бота
+              </a>
             </div>
           )}
 
@@ -426,7 +385,7 @@ export default function App() {
                 <Shield className="w-8 h-8" />
                 <h2 className="text-2xl font-bold">Панель администратора</h2>
               </div>
-              <p className="text-sm text-zinc-300">Доступ разрешен только для номера <span className="text-amber-400 font-mono">+79067853860</span></p>
+              <p className="text-sm text-zinc-300">Доступ разрешен для номера <span className="text-amber-400 font-mono">+79067853860</span></p>
               
               <div className="space-y-4">
                 <div>
@@ -450,6 +409,7 @@ export default function App() {
                     onChange={(e) => setSelectedTier(e.target.value)}
                     className="w-full bg-[#121216] border border-white/10 px-4 py-2.5 rounded-xl text-white text-sm outline-none"
                   >
+                    <option value="free">FREE</option>
                     <option value="premium">PREMIUM</option>
                     <option value="premium_plus">PREMIUM+</option>
                   </select>
@@ -463,8 +423,9 @@ export default function App() {
                 </button>
 
                 {adminStatus && (
-                  <div className="p-3 rounded-xl bg-violet-900/40 border border-violet-500/30 text-xs text-violet-200 text-center">
-                    {adminStatus}
+                  <div className="p-3 rounded-xl bg-violet-900/40 border border-violet-500/30 text-xs text-violet-200 text-center flex items-center justify-center gap-2">
+                    <CheckCircle className="w-4 h-4 text-green-400" />
+                    <span>{adminStatus}</span>
                   </div>
                 )}
               </div>
@@ -474,7 +435,7 @@ export default function App() {
           {currentTab === 'premium' && (
             <div className="max-w-3xl mx-auto space-y-8 text-center py-6">
               <h1 className="text-4xl font-extrabold bg-gradient-to-r from-amber-300 via-purple-300 to-pink-400 bg-clip-text text-transparent">
-                Выбери свой уровень Fenix
+                Ваш текущий тариф: {currentUser.subscription_tier.toUpperCase()}
               </h1>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
                 <div className="bg-white/10 border border-white/10 p-6 rounded-3xl flex flex-col justify-between backdrop-blur-md">
@@ -483,10 +444,10 @@ export default function App() {
                     <p className="text-2xl font-black mb-4">0 ₽</p>
                     <ul className="text-xs text-zinc-300 space-y-2 mb-6">
                       <li>✓ Базовый каталог</li>
-                      <li>✓ Загрузка треков</li>
+                      <li>✓ Загрузка через бота</li>
                     </ul>
                   </div>
-                  <button className="w-full py-2.5 rounded-full bg-white/20 font-bold text-sm">Ваш тариф</button>
+                  <button className="w-full py-2.5 rounded-full bg-white/20 font-bold text-sm">Тариф</button>
                 </div>
                 <div className="bg-gradient-to-b from-violet-600/30 to-transparent border border-violet-500/50 p-6 rounded-3xl flex flex-col justify-between relative backdrop-blur-md">
                   <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-violet-600 text-xs px-3 py-1 rounded-full font-bold">ХИТ</span>
@@ -496,10 +457,9 @@ export default function App() {
                     <ul className="text-xs text-zinc-200 space-y-2 mb-6">
                       <li>✓ Без рекламы</li>
                       <li>✓ Высокое качество звука</li>
-                      <li>✓ Выдача по номеру телефона</li>
                     </ul>
                   </div>
-                  <button className="w-full py-2.5 rounded-full bg-violet-600 font-bold text-sm shadow-lg shadow-violet-600/30">Подключить</button>
+                  <button className="w-full py-2.5 rounded-full bg-violet-600 font-bold text-sm shadow-lg shadow-violet-600/30">Активно</button>
                 </div>
                 <div className="bg-white/10 border border-amber-500/40 p-6 rounded-3xl flex flex-col justify-between backdrop-blur-md">
                   <div>
@@ -507,21 +467,12 @@ export default function App() {
                     <p className="text-2xl font-black mb-4">499 ₽ <span className="text-xs text-zinc-400">/мес</span></p>
                     <ul className="text-xs text-zinc-300 space-y-2 mb-6">
                       <li>✓ Hi-Res Lossless звук</li>
-                      <li>✓ Расширенная статистика</li>
-                      <li>✓ Доступ к Админке (+79067853860)</li>
+                      <li>✓ Доступ к Админке</li>
                     </ul>
                   </div>
-                  <button className="w-full py-2.5 rounded-full bg-amber-500 text-black font-bold text-sm">Подключить</button>
+                  <button className="w-full py-2.5 rounded-full bg-amber-500 text-black font-bold text-sm">Активно</button>
                 </div>
               </div>
-            </div>
-          )}
-
-          {currentTab !== 'home' && currentTab !== 'upload' && currentTab !== 'admin' && currentTab !== 'premium' && (
-            <div className="flex flex-col items-center justify-center py-20 text-center text-zinc-400">
-              <Disc className="w-16 h-16 mb-4 animate-spin opacity-40" />
-              <h2 className="text-xl font-bold text-white mb-2">Раздел в разработке</h2>
-              <p className="text-sm max-w-sm">Все компоненты архитектуры готовы к интеграции.</p>
             </div>
           )}
         </div>
@@ -529,7 +480,7 @@ export default function App() {
 
       <footer className="fixed bottom-0 left-0 right-0 h-20 bg-[#121216]/90 backdrop-blur-xl border-t border-white/10 px-6 flex items-center justify-between z-30">
         <div className="flex items-center gap-4 w-1/4">
-          <img src={currentTrack.cover_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=80'} alt="Cover" className="w-12 h-12 rounded-xl object-cover" />
+          <img src={currentTrack.cover_url} alt="Cover" className="w-12 h-12 rounded-xl object-cover" />
           <div className="min-w-0">
             <h4 className="font-bold text-sm truncate">{currentTrack.title}</h4>
             <p className="text-xs text-zinc-400 truncate">{currentTrack.artist_name}</p>
@@ -551,11 +502,11 @@ export default function App() {
             <Repeat className="w-4 h-4 text-zinc-400 hover:text-white cursor-pointer" />
           </div>
           <div className="w-full flex items-center gap-3 text-xs text-zinc-400">
-            <span>1:20</span>
+            <span>0:00</span>
             <div className="flex-1 h-1 bg-white/20 rounded-full overflow-hidden cursor-pointer">
               <div className="w-1/3 h-full bg-gradient-to-r from-violet-500 to-pink-500 rounded-full"></div>
             </div>
-            <span>{Math.floor(currentTrack.duration / 60)}:{currentTrack.duration % 60 || '34'}</span>
+            <span>2:00</span>
           </div>
         </div>
 
