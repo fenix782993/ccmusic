@@ -1,26 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Home, Search, Library, Heart, Disc, User, 
+  Home, Search, Library, Heart, Disc, 
   Play, Pause, SkipBack, SkipForward, Volume2, 
   Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle 
 } from 'lucide-react';
 
 export default function App() {
-  // Состояние авторизации
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [authMode, setAuthMode] = useState('login'); // 'login' или 'register'
+  const [authMode, setAuthMode] = useState('login');
   
-  // Поля формы авторизации
   const [regName, setRegName] = useState('');
   const [regPhone, setRegPhone] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [captchaInput, setCaptchaInput] = useState('');
-  const [captchaCode, setCaptchaCode] = useState('4829'); // Простая статичная капча
+  const [captchaCode, setCaptchaCode] = useState('4829');
 
-  // Данные текущего пользователя
   const [currentUser, setCurrentUser] = useState(null);
 
-  // Навигация и плеер
   const [currentTab, setCurrentTab] = useState('home');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState({
@@ -30,22 +26,18 @@ export default function App() {
     duration: 214
   });
   
-  // Треки из базы данных
   const [tracks, setTracks] = useState([]);
   
-  // Админка и загрузка треков
   const [phoneInput, setPhoneInput] = useState('');
   const [selectedTier, setSelectedTier] = useState('premium');
   const [adminStatus, setAdminStatus] = useState('');
 
-  // Форма загрузки трека
   const [newTrackTitle, setNewTrackTitle] = useState('');
   const [newTrackArtist, setNewTrackArtist] = useState('');
   const [newTrackGenre, setNewTrackGenre] = useState('');
   const [newTrackFile, setNewTrackFile] = useState(null);
   const [uploadStatus, setUploadStatus] = useState('');
 
-  // Загрузка треков из бэкенда при старте
   useEffect(() => {
     if (isLoggedIn) {
       fetchTracks();
@@ -67,7 +59,6 @@ export default function App() {
       });
   };
 
-  // Обработка регистрации / входа
   const handleAuthSubmit = (e) => {
     e.preventDefault();
     if (captchaInput !== captchaCode) {
@@ -80,7 +71,6 @@ export default function App() {
       return;
     }
 
-    // Проверка на админский номер
     const isAdmin = regPhone.trim() === '+79067853860';
 
     const userData = {
@@ -103,7 +93,6 @@ export default function App() {
     setCaptchaInput('');
   };
 
-  // Выдача подписки из админки
   const handleGrantSubscription = () => {
     fetch('http://localhost:5000/api/admin/subscription', {
       method: 'POST',
@@ -121,7 +110,6 @@ export default function App() {
     .catch(() => setAdminStatus('Ошибка подключения к серверу'));
   };
 
-  // Загрузка нового трека в базу данных
   const handleUploadTrack = (e) => {
     e.preventDefault();
     if (!newTrackTitle || !newTrackArtist) {
