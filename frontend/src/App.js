@@ -3,7 +3,7 @@ import {
   Home, Search, Library, Heart, Disc, 
   Play, Pause, SkipBack, SkipForward, Volume2, 
   Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle, Send,
-  User, Clock, ListMusic, Music, Layers, ChevronRight, Maximize2, Minimize2, Sparkles, TrendingUp, BarChart2
+  User, Clock, ListMusic, Music, Layers, Maximize2, Minimize2, Sparkles, TrendingUp, BarChart2
 } from 'lucide-react';
 
 export default function App() {
@@ -95,7 +95,6 @@ export default function App() {
   const handlePlayTrack = (track) => {
     setCurrentTrack(track);
     setIsPlaying(true);
-    // Добавляем в историю
     if (!history.some(t => t.id === track.id)) {
       setHistory(prev => [track, ...prev]);
     }
@@ -240,7 +239,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen text-white font-sans overflow-hidden bg-gradient-to-br from-[#0f0c29] via-[#302b63] to-[#24243e]">
-      {/* Боковая навигация */}
       <aside className="hidden md:flex flex-col w-64 bg-[#121216]/80 backdrop-blur-xl border-r border-white/10 p-6 justify-between">
         <div>
           <div className="flex items-center gap-3 mb-8 cursor-pointer" onClick={() => { setCurrentTab('home'); setSelectedArtist(null); setSelectedAlbum(null); }}>
@@ -286,7 +284,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* Основной контент */}
       <main className="flex-1 flex flex-col h-full overflow-y-auto pb-24">
         <header className="flex justify-between items-center px-8 py-5 sticky top-0 bg-[#0a0a0c]/70 backdrop-blur-md z-20 border-b border-white/10">
           <div className="flex items-center gap-4">
@@ -323,7 +320,6 @@ export default function App() {
         </header>
 
         <div className="p-6 md:p-8 flex-1">
-          {/* СТРАНИЦА АРТИСТА */}
           {selectedArtist && (
             <div className="space-y-6">
               <button onClick={() => setSelectedArtist(null)} className="text-xs text-violet-400 hover:underline mb-2">← Назад</button>
@@ -355,7 +351,6 @@ export default function App() {
             </div>
           )}
 
-          {/* СТРАНИЦА АЛЬБОМА */}
           {selectedAlbum && !selectedArtist && (
             <div className="space-y-6">
               <button onClick={() => setSelectedAlbum(null)} className="text-xs text-violet-400 hover:underline mb-2">← Назад</button>
@@ -387,10 +382,8 @@ export default function App() {
             </div>
           )}
 
-          {/* ГЛАВНАЯ ВКЛАДКА */}
           {currentTab === 'home' && !selectedArtist && !selectedAlbum && (
             <div className="space-y-8">
-              {/* Верхний баннер */}
               <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-violet-900/70 via-purple-900/50 to-pink-900/70 border border-white/20 p-8 flex flex-col justify-end min-h-[260px] shadow-2xl">
                 <span className="text-xs font-bold uppercase tracking-wider text-violet-300 mb-2 flex items-center gap-1">
                   <Sparkles className="w-4 h-4"/> Рекомендации Fenix Sound
@@ -405,7 +398,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Подменю ленты рекомендаций */}
               <div className="flex gap-2 overflow-x-auto pb-2 border-b border-white/10">
                 {[
                   { id: 'for_you', label: 'Для вас' },
@@ -427,7 +419,6 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Контент подменю */}
               {homeSubTab === 'for_you' && (
                 <div className="space-y-6">
                   <h2 className="text-xl font-bold flex items-center gap-2"><Sparkles className="text-violet-400 w-5 h-5"/> Персональные рекомендации</h2>
@@ -539,7 +530,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ПОИСК */}
           {currentTab === 'search' && (
             <div className="space-y-6">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -553,7 +543,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Фильтры поиска */}
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {[
                   { id: 'all', label: 'Всё' },
@@ -573,7 +562,6 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Результаты треков */}
               {(searchFilter === 'all' || searchFilter === 'tracks') && (
                 <div>
                   <h3 className="text-lg font-bold mb-3">Треки</h3>
@@ -591,7 +579,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Результаты артистов */}
               {(searchFilter === 'all' || searchFilter === 'artists') && (
                 <div>
                   <h3 className="text-lg font-bold mb-3">Исполнители</h3>
@@ -609,7 +596,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Результаты альбомов */}
               {(searchFilter === 'all' || searchFilter === 'albums') && (
                 <div>
                   <h3 className="text-lg font-bold mb-3">Альбомы</h3>
@@ -629,7 +615,6 @@ export default function App() {
             </div>
           )}
 
-          {/* БИБЛИОТЕКА */}
           {currentTab === 'library' && (
             <div className="space-y-6">
               <h2 className="text-2xl font-bold">Ваша библиотека</h2>
@@ -675,7 +660,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ИСТОРИЯ */}
           {currentTab === 'history' && (
             <div className="space-y-6 max-w-2xl mx-auto">
               <h2 className="text-2xl font-bold flex items-center gap-2"><Clock className="w-6 h-6 text-violet-400" /> История прослушиваний</h2>
@@ -696,7 +680,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ПРОФИЛЬ */}
           {currentTab === 'profile' && (
             <div className="max-w-xl mx-auto bg-white/10 border border-white/20 p-8 rounded-3xl space-y-6 backdrop-blur-md">
               <div className="flex items-center gap-4">
@@ -726,7 +709,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ЗАГРУЗКА ЧЕРЕЗ БОТА */}
           {currentTab === 'upload' && (
             <div className="max-w-xl mx-auto bg-white/10 border border-white/20 p-8 rounded-3xl space-y-6 backdrop-blur-md text-center">
               <div className="w-16 h-16 rounded-2xl bg-sky-500/20 border border-sky-500/30 flex items-center justify-center mx-auto text-sky-400">
@@ -747,7 +729,6 @@ export default function App() {
             </div>
           )}
 
-          {/* АДМИНКА */}
           {currentTab === 'admin' && currentUser.is_admin && (
             <div className="max-w-xl mx-auto bg-white/10 border border-white/20 p-8 rounded-3xl space-y-6 backdrop-blur-md">
               <div className="flex items-center gap-3 text-violet-300">
@@ -798,7 +779,6 @@ export default function App() {
             </div>
           )}
 
-          {/* ПОДПИСКИ */}
           {currentTab === 'premium' && (
             <div className="max-w-3xl mx-auto space-y-8 text-center py-6">
               <h1 className="text-4xl font-extrabold bg-gradient-to-r from-amber-300 via-purple-300 to-pink-400 bg-clip-text text-transparent">
@@ -848,7 +828,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* ПОЛНОЭКРАННЫЙ ПЛЕЕР (Модальное окно) */}
       {isFullScreenPlayer && (
         <div className="fixed inset-0 bg-[#0f0c29]/95 backdrop-blur-2xl z-50 flex flex-col justify-between p-8 md:p-16 text-white">
           <div className="flex justify-between items-center">
@@ -887,7 +866,6 @@ export default function App() {
         </div>
       )}
 
-      {/* НИЖНИЙ ПЛЕЕР */}
       <footer className="fixed bottom-0 left-0 right-0 h-20 bg-[#121216]/90 backdrop-blur-xl border-t border-white/10 px-6 flex items-center justify-between z-30">
         <div className="flex items-center gap-4 w-1/4 cursor-pointer" onClick={() => setIsFullScreenPlayer(true)}>
           <img src={currentTrack.cover_url} alt="Cover" className="w-12 h-12 rounded-xl object-cover" />
