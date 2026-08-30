@@ -7,7 +7,10 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    return localStorage.getItem('fenix_logged_in') === 'true';
+  });
+  
   const [authMode, setAuthMode] = useState('login');
   
   const [regName, setRegName] = useState('');
@@ -16,7 +19,10 @@ export default function App() {
   const [captchaInput, setCaptchaInput] = useState('');
   const [captchaCode, setCaptchaCode] = useState('4829');
 
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('fenix_user');
+    return saved ? JSON.parse(saved) : null;
+  });
 
   const [currentTab, setCurrentTab] = useState('home');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -91,6 +97,9 @@ export default function App() {
 
     setCurrentUser(userData);
     setIsLoggedIn(true);
+    
+    localStorage.setItem('fenix_logged_in', 'true');
+    localStorage.setItem('fenix_user', JSON.stringify(userData));
   };
 
   const handleLogout = () => {
@@ -100,6 +109,9 @@ export default function App() {
     setRegPassword('');
     setRegName('');
     setCaptchaInput('');
+    
+    localStorage.removeItem('fenix_logged_in');
+    localStorage.removeItem('fenix_user');
   };
 
   const toggleFavorite = (trackId, e) => {
