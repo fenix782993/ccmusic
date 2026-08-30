@@ -1,4 +1,4 @@
--- Fenix Music Database Schema
+-- Fenix Music Database Schema V2
 DROP TABLE IF EXISTS listening_history CASCADE;
 DROP TABLE IF EXISTS playlist_tracks CASCADE;
 DROP TABLE IF EXISTS playlists CASCADE;
@@ -11,9 +11,11 @@ CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
+    phone VARCHAR(20) UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     avatar_url TEXT DEFAULT '',
     subscription_tier VARCHAR(20) DEFAULT 'free' CHECK (subscription_tier IN ('free', 'premium', 'premium_plus')),
+    is_admin BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -37,7 +39,7 @@ CREATE TABLE tracks (
     title VARCHAR(150) NOT NULL,
     artist_id INT REFERENCES artists(id) ON DELETE CASCADE,
     album_id INT REFERENCES albums(id) ON DELETE SET NULL,
-    duration INT NOT NULL, -- in seconds
+    duration INT NOT NULL,
     audio_url TEXT NOT NULL,
     genre VARCHAR(50),
     plays_count INT DEFAULT 0,
@@ -67,7 +69,3 @@ CREATE TABLE listening_history (
     track_id INT REFERENCES tracks(id) ON DELETE CASCADE,
     played_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Indexing for performance
-CREATE INDEX idx_tracks_genre ON tracks(genre);
-CREATE INDEX idx_history_user ON listening_history(user_id);
