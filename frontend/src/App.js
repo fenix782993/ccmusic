@@ -3,7 +3,7 @@ import {
   Home, Search, Library, Heart, 
   Play, Pause, SkipBack, SkipForward, Volume2, 
   Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle, Send,
-  Headphones, User, Clock, Radio, ListMusic, Download, Sparkles
+  Radio, User, Clock, ListMusic, Download, Sparkles
 } from 'lucide-react';
 
 export default function App() {
@@ -501,7 +501,7 @@ export default function App() {
                     <Download className="w-6 h-6" />
                   </div>
                   <h4 className="font-bold text-sm">Скачанные треки</h4>
-                  <p className="text-xs text-zinc-400">Доступно в мобильном приложении</p>
+                  <p className="text-xs text-zinc-400">Доступно в приложении</p>
                 </div>
               </div>
 
@@ -624,15 +624,15 @@ export default function App() {
               </div>
               <h2 className="text-2xl font-bold">Загрузка через Telegram-бота</h2>
               <p className="text-sm text-zinc-300 leading-relaxed">
-                Чтобы загрузить песню в приложение, отправьте аудиофайл нашему официальному Telegram-боту. Трек автоматически появится в вашей библиотеке!
+                Чтобы загрузить песню в приложение, отправьте аудиофайл нашему официальному Telegram-боту <span className="text-sky-400 font-bold">@FenixMusicRabot</span>. Трек автоматически появится в вашей библиотеке!
               </p>
               <a 
-                href="https://t.me/fenix_music_bot" 
+                href="https://t.me/FenixMusicRabot" 
                 target="_blank" 
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-sky-600 hover:bg-sky-500 font-bold text-sm shadow-lg shadow-sky-600/30 transition text-white"
               >
-                <Send className="w-4 h-4" /> Открыть Telegram бота
+                <Send className="w-4 h-4" /> Открыть @FenixMusicRabot
               </a>
             </div>
           )}
