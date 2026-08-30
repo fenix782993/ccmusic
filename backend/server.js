@@ -9,53 +9,67 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Создаем папку для загрузок
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
-  fs.existsSync(uploadsDir) || fs.mkdirSync(uploadsDir, { recursive: true });
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Раздаем статику собранного фронтенда (например, из папки dist)
-app.use(express.static(path.join(__dirname, 'dist')));
+// Раздаем статику фронтенда из папки dist (если она собрана)
+const distDir = path.join(__dirname, 'dist');
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+}
 
-// Telegram-бот: команда /start
 bot.start((ctx) => {
   ctx.reply(
     '🔥 Добро пожаловать в официальный бот **Fenix Music**!\n\n' +
-    'Здесь вы можете загружать свои треки в нашу медиатеку.',
+    'Здесь вы можете загружать свои треки напрямую в нашу медиатеку, просто отправив аудиофайл в этот чат.',
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.url('🎵 Открыть Fenix Music', 'https://ccmusic-w6eg.onrender.com')]
+        [Markup.button.url('🎵 Открыть сайт Fenix Music', 'https://ccmusice.onrender.com')]
       ])
     }
   );
 });
 
-// Обработка аудио от ботов
 bot.on('audio', async (ctx) => {
   try {
     const audio = ctx.message.audio;
-    const fileLink = await ctx.telegram.getFileLink(audio.file_id);
+    const fileId = audio.file_id;
+    const fileName = audio.file_name || `track_${Date.now()}.mp3`;
+    
+    const fileLink = await ctx.telegram.getFileLink(fileId);
     const response = await fetch(fileLink.href);
     const buffer = await response.arrayBuffer();
-    const fileName = audio.file_name || `track_${Date.now()}.mp3`;
+    const filePath = path.join(uploadsDir, fileName);
+    
+    fs.writeFileSync(filePath, Buffer.from(buffer));
 
-    fs.writeFileSync(path.join(uploadsDir, fileName), Buffer.from(buffer));
-    ctx.reply(`✅ Трек *${fileName}* успешно добавлен!`, { parse_mode: 'Markdown' });
+    ctx.reply(`✅ Трек *${fileName}* успешно загружен и добавлен в медиатеку Fenix Music!`, { parse_mode: 'Markdown' });
   } catch (error) {
     console.error(error);
-    ctx.reply('❌ Ошибка при загрузке трека.');
+    ctx.reply('❌ Ошибка при загрузке трека. Попробуйте еще раз.');
   }
 });
 
-// Все остальные запросы отправляем на React-приложение (для роутинга)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok' });
 });
 
-// Запуск бота и сервера
-bot.launch().then(() => console.log('🤖 Бот запущен!'));
+if (fs.existsSync(distDir)) {
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+} else {
+  app.get('/', (req, res) => {
+    res.send('Fenix Music Server & Bot is running! Frontend dist folder not found yet.');
+  });
+}
+
+bot.launch().then(() => {
+  console.log('🤖 Telegram-бот запущен!');
+});
 
 app.listen(PORT, () => {
   console.log(`Сервер и сайт запущены на порту ${PORT}`);
