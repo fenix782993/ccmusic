@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Home, Search, Library, Heart, Disc, 
+  Home, Search, Library, Heart, 
   Play, Pause, SkipBack, SkipForward, Volume2, 
   Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle, Send,
   Music, User, Clock, Radio, ListMusic, Download, Sparkles
@@ -661,7 +661,7 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-xs text-zinc-400 mb-1">Уровень подписки (Premium оформляется на месяц, Premium+ на год)</label>
+                  <label className="block text-xs text-zinc-400 mb-1">Уровень подписки (Premium — 1 месяц, Premium+ — 1 год)</label>
                   <select 
                     value={selectedTier} 
                     onChange={(e) => setSelectedTier(e.target.value)}
