@@ -3,7 +3,7 @@ import {
   Home, Search, Library, Heart, Disc, User,  
   Play, Pause, SkipBack, SkipForward, Volume2,  
   Repeat, Shuffle, Crown, Flame, Clock, Menu, X,
-  Sliders, ListMusic, VolumeX, Radio, Sparkles, Shield,
+  Sliders, VolumeX, Radio, Sparkles, Shield,
   Share2, MoreVertical, Plus, Check, Compass,
   TrendingUp, Music, Mic, Upload
 } from 'lucide-react';
