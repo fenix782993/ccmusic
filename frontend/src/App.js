@@ -5,7 +5,7 @@ import {
   Repeat, Shuffle, Crown, Flame, Clock, Menu, X,
   Sliders, ListMusic, VolumeX, Radio, Sparkles, Shield,
   Share2, Download, MoreVertical, Plus, Check, Compass,
-  TrendingUp, Music, Mic, Headphones, Layers
+  TrendingUp, Music, Mic, Layers
 } from 'lucide-react';
 
 export default function FenixMusicApp() {
