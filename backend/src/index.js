@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const crypto = require('crypto');
 const { Pool } = require('pg');
+
 require('dotenv').config();
 
 const app = express();
@@ -15,10 +16,14 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '5mb',
+}));
 
 const PORT = Number(process.env.PORT || 5000);
-const DATABASE_URL = process.env.DATABASE_URL;
+
+const DATABASE_URL =
+  process.env.DATABASE_URL;
 
 const BOT_TOKEN =
   process.env.TELEGRAM_BOT_TOKEN || '';
@@ -37,25 +42,40 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
+/* =========================================================
+   POSTGRESQL
+========================================================= */
+
 const pool = new Pool({
   connectionString: DATABASE_URL,
 
   ssl:
     process.env.NODE_ENV === 'production'
-      ? { rejectUnauthorized: false }
+      ? {
+          rejectUnauthorized: false,
+        }
       : false,
 
   max: 10,
+
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+
+  connectionTimeoutMillis: 15000,
 });
 
+/* =========================================================
+   MEMORY
+========================================================= */
+
 const sessions = new Map();
+
 const captchas = new Map();
 
 let telegramOffset = 0;
-let server = null;
+
 let telegramLoopRunning = false;
+
+let server = null;
 
 /* =========================================================
    HELPERS
@@ -74,6 +94,86 @@ function cleanString(value, max = 500) {
     .slice(0, max);
 }
 
+function captchaText() {
+  const chars =
+    'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  let value = '';
+
+  for (let i = 0; i < 6; i++) {
+    value +=
+      chars[
+        crypto.randomInt(chars.length)
+      ];
+  }
+
+  return value;
+}
+
+function cleanupCaptchas() {
+  const now = Date.now();
+
+  for (const [id, item] of captchas) {
+    if (item.expires <= now) {
+      captchas.delete(id);
+    }
+  }
+}
+
+function hashPassword(
+  password,
+  salt = crypto
+    .randomBytes(16)
+    .toString('hex')
+) {
+  const hash = crypto
+    .scryptSync(
+      String(password),
+      salt,
+      64
+    )
+    .toString('hex');
+
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(
+  password,
+  stored
+) {
+  try {
+    const parts =
+      String(stored || '').split(':');
+
+    if (parts.length !== 2) {
+      return false;
+    }
+
+    const [salt, key] = parts;
+
+    const actual =
+      crypto.scryptSync(
+        String(password),
+        salt,
+        64
+      );
+
+    const expected =
+      Buffer.from(key, 'hex');
+
+    return (
+      actual.length ===
+        expected.length &&
+      crypto.timingSafeEqual(
+        actual,
+        expected
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 function safeUser(user) {
   if (!user) {
     return null;
@@ -81,13 +181,23 @@ function safeUser(user) {
 
   return {
     id: user.id,
-    username: user.username,
-    email: user.email,
-    bio: user.bio || '',
+
+    username:
+      user.username || '',
+
+    email:
+      user.email || '',
+
+    bio:
+      user.bio || '',
+
     avatar_url:
       user.avatar_url || '',
+
     subscription_tier:
-      user.subscription_tier || 'free',
+      user.subscription_tier ||
+      'free',
+
     created_at:
       user.created_at || null,
   };
@@ -137,6 +247,8 @@ function normalizeTrack(row) {
 
     play_count: plays,
 
+    plays_count: plays,
+
     cover_url:
       row.cover_url ||
       row.album_cover_url ||
@@ -151,67 +263,9 @@ function normalizeTrack(row) {
   };
 }
 
-function hashPassword(
-  password,
-  salt = crypto
-    .randomBytes(16)
-    .toString('hex')
-) {
-  const hash =
-    crypto
-      .scryptSync(
-        String(password),
-        salt,
-        64
-      )
-      .toString('hex');
-
-  return `${salt}:${hash}`;
-}
-
-function verifyPassword(
-  password,
-  stored
-) {
-  try {
-    const parts =
-      String(stored || '')
-        .split(':');
-
-    if (parts.length !== 2) {
-      return false;
-    }
-
-    const [
-      salt,
-      key,
-    ] = parts;
-
-    const actual =
-      crypto.scryptSync(
-        String(password),
-        salt,
-        64
-      );
-
-    const expected =
-      Buffer.from(
-        key,
-        'hex'
-      );
-
-    return (
-      actual.length ===
-        expected.length &&
-      crypto.timingSafeEqual(
-        actual,
-        expected
-      )
-    );
-  } catch {
-    return false;
-  }
-}
+/* =========================================================
+   AUTH
+========================================================= */
 
 function createSession(user) {
   const token =
@@ -236,22 +290,19 @@ function createSession(user) {
 
 function getBearerToken(req) {
   const header =
-    req.headers.authorization || '';
+    req.headers.authorization ||
+    '';
 
   if (
-    !header.startsWith('Bearer ')
+    header.startsWith('Bearer ')
   ) {
-    return '';
+    return header
+      .slice(7)
+      .trim();
   }
 
-  return header
-    .slice(7)
-    .trim();
+  return '';
 }
-
-/* =========================================================
-   AUTH
-========================================================= */
 
 async function auth(
   req,
@@ -273,17 +324,13 @@ async function auth(
         sessions.delete(token);
       }
 
-      return res
-        .status(401)
-        .json({
-          error:
-            'Необходим вход',
-        });
+      return res.status(401).json({
+        error: 'Необходим вход',
+      });
     }
 
     const result =
-      await pool.query(
-        `
+      await pool.query(`
         SELECT
           id,
           username,
@@ -295,26 +342,23 @@ async function auth(
         FROM users
         WHERE id = $1
         LIMIT 1
-        `,
-        [session.userId]
-      );
+      `, [
+        session.userId,
+      ]);
 
     if (!result.rows[0]) {
       sessions.delete(token);
 
-      return res
-        .status(401)
-        .json({
-          error:
-            'Пользователь не найден',
-        });
+      return res.status(401).json({
+        error:
+          'Пользователь не найден',
+      });
     }
 
     req.user =
       result.rows[0];
 
-    req.token =
-      token;
+    req.token = token;
 
     next();
   } catch (error) {
@@ -323,12 +367,10 @@ async function auth(
       error
     );
 
-    res
-      .status(500)
-      .json({
-        error:
-          'Ошибка авторизации',
-      });
+    return res.status(500).json({
+      error:
+        'Ошибка авторизации',
+    });
   }
 }
 
@@ -349,8 +391,7 @@ async function optionalAuth(
       session.expires >= Date.now()
     ) {
       const result =
-        await pool.query(
-          `
+        await pool.query(`
           SELECT
             id,
             username,
@@ -362,16 +403,15 @@ async function optionalAuth(
           FROM users
           WHERE id = $1
           LIMIT 1
-          `,
-          [session.userId]
-        );
+        `, [
+          session.userId,
+        ]);
 
       req.user =
         result.rows[0] ||
         null;
 
-      req.token =
-        token;
+      req.token = token;
     }
   } catch (error) {
     console.error(
@@ -384,64 +424,42 @@ async function optionalAuth(
 }
 
 /* =========================================================
-   CAPTCHA
+   DATABASE HELPERS
 ========================================================= */
 
-function captchaText() {
-  const chars =
-    'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+async function tableExists(
+  client,
+  table
+) {
+  const result =
+    await client.query(
+      `
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = $1
+        LIMIT 1
+      `,
+      [table]
+    );
 
-  let value = '';
-
-  for (
-    let i = 0;
-    i < 6;
-    i++
-  ) {
-    value +=
-      chars[
-        crypto.randomInt(
-          chars.length
-        )
-      ];
-  }
-
-  return value;
+  return result.rowCount > 0;
 }
-
-function cleanupCaptchas() {
-  const now =
-    Date.now();
-
-  for (
-    const [id, item]
-    of captchas
-  ) {
-    if (
-      item.expires <= now
-    ) {
-      captchas.delete(id);
-    }
-  }
-}
-
-/* =========================================================
-   DATABASE
-========================================================= */
 
 async function columnExists(
+  client,
   table,
   column
 ) {
   const result =
-    await pool.query(
+    await client.query(
       `
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = $1
-        AND column_name = $2
-      LIMIT 1
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = $1
+          AND column_name = $2
+        LIMIT 1
       `,
       [
         table,
@@ -449,26 +467,45 @@ async function columnExists(
       ]
     );
 
-  return (
-    result.rowCount > 0
-  );
+  return result.rowCount > 0;
 }
 
 async function addColumnIfMissing(
+  client,
   table,
   column,
   definition
 ) {
+  /*
+   IMPORTANT:
+   Never run ALTER TABLE against
+   a table which doesn't exist.
+  */
+
+  if (
+    !(await tableExists(
+      client,
+      table
+    ))
+  ) {
+    console.log(
+      `  ! skipped ${table}.${column}: table does not exist`
+    );
+
+    return;
+  }
+
   if (
     !(await columnExists(
+      client,
       table,
       column
     ))
   ) {
-    await pool.query(
+    await client.query(
       `
-      ALTER TABLE ${table}
-      ADD COLUMN ${column} ${definition}
+        ALTER TABLE ${table}
+        ADD COLUMN ${column} ${definition}
       `
     );
 
@@ -477,6 +514,10 @@ async function addColumnIfMissing(
     );
   }
 }
+
+/* =========================================================
+   DATABASE INITIALIZATION
+========================================================= */
 
 async function initDatabase() {
   console.log(
@@ -495,185 +536,323 @@ async function initDatabase() {
       'BEGIN'
     );
 
-    /* =========================
-       USERS
-    ========================= */
+    console.log(
+      'Creating base tables...'
+    );
+
+    /*
+     ========================================================
+     USERS
+     ========================================================
+    */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         id BIGSERIAL PRIMARY KEY,
+
         username VARCHAR(64) NOT NULL,
+
         email VARCHAR(255) NOT NULL,
+
         password_hash TEXT NOT NULL,
-        bio TEXT DEFAULT '',
-        avatar_url TEXT DEFAULT '',
-        subscription_tier VARCHAR(32) NOT NULL DEFAULT 'free',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+        bio TEXT NOT NULL DEFAULT '',
+
+        avatar_url TEXT NOT NULL DEFAULT '',
+
+        subscription_tier
+          VARCHAR(32)
+          NOT NULL
+          DEFAULT 'free',
+
+        created_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW(),
+
+        updated_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
       )
     `);
 
-    /* =========================
-       ARTISTS
-    ========================= */
+    /*
+     ========================================================
+     ARTISTS
+     ========================================================
+    */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS artists (
         id BIGSERIAL PRIMARY KEY,
+
         name VARCHAR(255) NOT NULL,
-        avatar_url TEXT DEFAULT '',
-        bio TEXT DEFAULT '',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+        avatar_url TEXT NOT NULL DEFAULT '',
+
+        bio TEXT NOT NULL DEFAULT '',
+
+        created_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
       )
     `);
 
-    /* =========================
-       ALBUMS
-    ========================= */
+    /*
+     ========================================================
+     ALBUMS
+     ========================================================
+    */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS albums (
         id BIGSERIAL PRIMARY KEY,
+
         title VARCHAR(255) NOT NULL,
+
         artist_id BIGINT,
-        cover_url TEXT DEFAULT '',
+
+        cover_url TEXT NOT NULL DEFAULT '',
+
         year INTEGER,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+        created_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
       )
     `);
 
-    /* =========================
-       TRACKS
+    /*
+     ========================================================
+     TRACKS
 
-       IMPORTANT:
-       plays_count is created here
-       before any index can use it.
-    ========================= */
+     plays_count is created HERE before any index.
+     ========================================================
+    */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS tracks (
         id BIGSERIAL PRIMARY KEY,
+
         title VARCHAR(255) NOT NULL,
+
         artist_id BIGINT,
+
         album_id BIGINT,
-        duration INTEGER NOT NULL DEFAULT 0,
-        audio_url TEXT DEFAULT '',
-        genre VARCHAR(100) NOT NULL DEFAULT 'Music',
-        plays_count BIGINT NOT NULL DEFAULT 0,
-        is_premium BOOLEAN NOT NULL DEFAULT FALSE,
+
+        duration INTEGER
+          NOT NULL
+          DEFAULT 0,
+
+        audio_url TEXT
+          NOT NULL
+          DEFAULT '',
+
+        genre VARCHAR(100)
+          NOT NULL
+          DEFAULT 'Music',
+
+        plays_count BIGINT
+          NOT NULL
+          DEFAULT 0,
+
+        is_premium BOOLEAN
+          NOT NULL
+          DEFAULT FALSE,
+
         telegram_file_id TEXT,
+
         telegram_channel_id TEXT,
+
         telegram_message_id BIGINT,
-        cover_url TEXT DEFAULT '',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+        cover_url TEXT
+          NOT NULL
+          DEFAULT '',
+
+        created_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW(),
+
+        updated_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
       )
     `);
 
-    /* =========================
-       PLAYLISTS
-    ========================= */
+    /*
+     ========================================================
+     PLAYLISTS
+     ========================================================
+    */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS playlists (
         id BIGSERIAL PRIMARY KEY,
+
         user_id BIGINT,
+
         name VARCHAR(255) NOT NULL,
-        is_public BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+        is_public BOOLEAN
+          NOT NULL
+          DEFAULT FALSE,
+
+        created_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
       )
     `);
 
-    /* =========================
-       PLAYLIST TRACKS
-    ========================= */
+    /*
+     ========================================================
+     PLAYLIST TRACKS
+     ========================================================
+    */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS playlist_tracks (
         playlist_id BIGINT NOT NULL,
+
         track_id BIGINT NOT NULL,
-        position INTEGER NOT NULL DEFAULT 0,
-        PRIMARY KEY (playlist_id, track_id)
+
+        position INTEGER
+          NOT NULL
+          DEFAULT 0,
+
+        PRIMARY KEY (
+          playlist_id,
+          track_id
+        )
       )
     `);
 
-    /* =========================
-       FAVORITES
-    ========================= */
+    /*
+     ========================================================
+     FAVORITES
+     ========================================================
+    */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS favorites (
         user_id BIGINT NOT NULL,
+
         track_id BIGINT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (user_id, track_id)
+
+        created_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW(),
+
+        PRIMARY KEY (
+          user_id,
+          track_id
+        )
       )
     `);
 
-    /* =========================
-       HISTORY
-    ========================= */
+    /*
+     ========================================================
+     HISTORY
+     ========================================================
+    */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS listening_history (
         id BIGSERIAL PRIMARY KEY,
+
         user_id BIGINT NOT NULL,
+
         track_id BIGINT NOT NULL,
-        played_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+        played_at
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
       )
     `);
 
-    /* =====================================================
-       SAFE MIGRATIONS
-    ===================================================== */
+    /*
+     ========================================================
+     MIGRATIONS
+
+     Only AFTER all tables exist.
+     ========================================================
+    */
+
+    console.log(
+      'Running database migrations...'
+    );
 
     const migrations = [
       [
         'users',
         'bio',
-        `TEXT DEFAULT ''`,
+        `TEXT NOT NULL DEFAULT ''`,
       ],
 
       [
         'users',
         'avatar_url',
-        `TEXT DEFAULT ''`,
+        `TEXT NOT NULL DEFAULT ''`,
       ],
 
       [
         'users',
         'subscription_tier',
-        `VARCHAR(32) NOT NULL DEFAULT 'free'`,
+        `
+          VARCHAR(32)
+          NOT NULL
+          DEFAULT 'free'
+        `,
       ],
 
       [
         'users',
         'created_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+        `
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
+        `,
       ],
 
       [
         'users',
         'updated_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+        `
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
+        `,
       ],
 
       [
         'artists',
         'avatar_url',
-        `TEXT DEFAULT ''`,
+        `TEXT NOT NULL DEFAULT ''`,
       ],
 
       [
         'artists',
         'bio',
-        `TEXT DEFAULT ''`,
+        `TEXT NOT NULL DEFAULT ''`,
       ],
 
       [
         'artists',
         'created_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+        `
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
+        `,
       ],
 
       [
@@ -685,7 +864,7 @@ async function initDatabase() {
       [
         'albums',
         'cover_url',
-        `TEXT DEFAULT ''`,
+        `TEXT NOT NULL DEFAULT ''`,
       ],
 
       [
@@ -697,7 +876,11 @@ async function initDatabase() {
       [
         'albums',
         'created_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+        `
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
+        `,
       ],
 
       [
@@ -715,31 +898,47 @@ async function initDatabase() {
       [
         'tracks',
         'duration',
-        `INTEGER NOT NULL DEFAULT 0`,
+        `
+          INTEGER
+          NOT NULL
+          DEFAULT 0
+        `,
       ],
 
       [
         'tracks',
         'audio_url',
-        `TEXT DEFAULT ''`,
+        `TEXT NOT NULL DEFAULT ''`,
       ],
 
       [
         'tracks',
         'genre',
-        `VARCHAR(100) NOT NULL DEFAULT 'Music'`,
+        `
+          VARCHAR(100)
+          NOT NULL
+          DEFAULT 'Music'
+        `,
       ],
 
       [
         'tracks',
         'plays_count',
-        `BIGINT NOT NULL DEFAULT 0`,
+        `
+          BIGINT
+          NOT NULL
+          DEFAULT 0
+        `,
       ],
 
       [
         'tracks',
         'is_premium',
-        `BOOLEAN NOT NULL DEFAULT FALSE`,
+        `
+          BOOLEAN
+          NOT NULL
+          DEFAULT FALSE
+        `,
       ],
 
       [
@@ -763,55 +962,27 @@ async function initDatabase() {
       [
         'tracks',
         'cover_url',
-        `TEXT DEFAULT ''`,
+        `TEXT NOT NULL DEFAULT ''`,
       ],
 
       [
         'tracks',
         'created_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+        `
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
+        `,
       ],
 
       [
         'tracks',
         'updated_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
-      ],
-
-      [
-        'playlists',
-        'user_id',
-        `BIGINT`,
-      ],
-
-      [
-        'playlists',
-        'is_public',
-        `BOOLEAN NOT NULL DEFAULT FALSE`,
-      ],
-
-      [
-        'playlists',
-        'created_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
-      ],
-
-      [
-        'playlist_tracks',
-        'position',
-        `INTEGER NOT NULL DEFAULT 0`,
-      ],
-
-      [
-        'favorites',
-        'created_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
-      ],
-
-      [
-        'listening_history',
-        'played_at',
-        `TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+        `
+          TIMESTAMPTZ
+          NOT NULL
+          DEFAULT NOW()
+        `,
       ],
     ];
 
@@ -820,111 +991,130 @@ async function initDatabase() {
         table,
         column,
         definition,
-      ]
-      of migrations
+      ] of migrations
     ) {
       await addColumnIfMissing(
+        client,
         table,
         column,
         definition
       );
     }
 
-    /* =====================================================
-       OLD COLUMN COMPATIBILITY
-    ===================================================== */
+    /*
+     ========================================================
+     OLD play_count COMPATIBILITY
+     ========================================================
+    */
 
-    const hasOldPlayCount =
+    const hasPlayCount =
       await columnExists(
+        client,
         'tracks',
         'play_count'
       );
 
     const hasPlaysCount =
       await columnExists(
+        client,
         'tracks',
         'plays_count'
       );
 
     if (
-      hasOldPlayCount &&
+      hasPlayCount &&
       hasPlaysCount
     ) {
       await client.query(`
         UPDATE tracks
         SET plays_count =
           COALESCE(
-            NULLIF(plays_count, 0),
+            plays_count,
+            0
+          ) +
+          COALESCE(
             play_count,
             0
           )
+        WHERE
+          COALESCE(
+            play_count,
+            0
+          ) > 0
+          AND
+          COALESCE(
+            plays_count,
+            0
+          ) = 0
       `);
     }
 
-    /* =====================================================
-       INDEXES
+    /*
+     ========================================================
+     INDEXES
 
-       Only create indexes AFTER all columns exist.
-    ===================================================== */
+     At this point plays_count DEFINITELY exists.
+     ========================================================
+    */
+
+    console.log(
+      'Creating indexes...'
+    );
 
     await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS
-      idx_users_email_lower
-      ON users (LOWER(email))
-    `);
-
-    await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS
-      idx_users_username_lower
-      ON users (LOWER(username))
+      CREATE INDEX IF NOT EXISTS
+      idx_tracks_plays_count
+      ON tracks (
+        plays_count DESC
+      )
     `);
 
     await client.query(`
       CREATE INDEX IF NOT EXISTS
-      idx_artists_name
-      ON artists (LOWER(name))
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS
-      idx_tracks_artist
-      ON tracks (artist_id)
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS
-      idx_tracks_album
-      ON tracks (album_id)
+      idx_tracks_created_at
+      ON tracks (
+        created_at DESC
+      )
     `);
 
     await client.query(`
       CREATE INDEX IF NOT EXISTS
       idx_tracks_genre
-      ON tracks (genre)
+      ON tracks (
+        genre
+      )
     `);
 
     await client.query(`
       CREATE INDEX IF NOT EXISTS
-      idx_tracks_plays_count
-      ON tracks (plays_count DESC)
+      idx_tracks_artist_id
+      ON tracks (
+        artist_id
+      )
     `);
 
     await client.query(`
       CREATE INDEX IF NOT EXISTS
-      idx_playlists_user
-      ON playlists (user_id)
+      idx_tracks_album_id
+      ON tracks (
+        album_id
+      )
     `);
 
     await client.query(`
       CREATE INDEX IF NOT EXISTS
-      idx_playlist_tracks_playlist
-      ON playlist_tracks (playlist_id, position)
+      idx_artists_name
+      ON artists (
+        name
+      )
     `);
 
     await client.query(`
       CREATE INDEX IF NOT EXISTS
-      idx_favorites_user
-      ON favorites (user_id)
+      idx_albums_title
+      ON albums (
+        title
+      )
     `);
 
     await client.query(`
@@ -935,6 +1125,42 @@ async function initDatabase() {
         played_at DESC
       )
     `);
+
+    /*
+     ========================================================
+     UNIQUE USER INDEXES
+     ========================================================
+    */
+
+    try {
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        idx_users_username_lower
+        ON users (
+          LOWER(username)
+        )
+      `);
+    } catch (error) {
+      console.warn(
+        '⚠️ Username index skipped:',
+        error.message
+      );
+    }
+
+    try {
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        idx_users_email_lower
+        ON users (
+          LOWER(email)
+        )
+      `);
+    } catch (error) {
+      console.warn(
+        '⚠️ Email index skipped:',
+        error.message
+      );
+    }
 
     await client.query(
       'COMMIT'
@@ -955,21 +1181,80 @@ async function initDatabase() {
 }
 
 /* =========================================================
-   HEALTH
+   ROOT
 ========================================================= */
 
-app.get(
-  '/',
-  (_req, res) => {
-    res.json({
-      ok: true,
-      name: 'FENIX MUSIC BACKEND',
-      version: '2.0.0',
-      status: 'online',
-      api: apiBase(),
-    });
-  }
-);
+app.get('/', (_req, res) => {
+  res.json({
+    ok: true,
+
+    service:
+      'Fenix Music Backend',
+
+    version:
+      '2.0.0',
+
+    status:
+      'online',
+
+    api:
+      '/api',
+
+    health:
+      '/api/health',
+
+    tracks:
+      '/api/tracks',
+  });
+});
+
+app.get('/api', (_req, res) => {
+  res.json({
+    ok: true,
+
+    service:
+      'Fenix Music API',
+
+    version:
+      '2.0.0',
+
+    endpoints: {
+      health:
+        '/api/health',
+
+      tracks:
+        '/api/tracks',
+
+      captcha:
+        '/api/auth/captcha',
+
+      register:
+        '/api/auth/register',
+
+      login:
+        '/api/auth/login',
+
+      me:
+        '/api/auth/me',
+
+      profile:
+        '/api/profile',
+
+      favorites:
+        '/api/favorites',
+
+      history:
+        '/api/history',
+
+      playlists:
+        '/api/playlists',
+    },
+  });
+});
+
+/* =========================================================
+   HEALTH
+========================================================= */
 
 app.get(
   '/api/health',
@@ -980,30 +1265,38 @@ app.get(
       );
 
       res.json({
-        ok: true,
-        status: 'online',
-        database: 'connected',
-        service: 'fenix-music-backend',
+        status:
+          'ok',
+
+        service:
+          'Fenix Music API',
+
+        database:
+          'ok',
+
+        time:
+          new Date().toISOString(),
       });
     } catch (error) {
-      console.error(
-        'Health error:',
-        error
-      );
+      res.status(503).json({
+        status:
+          'error',
 
-      res
-        .status(503)
-        .json({
-          ok: false,
-          status: 'offline',
-          database: 'error',
-        });
+        service:
+          'Fenix Music API',
+
+        database:
+          'error',
+
+        error:
+          error.message,
+      });
     }
   }
 );
 
 /* =========================================================
-   AUTH CAPTCHA
+   CAPTCHA
 ========================================================= */
 
 app.get(
@@ -1013,7 +1306,7 @@ app.get(
 
     const id =
       crypto
-        .randomBytes(16)
+        .randomBytes(12)
         .toString('hex');
 
     const text =
@@ -1021,6 +1314,7 @@ app.get(
 
     captchas.set(id, {
       text,
+
       expires:
         Date.now() +
         5 * 60 * 1000,
@@ -1028,10 +1322,14 @@ app.get(
 
     res.json({
       id,
-      captcha_id: id,
+
+      captcha_id:
+        id,
+
       text,
-      code: text,
-      captcha: text,
+
+      code:
+        text,
     });
   }
 );
@@ -1076,103 +1374,114 @@ app.post(
       if (
         !username ||
         !email ||
-        !password
+        !password ||
+        !captcha
       ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Заполните все поля',
-          });
+        return res.status(400).json({
+          error:
+            'Заполните все поля',
+        });
+      }
+
+      if (username.length < 2) {
+        return res.status(400).json({
+          error:
+            'Username слишком короткий',
+        });
+      }
+
+      if (password.length < 6) {
+        return res.status(400).json({
+          error:
+            'Пароль минимум 6 символов',
+        });
+      }
+
+      cleanupCaptchas();
+
+      let entry =
+        captchaId
+          ? captchas.get(
+              captchaId
+            )
+          : null;
+
+      let entryId =
+        captchaId || null;
+
+      if (!entry) {
+        for (
+          const [
+            id,
+            value,
+          ] of captchas
+        ) {
+          if (
+            value.expires >
+            Date.now()
+          ) {
+            entry = value;
+
+            entryId = id;
+          }
+        }
       }
 
       if (
-        password.length < 6
+        !entry ||
+        entry.expires <=
+          Date.now() ||
+        entry.text
+          .toUpperCase() !==
+          captcha
       ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Пароль должен содержать минимум 6 символов',
-          });
-      }
-
-      const storedCaptcha =
-        captchas.get(
-          captchaId
-        );
-
-      if (
-        !storedCaptcha ||
-        storedCaptcha.expires <
-          Date.now()
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'CAPTCHA истекла',
-          });
-      }
-
-      if (
-        storedCaptcha.text !==
-        captcha
-      ) {
-        captchas.delete(
-          captchaId
-        );
-
-        return res
-          .status(400)
-          .json({
-            error:
-              'Неверная CAPTCHA',
-          });
+        return res.status(400).json({
+          error:
+            'Неверная CAPTCHA',
+        });
       }
 
       captchas.delete(
-        captchaId
+        entryId
       );
 
-      const exists =
-        await pool.query(
-          `
+      const existing =
+        await pool.query(`
           SELECT id
           FROM users
-          WHERE LOWER(email) = LOWER($1)
-             OR LOWER(username) = LOWER($2)
+          WHERE
+            LOWER(username) =
+              LOWER($1)
+            OR
+            LOWER(email) =
+              LOWER($2)
           LIMIT 1
-          `,
-          [
-            email,
-            username,
-          ]
-        );
+        `, [
+          username,
+          email,
+        ]);
 
-      if (exists.rows[0]) {
-        return res
-          .status(409)
-          .json({
-            error:
-              'Пользователь или email уже существует',
-          });
+      if (
+        existing.rows.length
+      ) {
+        return res.status(409).json({
+          error:
+            'Пользователь или email уже существует',
+        });
       }
 
-      const passwordHash =
-        hashPassword(
-          password
-        );
-
       const result =
-        await pool.query(
-          `
+        await pool.query(`
           INSERT INTO users (
             username,
             email,
             password_hash
           )
-          VALUES ($1, $2, $3)
+          VALUES (
+            $1,
+            $2,
+            $3
+          )
           RETURNING
             id,
             username,
@@ -1181,27 +1490,30 @@ app.post(
             avatar_url,
             subscription_tier,
             created_at
-          `,
-          [
-            username,
-            email,
-            passwordHash,
-          ]
-        );
+        `, [
+          username,
+          email,
+          hashPassword(
+            password
+          ),
+        ]);
 
       const user =
         result.rows[0];
 
       const token =
-        createSession(
-          user
-        );
+        createSession(user);
 
-      res.status(201).json({
+      return res.status(201).json({
         ok: true,
+
         token,
-        access_token: token,
-        user: safeUser(user),
+
+        access_token:
+          token,
+
+        user:
+          safeUser(user),
       });
     } catch (error) {
       console.error(
@@ -1209,12 +1521,10 @@ app.post(
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Ошибка регистрации',
-        });
+      return res.status(500).json({
+        error:
+          'Ошибка сервера',
+      });
     }
   }
 );
@@ -1233,7 +1543,7 @@ app.post(
           req.body?.email ||
           req.body?.username,
           255
-        );
+        ).toLowerCase();
 
       const password =
         String(
@@ -1244,33 +1554,26 @@ app.post(
         !login ||
         !password
       ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Введите логин и пароль',
-          });
+        return res.status(400).json({
+          error:
+            'Введите логин и пароль',
+        });
       }
 
       const result =
-        await pool.query(
-          `
-          SELECT
-            id,
-            username,
-            email,
-            password_hash,
-            bio,
-            avatar_url,
-            subscription_tier,
-            created_at
+        await pool.query(`
+          SELECT *
           FROM users
-          WHERE LOWER(email) = LOWER($1)
-             OR LOWER(username) = LOWER($1)
+          WHERE
+            LOWER(email) =
+              LOWER($1)
+            OR
+            LOWER(username) =
+              LOWER($1)
           LIMIT 1
-          `,
-          [login]
-        );
+        `, [
+          login,
+        ]);
 
       const user =
         result.rows[0];
@@ -1282,25 +1585,28 @@ app.post(
           user.password_hash
         )
       ) {
-        return res
-          .status(401)
-          .json({
-            error:
-              'Неверный логин или пароль',
-          });
+        return res.status(401).json({
+          error:
+            'Неверный логин или пароль',
+        });
       }
 
+      const safe =
+        safeUser(user);
+
       const token =
-        createSession(
-          user
-        );
+        createSession(safe);
 
       res.json({
         ok: true,
+
         token,
-        access_token: token,
+
+        access_token:
+          token,
+
         user:
-          safeUser(user),
+          safe,
       });
     } catch (error) {
       console.error(
@@ -1308,12 +1614,10 @@ app.post(
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Ошибка входа',
-        });
+      res.status(500).json({
+        error:
+          'Ошибка сервера',
+      });
     }
   }
 );
@@ -1326,10 +1630,9 @@ app.get(
   '/api/auth/me',
   auth,
   (req, res) => {
-    res.json({
-      user:
-        safeUser(req.user),
-    });
+    res.json(
+      safeUser(req.user)
+    );
   }
 );
 
@@ -1355,7 +1658,56 @@ app.post(
    PROFILE
 ========================================================= */
 
-app.put(
+app.get(
+  '/api/profile/:id',
+  async (req, res) => {
+    try {
+      const result =
+        await pool.query(`
+          SELECT
+            id,
+            username,
+            email,
+            bio,
+            avatar_url,
+            subscription_tier,
+            created_at
+          FROM users
+          WHERE id = $1
+          LIMIT 1
+        `, [
+          req.params.id,
+        ]);
+
+      if (
+        !result.rows[0]
+      ) {
+        return res.status(404).json({
+          error:
+            'User not found',
+        });
+      }
+
+      res.json(
+        safeUser(
+          result.rows[0]
+        )
+      );
+    } catch (error) {
+      console.error(
+        'Profile error:',
+        error
+      );
+
+      res.status(500).json({
+        error:
+          'Server error',
+      });
+    }
+  }
+);
+
+app.patch(
   '/api/profile',
   auth,
   async (req, res) => {
@@ -1364,7 +1716,8 @@ app.put(
         cleanString(
           req.body?.username,
           64
-        );
+        ) ||
+        req.user.username;
 
       const bio =
         cleanString(
@@ -1372,50 +1725,17 @@ app.put(
           1000
         );
 
-      if (!username) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Username не может быть пустым',
-          });
-      }
-
-      const duplicate =
-        await pool.query(
-          `
-          SELECT id
-          FROM users
-          WHERE LOWER(username) = LOWER($1)
-            AND id <> $2
-          LIMIT 1
-          `,
-          [
-            username,
-            req.user.id,
-          ]
-        );
-
-      if (
-        duplicate.rows[0]
-      ) {
-        return res
-          .status(409)
-          .json({
-            error:
-              'Этот username уже занят',
-          });
-      }
-
       const result =
-        await pool.query(
-          `
+        await pool.query(`
           UPDATE users
+
           SET
             username = $1,
             bio = $2,
             updated_at = NOW()
+
           WHERE id = $3
+
           RETURNING
             id,
             username,
@@ -1424,16 +1744,15 @@ app.put(
             avatar_url,
             subscription_tier,
             created_at
-          `,
-          [
-            username,
-            bio,
-            req.user.id,
-          ]
-        );
+        `, [
+          username,
+          bio,
+          req.user.id,
+        ]);
 
       res.json({
         ok: true,
+
         user:
           safeUser(
             result.rows[0]
@@ -1445,12 +1764,20 @@ app.put(
         error
       );
 
-      res
-        .status(500)
-        .json({
+      if (
+        error.code ===
+        '23505'
+      ) {
+        return res.status(409).json({
           error:
-            'Не удалось сохранить профиль',
+            'Такой username уже занят',
         });
+      }
+
+      res.status(500).json({
+        error:
+          'Ошибка сохранения профиля',
+      });
     }
   }
 );
@@ -1462,25 +1789,63 @@ app.put(
 const TRACK_SELECT = `
   SELECT
     t.id,
+
     t.title,
+
     t.duration,
+
     t.audio_url,
+
     t.genre,
+
     t.plays_count,
+
+    t.plays_count AS plays,
+
+    t.plays_count AS play_count,
+
     t.is_premium,
+
     t.telegram_file_id,
+
     t.telegram_channel_id,
+
     t.telegram_message_id,
+
     t.cover_url,
+
     t.created_at,
-    t.updated_at,
 
-    a.name AS artist_name,
-    a.avatar_url AS artist_avatar,
+    COALESCE(
+      a.name,
+      'Неизвестный артист'
+    ) AS artist_name,
 
-    al.title AS album_name,
-    al.cover_url AS album_cover_url,
-    al.year
+    COALESCE(
+      a.avatar_url,
+      ''
+    ) AS artist_avatar,
+
+    COALESCE(
+      al.title,
+      'Без альбома'
+    ) AS album_name,
+
+    COALESCE(
+      al.title,
+      'Без альбома'
+    ) AS album_title,
+
+    COALESCE(
+      al.cover_url,
+      t.cover_url,
+      ''
+    ) AS album_cover_url,
+
+    COALESCE(
+      al.year,
+      0
+    ) AS year
 
   FROM tracks t
 
@@ -1501,56 +1866,134 @@ app.get(
     try {
       const search =
         cleanString(
-          req.query?.search,
-          255
+          req.query.search,
+          200
+        );
+
+      const genre =
+        cleanString(
+          req.query.genre,
+          100
+        );
+
+      const sort =
+        cleanString(
+          req.query.sort,
+          50
+        ).toLowerCase();
+
+      const limitRaw =
+        Number(
+          req.query.limit || 100
         );
 
       const limit =
         Math.min(
           Math.max(
-            Number(
-              req.query?.limit || 100
-            ),
+            Number.isFinite(
+              limitRaw
+            )
+              ? Math.floor(
+                  limitRaw
+                )
+              : 100,
             1
           ),
-          500
+          200
         );
 
-      let query =
-        `${TRACK_SELECT}`;
+      let sql =
+        TRACK_SELECT;
 
       const params = [];
+
+      const where = [];
 
       if (search) {
         params.push(
           `%${search}%`
         );
 
-        query += `
-          WHERE
-            LOWER(t.title)
-              LIKE LOWER($1)
-            OR LOWER(COALESCE(a.name, ''))
-              LIKE LOWER($1)
-            OR LOWER(COALESCE(al.title, ''))
-              LIKE LOWER($1)
-            OR LOWER(COALESCE(t.genre, ''))
-              LIKE LOWER($1)
+        const p =
+          params.length;
+
+        where.push(`
+          (
+            t.title ILIKE $${p}
+
+            OR
+            COALESCE(
+              a.name,
+              ''
+            ) ILIKE $${p}
+
+            OR
+            COALESCE(
+              al.title,
+              ''
+            ) ILIKE $${p}
+
+            OR
+            COALESCE(
+              t.genre,
+              ''
+            ) ILIKE $${p}
+          )
+        `);
+      }
+
+      if (genre) {
+        params.push(
+          genre
+        );
+
+        where.push(
+          `t.genre = $${params.length}`
+        );
+      }
+
+      if (where.length) {
+        sql +=
+          ` WHERE ${where.join(
+            ' AND '
+          )}`;
+      }
+
+      if (
+        sort ===
+          'popular' ||
+        sort === 'plays'
+      ) {
+        sql += `
+          ORDER BY
+            t.plays_count DESC,
+            t.created_at DESC
+        `;
+      } else if (
+        sort === 'oldest'
+      ) {
+        sql += `
+          ORDER BY
+            t.created_at ASC
+        `;
+      } else {
+        sql += `
+          ORDER BY
+            t.created_at DESC,
+            t.plays_count DESC
         `;
       }
 
-      params.push(limit);
+      params.push(
+        limit
+      );
 
-      query += `
-        ORDER BY
-          t.created_at DESC,
-          t.id DESC
-        LIMIT $${params.length}
-      `;
+      sql +=
+        ` LIMIT $${params.length}`;
 
       const result =
         await pool.query(
-          query,
+          sql,
           params
         );
 
@@ -1561,16 +2004,17 @@ app.get(
       );
     } catch (error) {
       console.error(
-        'Tracks GET error:',
+        'Tracks error:',
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Не удалось получить треки',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+
+        details:
+          error.message,
+      });
     }
   }
 );
@@ -1583,39 +2027,23 @@ app.get(
   '/api/tracks/:id',
   async (req, res) => {
     try {
-      const id =
-        Number(req.params.id);
-
-      if (
-        !Number.isInteger(id)
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Неверный ID трека',
-          });
-      }
-
       const result =
         await pool.query(
-          `
-          ${TRACK_SELECT}
-          WHERE t.id = $1
-          LIMIT 1
-          `,
-          [id]
+          `${TRACK_SELECT}
+           WHERE t.id = $1
+           LIMIT 1`,
+          [
+            req.params.id,
+          ]
         );
 
       if (
         !result.rows[0]
       ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              'Трек не найден',
-          });
+        return res.status(404).json({
+          error:
+            'Трек не найден',
+        });
       }
 
       res.json(
@@ -1625,73 +2053,95 @@ app.get(
       );
     } catch (error) {
       console.error(
-        'Track GET error:',
+        'Track error:',
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
 
 /* =========================================================
-   TRACK PLAY COUNT
+   PLAY COUNT
 ========================================================= */
 
 app.post(
   '/api/tracks/:id/play',
+  optionalAuth,
   async (req, res) => {
     try {
-      const id =
-        Number(req.params.id);
+      const trackId =
+        Number(
+          req.params.id
+        );
 
       if (
-        !Number.isInteger(id)
+        !Number.isInteger(
+          trackId
+        )
       ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Неверный ID трека',
-          });
+        return res.status(400).json({
+          error:
+            'Неверный ID трека',
+        });
       }
 
       const result =
-        await pool.query(
-          `
+        await pool.query(`
           UPDATE tracks
+
           SET
             plays_count =
               COALESCE(
                 plays_count,
                 0
               ) + 1,
-            updated_at = NOW()
+
+            updated_at =
+              NOW()
+
           WHERE id = $1
+
           RETURNING
+            id,
             plays_count
-          `,
-          [id]
-        );
+        `, [
+          trackId,
+        ]);
 
       if (
         !result.rows[0]
       ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              'Трек не найден',
-          });
+        return res.status(404).json({
+          error:
+            'Трек не найден',
+        });
+      }
+
+      if (req.user) {
+        await pool.query(`
+          INSERT INTO
+            listening_history (
+              user_id,
+              track_id
+            )
+          VALUES (
+            $1,
+            $2
+          )
+        `, [
+          req.user.id,
+          trackId,
+        ]);
       }
 
       res.json({
         ok: true,
+
         plays:
           Number(
             result.rows[0]
@@ -1700,19 +2150,70 @@ app.post(
       });
     } catch (error) {
       console.error(
-        'Play count error:',
+        'Play error:',
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
+
+/* =========================================================
+   TELEGRAM API
+========================================================= */
+
+async function telegramApi(
+  method,
+  body
+) {
+  if (!BOT_TOKEN) {
+    throw new Error(
+      'TELEGRAM_BOT_TOKEN is not configured'
+    );
+  }
+
+  const response =
+    await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/${method}`,
+      {
+        method:
+          'POST',
+
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+
+        body:
+          JSON.stringify(
+            body
+          ),
+      }
+    );
+
+  const data =
+    await response
+      .json()
+      .catch(
+        () => ({})
+      );
+
+  if (
+    !response.ok ||
+    !data.ok
+  ) {
+    throw new Error(
+      data.description ||
+        `Telegram HTTP ${response.status}`
+    );
+  }
+
+  return data.result;
+}
 
 /* =========================================================
    AUDIO
@@ -1722,69 +2223,41 @@ app.get(
   '/api/tracks/:id/audio',
   async (req, res) => {
     try {
-      const id =
-        Number(req.params.id);
-
-      if (
-        !Number.isInteger(id)
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Неверный ID',
-          });
-      }
-
       const result =
-        await pool.query(
-          `
+        await pool.query(`
           SELECT
             id,
+            telegram_file_id,
             audio_url,
-            telegram_file_id
+            title
           FROM tracks
           WHERE id = $1
           LIMIT 1
-          `,
-          [id]
-        );
+        `, [
+          req.params.id,
+        ]);
+
+      if (
+        !result.rows[0]
+      ) {
+        return res.status(404).json({
+          error:
+            'Трек не найден',
+        });
+      }
 
       const track =
         result.rows[0];
 
-      if (!track) {
-        return res
-          .status(404)
-          .json({
-            error:
-              'Трек не найден',
-          });
-      }
-
       /*
-       * If a direct audio URL exists,
-       * redirect browser to it.
-       */
+       =====================================================
+       TELEGRAM AUDIO
+       =====================================================
+      */
 
       if (
-        track.audio_url &&
-        !track.audio_url.includes(
-          `/api/tracks/${id}/audio`
-        )
-      ) {
-        return res.redirect(
-          track.audio_url
-        );
-      }
-
-      /*
-       * Telegram file streaming.
-       */
-
-      if (
-        BOT_TOKEN &&
-        track.telegram_file_id
+        track.telegram_file_id &&
+        BOT_TOKEN
       ) {
         const file =
           await telegramApi(
@@ -1796,36 +2269,154 @@ app.get(
           );
 
         if (
-          file &&
-          file.file_path
+          !file ||
+          !file.file_path
         ) {
-          const telegramUrl =
-            `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-
-          return res.redirect(
-            telegramUrl
+          throw new Error(
+            'Telegram file path not found'
           );
         }
+
+        const upstreamUrl =
+          `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+
+        const upstream =
+          await fetch(
+            upstreamUrl
+          );
+
+        if (
+          !upstream.ok ||
+          !upstream.body
+        ) {
+          return res.status(502).json({
+            error:
+              'Не удалось получить аудио из Telegram',
+          });
+        }
+
+        res.status(200);
+
+        res.setHeader(
+          'Content-Type',
+          upstream.headers.get(
+            'content-type'
+          ) ||
+            'audio/mpeg'
+        );
+
+        const contentLength =
+          upstream.headers.get(
+            'content-length'
+          );
+
+        if (
+          contentLength
+        ) {
+          res.setHeader(
+            'Content-Length',
+            contentLength
+          );
+        }
+
+        res.setHeader(
+          'Cache-Control',
+          'public, max-age=3600'
+        );
+
+        res.setHeader(
+          'Accept-Ranges',
+          'bytes'
+        );
+
+        await pool.query(`
+          UPDATE tracks
+          SET
+            plays_count =
+              COALESCE(
+                plays_count,
+                0
+              ) + 1,
+
+            updated_at =
+              NOW()
+
+          WHERE id = $1
+        `, [
+          track.id,
+        ]);
+
+        const reader =
+          upstream.body
+            .getReader();
+
+        try {
+          while (true) {
+            const {
+              done,
+              value,
+            } =
+              await reader.read();
+
+            if (done) {
+              break;
+            }
+
+            if (
+              !res.write(
+                Buffer.from(
+                  value
+                )
+              )
+            ) {
+              await new Promise(
+                resolve =>
+                  res.once(
+                    'drain',
+                    resolve
+                  )
+              );
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        return res.end();
       }
 
-      return res
-        .status(404)
-        .json({
-          error:
-            'Аудиофайл недоступен',
-        });
+      /*
+       =====================================================
+       EXTERNAL AUDIO URL
+       =====================================================
+      */
+
+      if (
+        track.audio_url
+      ) {
+        return res.redirect(
+          track.audio_url
+        );
+      }
+
+      return res.status(404).json({
+        error:
+          'У этого трека нет аудиофайла',
+      });
     } catch (error) {
       console.error(
         'Audio error:',
         error
       );
 
-      res
-        .status(500)
-        .json({
+      if (
+        !res.headersSent
+      ) {
+        res.status(500).json({
           error:
-            'Не удалось получить аудио',
+            'Ошибка выдачи аудио',
         });
+      }
     }
   }
 );
@@ -1840,17 +2431,20 @@ app.get(
   async (req, res) => {
     try {
       const result =
-        await pool.query(
-          `
+        await pool.query(`
           ${TRACK_SELECT}
+
           JOIN favorites f
             ON f.track_id = t.id
-          WHERE f.user_id = $1
+
+          WHERE
+            f.user_id = $1
+
           ORDER BY
             f.created_at DESC
-          `,
-          [req.user.id]
-        );
+        `, [
+          req.user.id,
+        ]);
 
       res.json(
         result.rows.map(
@@ -1863,12 +2457,10 @@ app.get(
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
@@ -1883,41 +2475,31 @@ app.post(
           req.params.trackId
         );
 
-      if (
-        !Number.isInteger(
-          trackId
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Неверный ID',
-          });
-      }
-
-      await pool.query(
-        `
+      await pool.query(`
         INSERT INTO favorites (
           user_id,
           track_id
         )
-        VALUES ($1, $2)
+        VALUES (
+          $1,
+          $2
+        )
+
         ON CONFLICT (
           user_id,
           track_id
         )
         DO NOTHING
-        `,
-        [
-          req.user.id,
-          trackId,
-        ]
-      );
+      `, [
+        req.user.id,
+        trackId,
+      ]);
 
       res.json({
         ok: true,
-        favorite: true,
+
+        favorite:
+          true,
       });
     } catch (error) {
       console.error(
@@ -1925,12 +2507,10 @@ app.post(
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
@@ -1940,26 +2520,26 @@ app.delete(
   auth,
   async (req, res) => {
     try {
-      const trackId =
+      await pool.query(`
+        DELETE FROM favorites
+
+        WHERE
+          user_id = $1
+
+          AND
+          track_id = $2
+      `, [
+        req.user.id,
         Number(
           req.params.trackId
-        );
-
-      await pool.query(
-        `
-        DELETE FROM favorites
-        WHERE user_id = $1
-          AND track_id = $2
-        `,
-        [
-          req.user.id,
-          trackId,
-        ]
-      );
+        ),
+      ]);
 
       res.json({
         ok: true,
-        favorite: false,
+
+        favorite:
+          false,
       });
     } catch (error) {
       console.error(
@@ -1967,12 +2547,10 @@ app.delete(
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
@@ -1987,57 +2565,26 @@ app.get(
   async (req, res) => {
     try {
       const result =
-        await pool.query(
-          `
-          SELECT
-            h.id AS history_id,
-            h.played_at,
-            t.id,
-            t.title,
-            t.duration,
-            t.audio_url,
-            t.genre,
-            t.plays_count,
-            t.is_premium,
-            t.cover_url,
+        await pool.query(`
+          ${TRACK_SELECT}
 
-            a.name AS artist_name,
-            a.avatar_url AS artist_avatar,
+          JOIN listening_history h
+            ON h.track_id = t.id
 
-            al.title AS album_name,
-            al.cover_url AS album_cover_url,
-            al.year
-
-          FROM listening_history h
-
-          JOIN tracks t
-            ON t.id = h.track_id
-
-          LEFT JOIN artists a
-            ON a.id = t.artist_id
-
-          LEFT JOIN albums al
-            ON al.id = t.album_id
-
-          WHERE h.user_id = $1
+          WHERE
+            h.user_id = $1
 
           ORDER BY
             h.played_at DESC
 
           LIMIT 100
-          `,
-          [req.user.id]
-        );
+        `, [
+          req.user.id,
+        ]);
 
       res.json(
         result.rows.map(
-          row => ({
-            ...normalizeTrack(
-              row
-            ),
-            played_at:
-              row.played_at,
-          })
+          normalizeTrack
         )
       );
     } catch (error) {
@@ -2046,83 +2593,10 @@ app.get(
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
-    }
-  }
-);
-
-app.post(
-  '/api/history/:trackId',
-  auth,
-  async (req, res) => {
-    try {
-      const trackId =
-        Number(
-          req.params.trackId
-        );
-
-      if (
-        !Number.isInteger(
-          trackId
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Неверный ID',
-          });
-      }
-
-      await pool.query(
-        `
-        INSERT INTO listening_history (
-          user_id,
-          track_id
-        )
-        VALUES ($1, $2)
-        `,
-        [
-          req.user.id,
-          trackId,
-        ]
-      );
-
-      await pool.query(
-        `
-        UPDATE tracks
-        SET
-          plays_count =
-            COALESCE(
-              plays_count,
-              0
-            ) + 1,
-          updated_at = NOW()
-        WHERE id = $1
-        `,
-        [trackId]
-      );
-
-      res.json({
-        ok: true,
+      res.status(500).json({
+        error:
+          'Server error',
       });
-    } catch (error) {
-      console.error(
-        'History POST error:',
-        error
-      );
-
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
     }
   }
 );
@@ -2137,46 +2611,50 @@ app.get(
   async (req, res) => {
     try {
       const playlists =
-        await pool.query(
-          `
+        await pool.query(`
           SELECT
             id,
             name,
             is_public AS public,
             created_at
+
           FROM playlists
-          WHERE user_id = $1
+
+          WHERE
+            user_id = $1
+
           ORDER BY
             created_at DESC
-          `,
-          [req.user.id]
-        );
+        `, [
+          req.user.id,
+        ]);
 
       const output = [];
 
       for (
         const playlist
-        of playlists.rows
+          of playlists.rows
       ) {
         const tracks =
-          await pool.query(
-            `
+          await pool.query(`
             ${TRACK_SELECT}
 
             JOIN playlist_tracks pt
               ON pt.track_id = t.id
 
-            WHERE pt.playlist_id = $1
+            WHERE
+              pt.playlist_id = $1
 
             ORDER BY
               pt.position ASC,
               pt.track_id ASC
-            `,
-            [playlist.id]
-          );
+          `, [
+            playlist.id,
+          ]);
 
         output.push({
           ...playlist,
+
           tracks:
             tracks.rows.map(
               normalizeTrack
@@ -2184,19 +2662,19 @@ app.get(
         });
       }
 
-      res.json(output);
+      res.json(
+        output
+      );
     } catch (error) {
       console.error(
         'Playlists GET error:',
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
@@ -2219,55 +2697,52 @@ app.post(
         );
 
       if (!name) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Введите название плейлиста',
-          });
+        return res.status(400).json({
+          error:
+            'Введите название плейлиста',
+        });
       }
 
       const result =
-        await pool.query(
-          `
+        await pool.query(`
           INSERT INTO playlists (
             user_id,
             name,
             is_public
           )
-          VALUES ($1, $2, $3)
+
+          VALUES (
+            $1,
+            $2,
+            $3
+          )
 
           RETURNING
             id,
             name,
             is_public AS public,
             created_at
-          `,
-          [
-            req.user.id,
-            name,
-            isPublic,
-          ]
-        );
+        `, [
+          req.user.id,
+          name,
+          isPublic,
+        ]);
 
-      res
-        .status(201)
-        .json({
-          ...result.rows[0],
-          tracks: [],
-        });
+      res.status(201).json({
+        ...result.rows[0],
+
+        tracks: [],
+      });
     } catch (error) {
       console.error(
         'Playlist create error:',
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
@@ -2289,36 +2764,39 @@ app.delete(
           req.params.id
         );
 
-      await client.query(
-        `
+      await client.query(`
         DELETE FROM playlist_tracks
-        WHERE playlist_id = $1
+
+        WHERE
+          playlist_id = $1
+
           AND EXISTS (
             SELECT 1
             FROM playlists
-            WHERE id = $1
+            WHERE
+              id = $1
               AND user_id = $2
           )
-        `,
-        [
-          id,
-          req.user.id,
-        ]
-      );
+      `, [
+        id,
+        req.user.id,
+      ]);
 
       const result =
-        await client.query(
-          `
+        await client.query(`
           DELETE FROM playlists
-          WHERE id = $1
-            AND user_id = $2
+
+          WHERE
+            id = $1
+
+            AND
+            user_id = $2
+
           RETURNING id
-          `,
-          [
-            id,
-            req.user.id,
-          ]
-        );
+        `, [
+          id,
+          req.user.id,
+        ]);
 
       await client.query(
         'COMMIT'
@@ -2327,12 +2805,10 @@ app.delete(
       if (
         !result.rows[0]
       ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              'Плейлист не найден',
-          });
+        return res.status(404).json({
+          error:
+            'Плейлист не найден',
+        });
       }
 
       res.json({
@@ -2343,19 +2819,19 @@ app.delete(
         .query(
           'ROLLBACK'
         )
-        .catch(() => {});
+        .catch(
+          () => {}
+        );
 
       console.error(
         'Playlist delete error:',
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     } finally {
       client.release();
     }
@@ -2386,43 +2862,38 @@ app.post(
           trackId
         )
       ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              'Неверный ID',
-          });
+        return res.status(400).json({
+          error:
+            'Неверный ID',
+        });
       }
 
       const owner =
-        await pool.query(
-          `
+        await pool.query(`
           SELECT id
           FROM playlists
-          WHERE id = $1
+
+          WHERE
+            id = $1
             AND user_id = $2
+
           LIMIT 1
-          `,
-          [
-            playlistId,
-            req.user.id,
-          ]
-        );
+        `, [
+          playlistId,
+          req.user.id,
+        ]);
 
       if (
         !owner.rows[0]
       ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              'Плейлист не найден',
-          });
+        return res.status(404).json({
+          error:
+            'Плейлист не найден',
+        });
       }
 
       const pos =
-        await pool.query(
-          `
+        await pool.query(`
           SELECT
             COALESCE(
               MAX(position),
@@ -2431,35 +2902,37 @@ app.post(
 
           FROM playlist_tracks
 
-          WHERE playlist_id = $1
-          `,
-          [playlistId]
-        );
+          WHERE
+            playlist_id = $1
+        `, [
+          playlistId,
+        ]);
 
-      await pool.query(
-        `
+      await pool.query(`
         INSERT INTO playlist_tracks (
           playlist_id,
           track_id,
           position
         )
-        VALUES ($1, $2, $3)
+
+        VALUES (
+          $1,
+          $2,
+          $3
+        )
 
         ON CONFLICT (
           playlist_id,
           track_id
         )
         DO NOTHING
-        `,
-        [
-          playlistId,
-          trackId,
-          Number(
-            pos.rows[0]
-              .position
-          ),
-        ]
-      );
+      `, [
+        playlistId,
+        trackId,
+        Number(
+          pos.rows[0].position
+        ),
+      ]);
 
       res.json({
         ok: true,
@@ -2470,12 +2943,10 @@ app.post(
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
@@ -2496,36 +2967,38 @@ app.delete(
         );
 
       const result =
-        await pool.query(
-          `
+        await pool.query(`
           DELETE FROM playlist_tracks pt
 
           USING playlists p
 
-          WHERE pt.playlist_id = p.id
-            AND p.id = $1
-            AND p.user_id = $2
-            AND pt.track_id = $3
+          WHERE
+            pt.playlist_id = p.id
+
+            AND
+            p.id = $1
+
+            AND
+            p.user_id = $2
+
+            AND
+            pt.track_id = $3
 
           RETURNING
             pt.track_id
-          `,
-          [
-            playlistId,
-            req.user.id,
-            trackId,
-          ]
-        );
+        `, [
+          playlistId,
+          req.user.id,
+          trackId,
+        ]);
 
       if (
         !result.rows[0]
       ) {
-        return res
-          .status(404)
-          .json({
-            error:
-              'Трек не найден в плейлисте',
-          });
+        return res.status(404).json({
+          error:
+            'Трек не найден в плейлисте',
+        });
       }
 
       res.json({
@@ -2537,65 +3010,13 @@ app.delete(
         error
       );
 
-      res
-        .status(500)
-        .json({
-          error:
-            'Server error',
-        });
+      res.status(500).json({
+        error:
+          'Server error',
+      });
     }
   }
 );
-
-/* =========================================================
-   TELEGRAM API
-========================================================= */
-
-async function telegramApi(
-  method,
-  payload = {}
-) {
-  if (!BOT_TOKEN) {
-    throw new Error(
-      'TELEGRAM_BOT_TOKEN is not configured'
-    );
-  }
-
-  const response =
-    await fetch(
-      `https://api.telegram.org/bot${BOT_TOKEN}/${method}`,
-      {
-        method: 'POST',
-
-        headers: {
-          'Content-Type':
-            'application/json',
-        },
-
-        body:
-          JSON.stringify(
-            payload
-          ),
-      }
-    );
-
-  const data =
-    await response
-      .json()
-      .catch(() => ({}));
-
-  if (
-    !response.ok ||
-    !data.ok
-  ) {
-    throw new Error(
-      data.description ||
-      `Telegram API error ${response.status}`
-    );
-  }
-
-  return data.result;
-}
 
 /* =========================================================
    TELEGRAM IMPORT
@@ -2622,8 +3043,8 @@ async function processTelegramUpdate(
     (
       msg.document &&
       String(
-        msg.document
-          .mime_type || ''
+        msg.document.mime_type ||
+          ''
       ).startsWith(
         'audio/'
       )
@@ -2639,23 +3060,27 @@ async function processTelegramUpdate(
     const title =
       cleanString(
         audio.title ||
-        String(
-          audio.file_name || ''
-        ).replace(
-          /\.[^.]+$/,
-          ''
-        ) ||
-        'Без названия',
+          String(
+            audio.file_name ||
+              ''
+          ).replace(
+            /\.[^.]+$/,
+            ''
+          ) ||
+          'Без названия',
         255
       );
 
     const artist =
       cleanString(
         audio.performer ||
-        String(
-          msg.caption || ''
-        ).split('\n')[0] ||
-        'Неизвестный исполнитель',
+          String(
+            msg.caption ||
+              ''
+          ).split(
+            '\n'
+          )[0] ||
+          'Неизвестный исполнитель',
         255
       );
 
@@ -2663,55 +3088,58 @@ async function processTelegramUpdate(
       Math.max(
         0,
         Number(
-          audio.duration || 0
+          audio.duration ||
+            0
         )
       );
 
     const fileId =
       audio.file_id;
 
-    const genre =
-      'Music';
-
     let artistId;
 
     const artistResult =
-      await pool.query(
-        `
+      await pool.query(`
         SELECT id
         FROM artists
-        WHERE LOWER(name) =
-              LOWER($1)
+
+        WHERE
+          LOWER(name) =
+          LOWER($1)
+
         LIMIT 1
-        `,
-        [artist]
-      );
+      `, [
+        artist,
+      ]);
 
     if (
       artistResult.rows[0]
     ) {
       artistId =
         artistResult
-          .rows[0].id;
+          .rows[0]
+          .id;
     } else {
       artistId =
         (
-          await pool.query(
-            `
+          await pool.query(`
             INSERT INTO artists (
               name
             )
+
             VALUES ($1)
+
             RETURNING id
-            `,
-            [artist]
-          )
-        ).rows[0].id;
+          `, [
+            artist,
+          ])
+        )
+          .rows[0]
+          .id;
     }
 
     const insert =
-      await pool.query(
-        `
+      await pool.query(`
         INSERT INTO tracks (
           title,
           artist_id,
@@ -2731,38 +3159,35 @@ async function processTelegramUpdate(
         )
 
         RETURNING id
-        `,
-        [
-          title,
-          artistId,
-          duration,
-          '',
-          genre,
-          fileId,
-        ]
-      );
+      `, [
+        title,
+        artistId,
+        duration,
+        '',
+        'Music',
+        fileId,
+      ]);
 
     const trackId =
-      insert.rows[0].id;
+      insert.rows[0]
+        .id;
 
     const audioUrl =
       `${apiBase()}/api/tracks/${trackId}/audio`;
 
-    await pool.query(
-      `
+    await pool.query(`
       UPDATE tracks
 
       SET
         audio_url = $1,
         updated_at = NOW()
 
-      WHERE id = $2
-      `,
-      [
-        audioUrl,
-        trackId,
-      ]
-    );
+      WHERE
+        id = $2
+    `, [
+      audioUrl,
+      trackId,
+    ]);
 
     let channelMessageId =
       null;
@@ -2779,7 +3204,9 @@ async function processTelegramUpdate(
               fileId,
 
             caption:
-              `🎵 ${title}\n👤 ${artist}\n🆔 ID: ${trackId}`,
+              `🎵 ${title}\n` +
+              `👤 ${artist}\n` +
+              `🆔 ID: ${trackId}`,
           }
         );
 
@@ -2790,25 +3217,30 @@ async function processTelegramUpdate(
       if (
         channelMessageId
       ) {
-        await pool.query(
-          `
+        await pool.query(`
           UPDATE tracks
 
           SET
-            telegram_channel_id = $1,
-            telegram_message_id = $2,
-            updated_at = NOW()
+            telegram_channel_id =
+              $1,
 
-          WHERE id = $3
-          `,
-          [
-            String(
-              CHANNEL_ID
-            ),
-            channelMessageId,
-            trackId,
-          ]
-        );
+            telegram_message_id =
+              $2,
+
+            updated_at =
+              NOW()
+
+          WHERE
+            id = $3
+        `, [
+          String(
+            CHANNEL_ID
+          ),
+
+          channelMessageId,
+
+          trackId,
+        ]);
       }
     }
 
@@ -2851,10 +3283,6 @@ async function processTelegramUpdate(
   }
 }
 
-/* =========================================================
-   TELEGRAM POLLING
-========================================================= */
-
 async function botLoop() {
   if (
     !BOT_TOKEN ||
@@ -2877,17 +3305,19 @@ async function botLoop() {
             offset:
               telegramOffset,
 
-            timeout: 25,
+            timeout:
+              25,
 
-            allowed_updates: [
-              'message',
-            ],
+            allowed_updates:
+              [
+                'message',
+              ],
           }
         );
 
       for (
         const update
-        of updates || []
+          of updates || []
       ) {
         telegramOffset =
           Number(
@@ -2921,23 +3351,21 @@ async function botLoop() {
 
 app.use(
   (req, res) => {
-    res
-      .status(404)
-      .json({
-        error:
-          'Route not found',
+    res.status(404).json({
+      error:
+        'Route not found',
 
-        method:
-          req.method,
+      method:
+        req.method,
 
-        path:
-          req.path,
-      });
+      path:
+        req.path,
+    });
   }
 );
 
 /* =========================================================
-   EXPRESS ERROR
+   ERROR HANDLER
 ========================================================= */
 
 app.use(
@@ -2958,12 +3386,10 @@ app.use(
       return;
     }
 
-    res
-      .status(500)
-      .json({
-        error:
-          'Internal server error',
-      });
+    res.status(500).json({
+      error:
+        'Internal server error',
+    });
   }
 );
 
@@ -3054,7 +3480,9 @@ async function start() {
 
     await pool
       .end()
-      .catch(() => {});
+      .catch(
+        () => {}
+      );
 
     process.exit(1);
   }
@@ -3085,7 +3513,9 @@ async function shutdown(
 
   await pool
     .end()
-    .catch(() => {});
+    .catch(
+      () => {}
+    );
 
   process.exit(0);
 }
@@ -3093,13 +3523,17 @@ async function shutdown(
 process.on(
   'SIGTERM',
   () =>
-    shutdown('SIGTERM')
+    shutdown(
+      'SIGTERM'
+    )
 );
 
 process.on(
   'SIGINT',
   () =>
-    shutdown('SIGINT')
+    shutdown(
+      'SIGINT'
+    )
 );
 
 process.on(
@@ -3121,5 +3555,9 @@ process.on(
     );
   }
 );
+
+/* =========================================================
+   START APPLICATION
+========================================================= */
 
 start();
