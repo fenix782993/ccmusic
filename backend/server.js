@@ -2,6 +2,11 @@ const { Telegraf, Markup } = require('telegraf');
 const express = require('express');
 const path = require('path');
 const { Pool } = require('pg');
+const { Telegraf, Markup } = require('telegraf');
+const express = require('express');
+const fs = require('fs');
+const path = require('path');
+const { Pool } = require('pg');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
 const app = express();
