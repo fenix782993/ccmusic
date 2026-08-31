@@ -4,7 +4,7 @@ import {
   Play, Pause, SkipBack, SkipForward, Volume2,  
   Repeat, Shuffle, Crown, Flame, Clock, Menu, X,
   Sliders, VolumeX, Radio, Sparkles, Shield,
-  Share2, MoreVertical, Plus, Check, Compass,
+  Share2, MoreHorizontal, Plus, Check, Compass,
   TrendingUp, Music, Upload
 } from 'lucide-react';
 
