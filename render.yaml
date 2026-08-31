@@ -2,20 +2,17 @@ services:
   - type: web
     name: fenix-music-backend
     env: node
-    region: frankfurt
-    plan: free
+    rootDir: backend
     buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: fenix-db
-          property: connectionString
-      - key: PORT
-        value: 5000
-
-databases:
-  - name: fenix-db
-    plan: free
-    databaseName: fenix_music
-    user: fenix_admin
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHANNEL_ID
+        sync: false
+      - key: PUBLIC_API_URL
+        sync: false
+      - key: NODE_ENV
+        value: production
