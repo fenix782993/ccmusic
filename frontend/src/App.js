@@ -5,7 +5,7 @@ import {
   Repeat, Shuffle, Crown, Flame, Clock, Menu, X,
   Sliders, ListMusic, VolumeX, Radio, Sparkles, Shield,
   Share2, Download, MoreVertical, Plus, Check, Compass,
-  TrendingUp, Award, Music, Mic2, Headphones, Layers
+  TrendingUp, Music, Mic2, Headphones, Layers
 } from 'lucide-react';
 
 export default function FenixMusicApp() {
@@ -85,7 +85,6 @@ export default function FenixMusicApp() {
         if (repeatMode === 'one') {
           audioRef.current.play();
         } else {
-          // Автопереключение на следующий трек
           setIsPlaying(false);
         }
       }} />
@@ -353,7 +352,7 @@ export default function FenixMusicApp() {
             </div>
           )}
 
-          {/* TAB: EXPLORE / SEARCH */}
+          {/* TAB: EXPLORE */}
           {currentTab === 'explore' && (
             <div className="space-y-6 animate-fade-in">
               <div className="flex items-center justify-between">
