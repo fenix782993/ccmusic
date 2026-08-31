@@ -1,9 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
 const express = require('express');
-const path = require('path');
-const { Pool } = require('pg');
-const { Telegraf, Markup } = require('telegraf');
-const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
@@ -30,7 +26,7 @@ pool.query(`
   )
 `).catch(err => console.error('Ошибка создания таблицы:', err));
 
-// ID вашего закрытого канала, куда бот будет скидывать треки (например: "-1001234567890" или "@channel_username")
+// ID вашего закрытого канала, куда бот будет скидывать треки
 const CHANNEL_ID = process.env.CHANNEL_ID;
 
 // Раздаем статику фронтенда (папка build после сборки)
@@ -54,12 +50,15 @@ bot.start((ctx) => {
 
 // Автоматическая обработка и сохранение трека
 bot.on('audio', async (ctx) => {
+  console.log('🎉 СРАБОТАЛ ЕВЕНТ AUDIO! Получен файл от пользователя:', ctx.from.id);
   try {
     const audio = ctx.message.audio;
     const fileId = audio.file_id;
     const title = audio.title || audio.file_name || `Трек_${Date.now()}`;
+    console.log('Название трека:', title);
 
     if (!CHANNEL_ID) {
+      console.log('ОШИБКА: Не задан CHANNEL_ID!');
       return ctx.reply('⚠️ Ошибка конфигурации: не указан CHANNEL_ID в переменных окружения бота.');
     }
 
@@ -75,7 +74,7 @@ bot.on('audio', async (ctx) => {
 
     ctx.reply(`✅ Трек *"${title}"* успешно добавлен в медиатеку и опубликован на сайте!`, { parse_mode: 'Markdown' });
   } catch (error) {
-    console.error('Ошибка при сохранении трека:', error);
+    console.error('КРИТИЧЕСКАЯ ОШИБКА ВНУТРИ АУДИО:', error);
     ctx.reply('❌ Произошла ошибка при сохранении трека. Попробуйте еще раз.');
   }
 });
