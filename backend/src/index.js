@@ -1,44 +1,16 @@
 "use strict";
 
+const express = require("express");
+const cors = require("cors");
+const { Pool } = require("pg");
+const crypto = require("crypto");
+
 /*
 =========================================================
  FENIX MUSIC BACKEND 2.0.0
- Один файл: src/index.js
-
- Поддерживает App.js:
- - GET /
- - GET /api
- - GET /api/health
- - GET /api/tracks
- - GET /api/tracks/:id/audio
- - GET /api/auth/captcha
- - POST /api/auth/register
- - POST /api/auth/login
- - GET /api/auth/me
- - GET /api/profile
- - PUT /api/profile
- - GET /api/favorites
- - POST /api/favorites
- - DELETE /api/favorites/:trackId
- - POST /api/history
- - GET /api/history
- - GET /api/playlists
- - POST /api/playlists
- - PUT /api/playlists/:id
- - DELETE /api/playlists/:id
- - GET /api/notifications
- - POST /api/notifications
- - PATCH /api/notifications/read
- - DELETE /api/notifications
- - POST /api/tracks/:id/play
+ Node.js + Express + PostgreSQL
 =========================================================
 */
-
-const express = require("express");
-const cors = require("cors");
-const crypto = require("crypto");
-const bcrypt = require("bcryptjs");
-const { Pool } = require("pg");
 
 const app = express();
 
@@ -49,139 +21,214 @@ const DATABASE_URL =
   process.env.POSTGRES_URL ||
   process.env.POSTGRESQL_URL;
 
-const FRONTEND_URL =
-  process.env.FRONTEND_URL ||
-  process.env.FRONTEND_URLS ||
-  "*";
-
 if (!DATABASE_URL) {
-  console.error(
-    "❌ DATABASE_URL is not configured."
-  );
+  console.error("❌ DATABASE_URL is not configured");
   process.exit(1);
 }
 
-/* ======================================================
-   EXPRESS
-====================================================== */
+/*
+=========================================================
+ DATABASE
+=========================================================
+*/
 
-app.disable("x-powered-by");
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+
+  ssl:
+    process.env.NODE_ENV === "production"
+      ? {
+          rejectUnauthorized: false,
+        }
+      : false,
+
+  max: 10,
+
+  idleTimeoutMillis: 30000,
+
+  connectionTimeoutMillis: 10000,
+});
+
+pool.on("error", (error) => {
+  console.error("PostgreSQL pool error:", error);
+});
+
+/*
+=========================================================
+ MIDDLEWARE
+=========================================================
+*/
 
 app.use(
   cors({
     origin: true,
     credentials: true,
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+      "OPTIONS",
+    ],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+    ],
   })
 );
 
-app.use(
-  express.json({
-    limit: "10mb",
-  })
-);
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-app.use(
-  express.urlencoded({
-    extended: true,
-    limit: "10mb",
-  })
-);
-
-/* ======================================================
-   POSTGRES
-====================================================== */
-
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl:
-    process.env.NODE_ENV === "production"
-      ? { rejectUnauthorized: false }
-      : false,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-});
-
-pool.on("error", (error) => {
-  console.error(
-    "PostgreSQL pool error:",
-    error
+app.use((req, res, next) => {
+  res.setHeader(
+    "Cache-Control",
+    "no-store"
   );
+
+  next();
 });
 
-/* ======================================================
-   HELPERS
-====================================================== */
+/*
+=========================================================
+ HELPERS
+=========================================================
+*/
 
-function jsonError(
-  res,
-  status,
-  message,
-  extra = {}
-) {
-  return res.status(status).json({
-    ok: false,
-    error: message,
-    ...extra,
-  });
+function now() {
+  return new Date();
 }
 
-function randomId() {
-  return crypto.randomUUID();
+function randomToken(size = 48) {
+  return crypto
+    .randomBytes(size)
+    .toString("hex");
 }
 
-function normalizeEmail(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase();
+function randomCaptcha(length = 6) {
+  const chars =
+    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+  let result = "";
+
+  for (let i = 0; i < length; i++) {
+    result +=
+      chars[
+        Math.floor(
+          Math.random() * chars.length
+        )
+      ];
+  }
+
+  return result;
 }
 
 function normalizeUsername(value) {
   return String(value || "")
     .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, 32);
+    .replace(/\s+/g, "")
+    .slice(0, 50);
 }
 
-function safeNumber(value, fallback = 0) {
-  const number = Number(value);
-
-  return Number.isFinite(number)
-    ? number
-    : fallback;
+function normalizeEmail(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .slice(0, 255);
 }
 
-function parseTrack(row) {
+function safeString(value, max = 1000) {
+  return String(value || "")
+    .trim()
+    .slice(0, max);
+}
+
+function getBearerToken(req) {
+  const authorization =
+    req.headers.authorization || "";
+
+  if (
+    authorization
+      .toLowerCase()
+      .startsWith("bearer ")
+  ) {
+    return authorization.slice(7).trim();
+  }
+
+  if (req.headers["x-session-token"]) {
+    return String(
+      req.headers["x-session-token"]
+    );
+  }
+
+  if (req.cookies?.fenix_token) {
+    return req.cookies.fenix_token;
+  }
+
+  return null;
+}
+
+function userResponse(user) {
+  if (!user) {
+    return null;
+  }
+
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    bio: user.bio || "",
+    avatar_url:
+      user.avatar_url || null,
+    created_at: user.created_at,
+  };
+}
+
+function normalizeTrack(row) {
   if (!row) {
     return null;
   }
 
   return {
     id: row.id,
-    title: row.title || "Без названия",
+
+    title:
+      row.title ||
+      "Без названия",
 
     artist_name:
       row.artist_name ||
-      row.artist ||
       "Неизвестный артист",
 
     album_name:
       row.album_name ||
-      row.album ||
-      "Без альбома",
+      "",
 
-    genre: row.genre || "Неизвестно",
-
-    duration: safeNumber(
-      row.duration,
-      0
-    ),
+    genre:
+      row.genre ||
+      "",
 
     year:
-      row.year !== null &&
-      row.year !== undefined
-        ? row.year
-        : null,
+      row.year ||
+      null,
+
+    duration:
+      Number(row.duration || 0),
+
+    plays:
+      Number(
+        row.plays ??
+          row.plays_count ??
+          0
+      ),
+
+    plays_count:
+      Number(
+        row.plays_count ??
+          row.plays ??
+          0
+      ),
 
     cover_url:
       row.cover_url ||
@@ -201,185 +248,150 @@ function parseTrack(row) {
       row.audio_url ||
       null,
 
-    plays: safeNumber(
-      row.plays_count,
-      0
-    ),
-
-    plays_count: safeNumber(
-      row.plays_count,
-      0
-    ),
+    telegram_file_id:
+      row.telegram_file_id ||
+      null,
 
     created_at:
-      row.created_at || null,
-
-    updated_at:
-      row.updated_at || null,
+      row.created_at ||
+      null,
   };
 }
 
-function getBearerToken(req) {
-  const header =
-    req.headers.authorization || "";
+/*
+=========================================================
+ PASSWORD HASH
+ Native Node.js crypto.
+ No bcrypt package required.
+=========================================================
+*/
 
-  if (!header.startsWith("Bearer ")) {
-    return null;
-  }
+function hashPassword(password) {
+  return new Promise(
+    (resolve, reject) => {
+      const salt =
+        crypto.randomBytes(16).toString(
+          "hex"
+        );
 
-  return header.slice(7).trim();
+      crypto.scrypt(
+        String(password),
+        salt,
+        64,
+        {
+          N: 16384,
+          r: 8,
+          p: 1,
+        },
+        (error, derivedKey) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve(
+            `scrypt:${salt}:${derivedKey.toString(
+              "hex"
+            )}`
+          );
+        }
+      );
+    }
+  );
 }
 
-function getToken(req) {
-  return (
-    getBearerToken(req) ||
-    req.headers["x-auth-token"] ||
-    req.query.token ||
-    null
+function verifyPassword(
+  password,
+  stored
+) {
+  return new Promise(
+    (resolve, reject) => {
+      try {
+        if (
+          !stored ||
+          !String(stored).startsWith(
+            "scrypt:"
+          )
+        ) {
+          resolve(false);
+          return;
+        }
+
+        const parts =
+          String(stored).split(":");
+
+        if (parts.length !== 3) {
+          resolve(false);
+          return;
+        }
+
+        const salt = parts[1];
+        const originalHash =
+          parts[2];
+
+        crypto.scrypt(
+          String(password),
+          salt,
+          64,
+          {
+            N: 16384,
+            r: 8,
+            p: 1,
+          },
+          (error, derivedKey) => {
+            if (error) {
+              reject(error);
+              return;
+            }
+
+            const calculated =
+              derivedKey.toString(
+                "hex"
+              );
+
+            try {
+              const a =
+                Buffer.from(
+                  originalHash,
+                  "hex"
+                );
+
+              const b =
+                Buffer.from(
+                  calculated,
+                  "hex"
+                );
+
+              if (
+                a.length !== b.length
+              ) {
+                resolve(false);
+                return;
+              }
+
+              resolve(
+                crypto.timingSafeEqual(
+                  a,
+                  b
+                )
+              );
+            } catch {
+              resolve(false);
+            }
+          }
+        );
+      } catch {
+        resolve(false);
+      }
+    }
   );
 }
 
 /*
-  Для этого простого backend токены хранятся
-  в PostgreSQL в таблице sessions.
+=========================================================
+ DATABASE INITIALIZATION
+=========================================================
 */
-
-async function getUserFromRequest(req) {
-  const token = getToken(req);
-
-  if (!token) {
-    return null;
-  }
-
-  const result = await pool.query(
-    `
-      SELECT
-        u.id,
-        u.username,
-        u.email,
-        u.bio,
-        u.avatar_url,
-        u.created_at,
-        s.token
-      FROM sessions s
-      JOIN users u
-        ON u.id = s.user_id
-      WHERE s.token = $1
-        AND (
-          s.expires_at IS NULL
-          OR s.expires_at > NOW()
-        )
-      LIMIT 1
-    `,
-    [token]
-  );
-
-  return result.rows[0] || null;
-}
-
-async function requireAuth(
-  req,
-  res,
-  next
-) {
-  try {
-    const user =
-      await getUserFromRequest(req);
-
-    if (!user) {
-      return jsonError(
-        res,
-        401,
-        "Требуется авторизация."
-      );
-    }
-
-    req.user = user;
-
-    next();
-  } catch (error) {
-    console.error(
-      "AUTH MIDDLEWARE:",
-      error
-    );
-
-    return jsonError(
-      res,
-      500,
-      "Ошибка проверки авторизации."
-    );
-  }
-}
-
-/* ======================================================
-   DATABASE
-====================================================== */
-
-async function tableExists(
-  tableName
-) {
-  const result = await pool.query(
-    `
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name = $1
-      ) AS exists
-    `,
-    [tableName]
-  );
-
-  return result.rows[0].exists;
-}
-
-async function columnExists(
-  tableName,
-  columnName
-) {
-  const result = await pool.query(
-    `
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-          AND table_name = $1
-          AND column_name = $2
-      ) AS exists
-    `,
-    [tableName, columnName]
-  );
-
-  return result.rows[0].exists;
-}
-
-async function addColumnIfMissing(
-  tableName,
-  columnName,
-  definition
-) {
-  if (
-    !(await tableExists(tableName))
-  ) {
-    return;
-  }
-
-  const exists =
-    await columnExists(
-      tableName,
-      columnName
-    );
-
-  if (!exists) {
-    console.log(
-      `Adding ${tableName}.${columnName}`
-    );
-
-    await pool.query(
-      `ALTER TABLE "${tableName}" ADD COLUMN "${columnName}" ${definition}`
-    );
-  }
-}
 
 async function initDatabase() {
   console.log(
@@ -390,83 +402,101 @@ async function initDatabase() {
     await pool.connect();
 
   try {
-    await client.query(
-      "SELECT 1"
-    );
-
-    console.log(
-      "PostgreSQL connection OK"
-    );
+    await client.query("BEGIN");
 
     /*
-    =====================================================
+    -----------------------------------------------------
     USERS
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
-        id UUID PRIMARY KEY,
-        username VARCHAR(32) NOT NULL,
+        id BIGSERIAL PRIMARY KEY,
+        username VARCHAR(50) NOT NULL,
         email VARCHAR(255) NOT NULL,
         password_hash TEXT NOT NULL,
         bio TEXT DEFAULT '',
         avatar_url TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
 
     /*
-    Старые базы могли не иметь этих колонок.
-    Добавляем безопасно.
+    Existing databases can have missing columns.
     */
 
-    await addColumnIfMissing(
-      "users",
-      "bio",
-      "TEXT DEFAULT ''"
-    );
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS
+      username VARCHAR(50)
+    `);
 
-    await addColumnIfMissing(
-      "users",
-      "avatar_url",
-      "TEXT"
-    );
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS
+      email VARCHAR(255)
+    `);
 
-    await addColumnIfMissing(
-      "users",
-      "created_at",
-      "TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-    );
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS
+      password_hash TEXT
+    `);
 
-    await addColumnIfMissing(
-      "users",
-      "updated_at",
-      "TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-    );
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS
+      bio TEXT DEFAULT ''
+    `);
+
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS
+      avatar_url TEXT
+    `);
+
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    `);
+
+    await client.query(`
+      ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     TRACKS
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS tracks (
         id BIGSERIAL PRIMARY KEY,
 
-        title TEXT NOT NULL DEFAULT 'Без названия',
+        title VARCHAR(255) NOT NULL,
 
-        artist_name TEXT NOT NULL DEFAULT 'Неизвестный артист',
+        artist_name VARCHAR(255)
+          DEFAULT 'Неизвестный артист',
 
-        album_name TEXT DEFAULT 'Без альбома',
+        album_name VARCHAR(255)
+          DEFAULT '',
 
-        genre TEXT DEFAULT 'Неизвестно',
-
-        duration INTEGER NOT NULL DEFAULT 0,
+        genre VARCHAR(100)
+          DEFAULT '',
 
         year INTEGER,
+
+        duration DOUBLE PRECISION
+          DEFAULT 0,
+
+        plays_count BIGINT
+          DEFAULT 0,
 
         cover_url TEXT,
 
@@ -476,293 +506,325 @@ async function initDatabase() {
 
         audio_url TEXT,
 
-        audio_file_url TEXT,
-
         telegram_file_id TEXT,
 
-        plays_count BIGINT NOT NULL DEFAULT 0,
-
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ
+          DEFAULT NOW()
       )
     `);
 
-    /*
-    ВАЖНО:
-    Создаём plays_count ДО индекса.
-    Это исправляет твою предыдущую ошибку:
-    column "plays_count" does not exist
-    */
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      title VARCHAR(255)
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "title",
-      "TEXT NOT NULL DEFAULT 'Без названия'"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      artist_name VARCHAR(255)
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "artist_name",
-      "TEXT NOT NULL DEFAULT 'Неизвестный артист'"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      album_name VARCHAR(255)
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "album_name",
-      "TEXT DEFAULT 'Без альбома'"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      genre VARCHAR(100)
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "genre",
-      "TEXT DEFAULT 'Неизвестно'"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      year INTEGER
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "duration",
-      "INTEGER NOT NULL DEFAULT 0"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      duration DOUBLE PRECISION
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "year",
-      "INTEGER"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      plays_count BIGINT DEFAULT 0
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "cover_url",
-      "TEXT"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      cover_url TEXT
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "album_cover_url",
-      "TEXT"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      album_cover_url TEXT
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "artist_avatar",
-      "TEXT"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      artist_avatar TEXT
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "audio_url",
-      "TEXT"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      audio_url TEXT
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "audio_file_url",
-      "TEXT"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      telegram_file_id TEXT
+    `);
 
-    await addColumnIfMissing(
-      "tracks",
-      "telegram_file_id",
-      "TEXT"
-    );
-
-    await addColumnIfMissing(
-      "tracks",
-      "plays_count",
-      "BIGINT NOT NULL DEFAULT 0"
-    );
-
-    await addColumnIfMissing(
-      "tracks",
-      "created_at",
-      "TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-    );
-
-    await addColumnIfMissing(
-      "tracks",
-      "updated_at",
-      "TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-    );
+    await client.query(`
+      ALTER TABLE tracks
+      ADD COLUMN IF NOT EXISTS
+      created_at TIMESTAMPTZ
+        DEFAULT NOW()
+    `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     SESSIONS
-    =====================================================
+    -----------------------------------------------------
+
+    Your previous error was:
+
+    user_id UUID
+    users.id BIGINT
+
+    We recreate sessions using BIGINT.
+    -----------------------------------------------------
     */
 
     await client.query(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      DROP TABLE IF EXISTS sessions
+    `);
+
+    await client.query(`
+      CREATE TABLE sessions (
+        id BIGSERIAL PRIMARY KEY,
+
+        user_id BIGINT NOT NULL
+          REFERENCES users(id)
+          ON DELETE CASCADE,
+
         token TEXT NOT NULL UNIQUE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        created_at TIMESTAMPTZ
+          DEFAULT NOW(),
+
         expires_at TIMESTAMPTZ
+          NOT NULL
       )
     `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     FAVORITES
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS favorites (
         id BIGSERIAL PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        track_id BIGINT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        user_id BIGINT NOT NULL
+          REFERENCES users(id)
+          ON DELETE CASCADE,
+
+        track_id BIGINT NOT NULL
+          REFERENCES tracks(id)
+          ON DELETE CASCADE,
+
+        created_at TIMESTAMPTZ
+          DEFAULT NOW(),
+
         UNIQUE(user_id, track_id)
       )
     `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     HISTORY
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS listening_history (
         id BIGSERIAL PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        track_id BIGINT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-        played_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+
+        user_id BIGINT NOT NULL
+          REFERENCES users(id)
+          ON DELETE CASCADE,
+
+        track_id BIGINT NOT NULL
+          REFERENCES tracks(id)
+          ON DELETE CASCADE,
+
+        played_at TIMESTAMPTZ
+          DEFAULT NOW()
       )
     `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     PLAYLISTS
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS playlists (
-        id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        name VARCHAR(120) NOT NULL,
-        is_public BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        id BIGSERIAL PRIMARY KEY,
+
+        user_id BIGINT NOT NULL
+          REFERENCES users(id)
+          ON DELETE CASCADE,
+
+        name VARCHAR(255) NOT NULL,
+
+        public BOOLEAN
+          DEFAULT FALSE,
+
+        created_at TIMESTAMPTZ
+          DEFAULT NOW()
       )
     `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     PLAYLIST TRACKS
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS playlist_tracks (
         id BIGSERIAL PRIMARY KEY,
-        playlist_id UUID NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-        track_id BIGINT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-        position INTEGER NOT NULL DEFAULT 0,
-        added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+        playlist_id BIGINT NOT NULL
+          REFERENCES playlists(id)
+          ON DELETE CASCADE,
+
+        track_id BIGINT NOT NULL
+          REFERENCES tracks(id)
+          ON DELETE CASCADE,
+
+        position INTEGER
+          DEFAULT 0,
+
         UNIQUE(playlist_id, track_id)
       )
     `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     NOTIFICATIONS
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS notifications (
-        id UUID PRIMARY KEY,
-        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-        title TEXT NOT NULL DEFAULT 'Новое уведомление',
-        text TEXT NOT NULL DEFAULT '',
-        is_read BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        id BIGSERIAL PRIMARY KEY,
+
+        user_id BIGINT
+          REFERENCES users(id)
+          ON DELETE CASCADE,
+
+        title VARCHAR(255),
+
+        text TEXT,
+
+        is_read BOOLEAN
+          DEFAULT FALSE,
+
+        created_at TIMESTAMPTZ
+          DEFAULT NOW()
       )
     `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     CAPTCHA
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS captchas (
-        id UUID PRIMARY KEY,
+        id BIGSERIAL PRIMARY KEY,
+
         code VARCHAR(20) NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        expires_at TIMESTAMPTZ NOT NULL
+
+        created_at TIMESTAMPTZ
+          DEFAULT NOW(),
+
+        expires_at TIMESTAMPTZ
+          NOT NULL
       )
     `);
 
     /*
-    =====================================================
+    -----------------------------------------------------
     INDEXES
-    =====================================================
+    -----------------------------------------------------
     */
 
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_tracks_plays
-      ON tracks(plays_count DESC)
-    `);
-
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_tracks_created
+      CREATE INDEX IF NOT EXISTS
+      idx_tracks_created
       ON tracks(created_at DESC)
     `);
 
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_history_user
+      CREATE INDEX IF NOT EXISTS
+      idx_tracks_plays
+      ON tracks(plays_count DESC)
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS
+      idx_history_user
       ON listening_history(user_id, played_at DESC)
     `);
 
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_favorites_user
+      CREATE INDEX IF NOT EXISTS
+      idx_favorites_user
       ON favorites(user_id)
     `);
 
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_playlist_user
-      ON playlists(user_id)
+      CREATE INDEX IF NOT EXISTS
+      idx_sessions_token
+      ON sessions(token)
     `);
 
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_notifications_user
-      ON notifications(user_id, created_at DESC)
-    `);
-
-    /*
-    =====================================================
-    UNIQUE USERS
-    =====================================================
-    */
-
-    await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS
-      idx_users_email_unique
-      ON users(LOWER(email))
-    `);
-
-    await client.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS
-      idx_users_username_unique
-      ON users(LOWER(username))
-    `);
+    await client.query("COMMIT");
 
     console.log(
-      "Database initialization completed."
+      "✅ PostgreSQL database initialized"
     );
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }
 }
 
-/* ======================================================
-   ROOT
-====================================================== */
+/*
+=========================================================
+ ROOT
+=========================================================
+*/
 
 app.get("/", (req, res) => {
   res.json({
@@ -770,100 +832,125 @@ app.get("/", (req, res) => {
     service: "Fenix Music Backend",
     version: "2.0.0",
     status: "online",
+
     api: "/api",
+
     health: "/api/health",
+
     tracks: "/api/tracks",
   });
 });
 
+/*
+=========================================================
+ API ROOT
+=========================================================
+*/
+
 app.get("/api", (req, res) => {
   res.json({
     ok: true,
-    service: "Fenix Music API",
+
+    service:
+      "Fenix Music Backend",
+
     version: "2.0.0",
+
     status: "online",
 
     endpoints: {
-      health: "GET /api/health",
-      tracks: "GET /api/tracks",
-      audio: "GET /api/tracks/:id/audio",
+      root: "/",
+      health: "/api/health",
+
+      tracks: "/api/tracks",
+      track:
+        "/api/tracks/:id",
+      audio:
+        "/api/tracks/:id/audio",
 
       captcha:
-        "GET /api/auth/captcha",
+        "/api/auth/captcha",
 
       register:
-        "POST /api/auth/register",
+        "/api/auth/register",
 
       login:
-        "POST /api/auth/login",
+        "/api/auth/login",
 
       me:
-        "GET /api/auth/me",
-
-      profile:
-        "GET /api/profile",
+        "/api/auth/me",
 
       favorites:
-        "GET /api/favorites",
+        "/api/favorites",
 
       history:
-        "GET /api/history",
+        "/api/history",
 
       playlists:
-        "GET /api/playlists",
+        "/api/playlists",
 
       notifications:
-        "GET /api/notifications",
+        "/api/notifications",
     },
   });
 });
 
-/* ======================================================
-   HEALTH
-====================================================== */
+/*
+=========================================================
+ HEALTH
+=========================================================
+*/
 
 app.get(
   "/api/health",
   async (req, res) => {
     try {
-      await pool.query(
-        "SELECT 1"
-      );
+      const result =
+        await pool.query(
+          "SELECT NOW() AS time"
+        );
 
       res.json({
         ok: true,
-        status: "online",
-        database: "online",
-        service:
-          "Fenix Music Backend",
-        version: "2.0.0",
-        time:
-          new Date().toISOString(),
+        status: "healthy",
+        database: "connected",
+        time: result.rows[0].time,
       });
     } catch (error) {
-      console.error(
-        "HEALTH:",
-        error
-      );
-
       res.status(503).json({
         ok: false,
-        status: "degraded",
-        database: "offline",
-        error: error.message,
+        status: "unhealthy",
+        database: "disconnected",
+        error:
+          error.message,
       });
     }
   }
 );
 
-/* ======================================================
-   TRACKS
-====================================================== */
+/*
+=========================================================
+ TRACKS
+ GET /api/tracks
+=========================================================
+*/
 
 app.get(
   "/api/tracks",
   async (req, res) => {
     try {
+      const search =
+        safeString(
+          req.query.search,
+          255
+        );
+
+      const genre =
+        safeString(
+          req.query.genre,
+          100
+        );
+
       const limit = Math.min(
         Math.max(
           Number(req.query.limit) ||
@@ -874,60 +961,101 @@ app.get(
       );
 
       const offset = Math.max(
-        Number(req.query.offset) ||
-          0,
+        Number(req.query.offset) || 0,
         0
       );
 
-      const search =
-        String(
-          req.query.search || ""
-        ).trim();
+      const params = [];
 
-      let result;
+      const conditions = [];
 
       if (search) {
-        result = await pool.query(
-          `
-            SELECT *
-            FROM tracks
-            WHERE
-              title ILIKE $1
-              OR artist_name ILIKE $1
-              OR album_name ILIKE $1
-              OR genre ILIKE $1
-            ORDER BY created_at DESC
-            LIMIT $2
-            OFFSET $3
-          `,
-          [
-            `%${search}%`,
-            limit,
-            offset,
-          ]
+        params.push(
+          `%${search}%`
         );
-      } else {
-        result = await pool.query(
-          `
-            SELECT *
-            FROM tracks
-            ORDER BY created_at DESC
-            LIMIT $1
-            OFFSET $2
-          `,
-          [limit, offset]
+
+        conditions.push(`
+          (
+            title ILIKE $${params.length}
+            OR artist_name ILIKE $${params.length}
+            OR album_name ILIKE $${params.length}
+            OR genre ILIKE $${params.length}
+          )
+        `);
+      }
+
+      if (genre) {
+        params.push(genre);
+
+        conditions.push(
+          `genre = $${params.length}`
         );
       }
 
-      const tracks =
-        result.rows.map(parseTrack);
+      const where =
+        conditions.length
+          ? `WHERE ${conditions.join(
+              " AND "
+            )}`
+          : "";
+
+      params.push(limit);
+
+      const limitIndex =
+        params.length;
+
+      params.push(offset);
+
+      const offsetIndex =
+        params.length;
+
+      const query = `
+        SELECT
+          id,
+          title,
+          artist_name,
+          album_name,
+          genre,
+          year,
+          duration,
+          plays_count,
+          cover_url,
+          album_cover_url,
+          artist_avatar,
+          audio_url,
+          telegram_file_id,
+          created_at
+        FROM tracks
+
+        ${where}
+
+        ORDER BY created_at DESC, id DESC
+
+        LIMIT $${limitIndex}
+        OFFSET $${offsetIndex}
+      `;
+
+      const result =
+        await pool.query(
+          query,
+          params
+        );
 
       res.json({
         ok: true,
-        tracks,
-        data: tracks,
-        items: tracks,
-        total: tracks.length,
+
+        tracks:
+          result.rows.map(
+            normalizeTrack
+          ),
+
+        items:
+          result.rows.map(
+            normalizeTrack
+          ),
+
+        total:
+          result.rows.length,
       });
     } catch (error) {
       console.error(
@@ -935,252 +1063,242 @@ app.get(
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Не удалось получить треки.",
-        {
-          details:
-            process.env.NODE_ENV ===
-            "production"
-              ? undefined
-              : error.message,
-        }
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить треки.",
+      });
     }
   }
 );
 
-/* ======================================================
-   SINGLE TRACK
-====================================================== */
+/*
+=========================================================
+ GET SINGLE TRACK
+=========================================================
+*/
 
 app.get(
   "/api/tracks/:id",
   async (req, res) => {
     try {
+      const id =
+        Number(req.params.id);
+
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: "Неверный ID трека.",
+        });
+      }
+
       const result =
         await pool.query(
           `
-            SELECT *
-            FROM tracks
-            WHERE id = $1
-            LIMIT 1
+          SELECT *
+          FROM tracks
+          WHERE id = $1
+          LIMIT 1
           `,
-          [req.params.id]
+          [id]
         );
 
       if (!result.rows.length) {
-        return jsonError(
-          res,
-          404,
-          "Трек не найден."
-        );
+        return res.status(404).json({
+          ok: false,
+          error: "Трек не найден.",
+        });
       }
 
       res.json({
         ok: true,
-        track: parseTrack(
+        track: normalizeTrack(
           result.rows[0]
         ),
       });
     } catch (error) {
       console.error(
-        "GET TRACK:",
+        "GET /api/tracks/:id:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка получения трека."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка получения трека.",
+      });
     }
   }
 );
 
-/* ======================================================
-   AUDIO
-====================================================== */
+/*
+=========================================================
+ AUDIO
+ GET /api/tracks/:id/audio
+=========================================================
+*/
 
 app.get(
   "/api/tracks/:id/audio",
   async (req, res) => {
     try {
+      const id =
+        Number(req.params.id);
+
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: "Неверный ID трека.",
+        });
+      }
+
       const result =
         await pool.query(
           `
-            SELECT
-              id,
-              title,
-              audio_url,
-              audio_file_url
-            FROM tracks
-            WHERE id = $1
-            LIMIT 1
+          SELECT
+            id,
+            audio_url
+          FROM tracks
+          WHERE id = $1
+          LIMIT 1
           `,
-          [req.params.id]
+          [id]
         );
 
       if (!result.rows.length) {
-        return jsonError(
-          res,
-          404,
-          "Трек не найден."
-        );
+        return res.status(404).json({
+          ok: false,
+          error: "Трек не найден.",
+        });
       }
 
-      const track =
-        result.rows[0];
-
       const audioUrl =
-        track.audio_url ||
-        track.audio_file_url ||
-        null;
+        result.rows[0].audio_url;
 
       if (!audioUrl) {
-        return jsonError(
-          res,
-          404,
-          "Для этого трека аудиофайл не указан."
-        );
+        return res.status(404).json({
+          ok: false,
+          error:
+            "У этого трека отсутствует audio_url.",
+        });
       }
 
       /*
-        Если audio_url внешний URL,
-        перенаправляем браузер на него.
+      Redirect browser <audio> to the
+      actual audio file.
       */
 
-      return res.redirect(
+      res.redirect(
+        302,
         audioUrl
       );
     } catch (error) {
       console.error(
-        "AUDIO:",
+        "GET /api/tracks/:id/audio:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка получения аудио."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить аудио.",
+      });
     }
   }
 );
 
-/* ======================================================
-   PLAY COUNT
-====================================================== */
+/*
+=========================================================
+ TRACK PLAY
+ POST /api/tracks/:id/play
+=========================================================
+*/
 
 app.post(
   "/api/tracks/:id/play",
   async (req, res) => {
     try {
-      const result =
-        await pool.query(
-          `
-            UPDATE tracks
-            SET
-              plays_count =
-                COALESCE(plays_count, 0) + 1,
-              updated_at = NOW()
-            WHERE id = $1
-            RETURNING *
-          `,
-          [req.params.id]
-        );
+      const id =
+        Number(req.params.id);
 
-      if (!result.rows.length) {
-        return jsonError(
-          res,
-          404,
-          "Трек не найден."
-        );
+      if (!Number.isInteger(id)) {
+        return res.status(400).json({
+          ok: false,
+          error: "Неверный ID.",
+        });
       }
+
+      await pool.query(
+        `
+        UPDATE tracks
+        SET plays_count =
+          COALESCE(plays_count, 0) + 1
+        WHERE id = $1
+        `,
+        [id]
+      );
 
       res.json({
         ok: true,
-        track: parseTrack(
-          result.rows[0]
-        ),
       });
     } catch (error) {
       console.error(
-        "PLAY COUNT:",
+        "POST play:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Не удалось обновить счётчик."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось обновить статистику.",
+      });
     }
   }
 );
 
-/* ======================================================
-   CAPTCHA
-====================================================== */
-
-function createCaptchaCode() {
-  const chars =
-    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-  let result = "";
-
-  for (let i = 0; i < 6; i++) {
-    result +=
-      chars[
-        Math.floor(
-          Math.random() *
-            chars.length
-        )
-      ];
-  }
-
-  return result;
-}
+/*
+=========================================================
+ CAPTCHA
+ GET /api/auth/captcha
+=========================================================
+*/
 
 app.get(
   "/api/auth/captcha",
   async (req, res) => {
     try {
-      await pool.query(
-        `
-          DELETE FROM captchas
-          WHERE expires_at < NOW()
-        `
-      );
-
-      const id = randomId();
-
       const code =
-        createCaptchaCode();
+        randomCaptcha(6);
 
-      await pool.query(
-        `
-          INSERT INTO captchas (
-            id,
-            code,
-            expires_at
-          )
-          VALUES (
-            $1,
-            $2,
-            NOW() + INTERVAL '10 minutes'
-          )
-        `,
-        [id, code]
-      );
+      const result =
+        await pool.query(
+          `
+          INSERT INTO captchas
+            (code, expires_at)
+          VALUES
+            ($1, NOW() + INTERVAL '10 minutes')
+          RETURNING id, code, expires_at
+          `,
+          [code]
+        );
 
       res.json({
         ok: true,
-        id,
-        captcha_id: id,
-        text: code,
-        code,
+
+        id:
+          result.rows[0].id,
+
+        captcha_id:
+          result.rows[0].id,
+
+        text:
+          result.rows[0].code,
+
+        code:
+          result.rows[0].code,
+
+        expires_at:
+          result.rows[0].expires_at,
       });
     } catch (error) {
       console.error(
@@ -1189,13 +1307,12 @@ app.get(
       );
 
       /*
-        Даже если база CAPTCHA временно
-        недоступна, frontend сможет показать
-        fallback CAPTCHA.
+      Fallback still lets frontend work
+      if captcha table has an issue.
       */
 
       const code =
-        createCaptchaCode();
+        randomCaptcha(6);
 
       res.json({
         ok: true,
@@ -1208,9 +1325,12 @@ app.get(
   }
 );
 
-/* ======================================================
-   REGISTER
-====================================================== */
+/*
+=========================================================
+ REGISTER
+ POST /api/auth/register
+=========================================================
+*/
 
 app.post(
   "/api/auth/register",
@@ -1232,63 +1352,62 @@ app.post(
         );
 
       const captcha =
-        String(
-          req.body.captcha || ""
-        )
-          .trim()
-          .toUpperCase();
+        safeString(
+          req.body.captcha,
+          20
+        ).toUpperCase();
 
       const captchaId =
-        req.body.captcha_id ||
-        req.body.captchaId ||
-        null;
+        req.body.captcha_id
+          ? Number(
+              req.body.captcha_id
+            )
+          : null;
 
       if (
         username.length < 3
       ) {
-        return jsonError(
-          res,
-          400,
-          "Username должен содержать минимум 3 символа."
-        );
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Username должен содержать минимум 3 символа.",
+        });
       }
 
       if (
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
-          email
-        )
+        !email ||
+        !email.includes("@")
       ) {
-        return jsonError(
-          res,
-          400,
-          "Некорректный email."
-        );
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Укажи корректный email.",
+        });
       }
 
       if (
         password.length < 6
       ) {
-        return jsonError(
-          res,
-          400,
-          "Пароль должен содержать минимум 6 символов."
-        );
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Пароль должен содержать минимум 6 символов.",
+        });
       }
 
       /*
-      CAPTCHA проверяем только если
-      frontend получил серверную CAPTCHA.
+      CAPTCHA.
       */
 
       if (captchaId) {
         const captchaResult =
           await pool.query(
             `
-              SELECT *
-              FROM captchas
-              WHERE id = $1
-                AND expires_at > NOW()
-              LIMIT 1
+            SELECT *
+            FROM captchas
+            WHERE id = $1
+              AND expires_at > NOW()
+            LIMIT 1
             `,
             [captchaId]
           );
@@ -1296,130 +1415,139 @@ app.post(
         if (
           !captchaResult.rows.length
         ) {
-          return jsonError(
-            res,
-            400,
-            "CAPTCHA устарела. Получи новую."
-          );
+          return res.status(400).json({
+            ok: false,
+            error:
+              "CAPTCHA истекла. Получи новую.",
+          });
         }
 
         if (
-          captchaResult.rows[0].code !==
+          String(
+            captchaResult.rows[0].code
+          ).toUpperCase() !==
           captcha
         ) {
-          return jsonError(
-            res,
-            400,
-            "Неверная CAPTCHA."
-          );
+          return res.status(400).json({
+            ok: false,
+            error:
+              "Неверная CAPTCHA.",
+          });
         }
 
         await pool.query(
           `
-            DELETE FROM captchas
-            WHERE id = $1
+          DELETE FROM captchas
+          WHERE id = $1
           `,
           [captchaId]
         );
       }
 
+      /*
+      Existing account.
+      */
+
       const existing =
         await pool.query(
           `
-            SELECT id
-            FROM users
-            WHERE LOWER(email) = LOWER($1)
-               OR LOWER(username) = LOWER($2)
-            LIMIT 1
+          SELECT id
+          FROM users
+          WHERE LOWER(username) =
+                LOWER($1)
+             OR LOWER(email) =
+                LOWER($2)
+          LIMIT 1
           `,
           [
-            email,
             username,
+            email,
           ]
         );
 
       if (existing.rows.length) {
-        return jsonError(
-          res,
-          409,
-          "Пользователь с таким email или username уже существует."
-        );
+        return res.status(409).json({
+          ok: false,
+          error:
+            "Username или email уже используется.",
+        });
       }
 
       const passwordHash =
-        await bcrypt.hash(
-          password,
-          12
+        await hashPassword(
+          password
         );
-
-      const userId =
-        randomId();
 
       const result =
         await pool.query(
           `
-            INSERT INTO users (
-              id,
+          INSERT INTO users
+            (
               username,
               email,
               password_hash,
               bio
             )
-            VALUES (
-              $1,
-              $2,
-              $3,
-              $4,
-              ''
-            )
-            RETURNING
-              id,
-              username,
-              email,
-              bio,
-              avatar_url,
-              created_at
+          VALUES
+            ($1, $2, $3, '')
+          RETURNING
+            id,
+            username,
+            email,
+            bio,
+            avatar_url,
+            created_at
           `,
           [
-            userId,
             username,
             email,
             passwordHash,
           ]
         );
 
+      const user =
+        result.rows[0];
+
       const token =
-        crypto.randomBytes(48)
-          .toString("hex");
+        randomToken(48);
 
       await pool.query(
         `
-          INSERT INTO sessions (
-            id,
+        INSERT INTO sessions
+          (
             user_id,
             token,
             expires_at
           )
-          VALUES (
+        VALUES
+          (
             $1,
             $2,
-            $3,
             NOW() + INTERVAL '30 days'
           )
         `,
         [
-          randomId(),
-          userId,
+          user.id,
           token,
         ]
       );
 
       res.status(201).json({
         ok: true,
+
         token,
-        access_token: token,
-        user: result.rows[0],
-        account: result.rows[0],
+
+        access_token:
+          token,
+
+        session_token:
+          token,
+
+        user:
+          userResponse(user),
+
+        account:
+          userResponse(user),
       });
     } catch (error) {
       console.error(
@@ -1427,30 +1555,33 @@ app.post(
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка регистрации."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка регистрации.",
+      });
     }
   }
 );
 
-/* ======================================================
-   LOGIN
-====================================================== */
+/*
+=========================================================
+ LOGIN
+ POST /api/auth/login
+=========================================================
+*/
 
 app.post(
   "/api/auth/login",
   async (req, res) => {
     try {
       const login =
-        String(
+        safeString(
           req.body.login ||
-          req.body.email ||
-          req.body.username ||
-          ""
-        ).trim();
+            req.body.email ||
+            req.body.username,
+          255
+        );
 
       const password =
         String(
@@ -1458,95 +1589,101 @@ app.post(
         );
 
       if (!login || !password) {
-        return jsonError(
-          res,
-          400,
-          "Введите логин и пароль."
-        );
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Заполни данные для входа.",
+        });
       }
 
       const result =
         await pool.query(
           `
-            SELECT *
-            FROM users
-            WHERE
-              LOWER(email) = LOWER($1)
-              OR LOWER(username) = LOWER($1)
-            LIMIT 1
+          SELECT
+            id,
+            username,
+            email,
+            password_hash,
+            bio,
+            avatar_url,
+            created_at
+          FROM users
+          WHERE
+            LOWER(email) =
+              LOWER($1)
+            OR
+            LOWER(username) =
+              LOWER($1)
+          LIMIT 1
           `,
           [login]
         );
 
       if (!result.rows.length) {
-        return jsonError(
-          res,
-          401,
-          "Неверный логин или пароль."
-        );
+        return res.status(401).json({
+          ok: false,
+          error:
+            "Неверный логин или пароль.",
+        });
       }
 
       const user =
         result.rows[0];
 
       const valid =
-        await bcrypt.compare(
+        await verifyPassword(
           password,
           user.password_hash
         );
 
       if (!valid) {
-        return jsonError(
-          res,
-          401,
-          "Неверный логин или пароль."
-        );
+        return res.status(401).json({
+          ok: false,
+          error:
+            "Неверный логин или пароль.",
+        });
       }
 
       const token =
-        crypto.randomBytes(48)
-          .toString("hex");
+        randomToken(48);
 
       await pool.query(
         `
-          INSERT INTO sessions (
-            id,
+        INSERT INTO sessions
+          (
             user_id,
             token,
             expires_at
           )
-          VALUES (
+        VALUES
+          (
             $1,
             $2,
-            $3,
             NOW() + INTERVAL '30 days'
           )
         `,
         [
-          randomId(),
           user.id,
           token,
         ]
       );
 
-      const account = {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        bio: user.bio || "",
-        avatar_url:
-          user.avatar_url ||
-          null,
-        created_at:
-          user.created_at,
-      };
-
       res.json({
         ok: true,
+
         token,
-        access_token: token,
-        user: account,
-        account,
+
+        access_token:
+          token,
+
+        session_token:
+          token,
+
+        user:
+          userResponse(user),
+
+        account:
+          userResponse(user),
       });
     } catch (error) {
       console.error(
@@ -1554,296 +1691,263 @@ app.post(
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка авторизации."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка авторизации.",
+      });
     }
   }
 );
 
-/* ======================================================
-   ME
-====================================================== */
+/*
+=========================================================
+ AUTH MIDDLEWARE
+=========================================================
+*/
+
+async function authRequired(
+  req,
+  res,
+  next
+) {
+  try {
+    const token =
+      getBearerToken(req);
+
+    if (!token) {
+      return res.status(401).json({
+        ok: false,
+        error:
+          "Требуется авторизация.",
+      });
+    }
+
+    const result =
+      await pool.query(
+        `
+        SELECT
+          s.user_id,
+
+          u.id,
+          u.username,
+          u.email,
+          u.bio,
+          u.avatar_url,
+          u.created_at
+
+        FROM sessions s
+
+        JOIN users u
+          ON u.id = s.user_id
+
+        WHERE s.token = $1
+          AND s.expires_at > NOW()
+
+        LIMIT 1
+        `,
+        [token]
+      );
+
+    if (!result.rows.length) {
+      return res.status(401).json({
+        ok: false,
+        error:
+          "Сессия истекла или недействительна.",
+      });
+    }
+
+    req.user =
+      result.rows[0];
+
+    req.sessionToken =
+      token;
+
+    next();
+  } catch (error) {
+    console.error(
+      "AUTH:",
+      error
+    );
+
+    res.status(500).json({
+      ok: false,
+      error:
+        "Ошибка проверки авторизации.",
+    });
+  }
+}
+
+/*
+=========================================================
+ GET ME
+=========================================================
+*/
 
 app.get(
   "/api/auth/me",
-  requireAuth,
+  authRequired,
   async (req, res) => {
     res.json({
       ok: true,
-      user: {
-        id: req.user.id,
-        username:
-          req.user.username,
-        email: req.user.email,
-        bio:
-          req.user.bio || "",
-        avatar_url:
-          req.user.avatar_url ||
-          null,
-        created_at:
-          req.user.created_at,
-      },
+
+      user:
+        userResponse(
+          req.user
+        ),
     });
   }
 );
 
-/* ======================================================
-   LOGOUT
-====================================================== */
+/*
+=========================================================
+ LOGOUT
+=========================================================
+*/
 
 app.post(
   "/api/auth/logout",
+  authRequired,
   async (req, res) => {
     try {
-      const token =
-        getToken(req);
-
-      if (token) {
-        await pool.query(
-          `
-            DELETE FROM sessions
-            WHERE token = $1
-          `,
-          [token]
-        );
-      }
+      await pool.query(
+        `
+        DELETE FROM sessions
+        WHERE token = $1
+        `,
+        [req.sessionToken]
+      );
 
       res.json({
         ok: true,
       });
     } catch (error) {
-      console.error(
-        "LOGOUT:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Ошибка выхода."
-      );
-    }
-  }
-);
-
-/* ======================================================
-   PROFILE
-====================================================== */
-
-app.get(
-  "/api/profile",
-  requireAuth,
-  async (req, res) => {
-    try {
-      const result =
-        await pool.query(
-          `
-            SELECT
-              id,
-              username,
-              email,
-              bio,
-              avatar_url,
-              created_at
-            FROM users
-            WHERE id = $1
-            LIMIT 1
-          `,
-          [req.user.id]
-        );
-
-      res.json({
-        ok: true,
-        user:
-          result.rows[0] ||
-          null,
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка выхода.",
       });
-    } catch (error) {
-      console.error(
-        "PROFILE:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Ошибка профиля."
-      );
     }
   }
 );
 
-app.put(
-  "/api/profile",
-  requireAuth,
-  async (req, res) => {
-    try {
-      const username =
-        normalizeUsername(
-          req.body.username
-        );
-
-      const bio =
-        String(
-          req.body.bio || ""
-        ).slice(0, 1000);
-
-      if (
-        username.length < 3
-      ) {
-        return jsonError(
-          res,
-          400,
-          "Username должен содержать минимум 3 символа."
-        );
-      }
-
-      const duplicate =
-        await pool.query(
-          `
-            SELECT id
-            FROM users
-            WHERE LOWER(username) = LOWER($1)
-              AND id <> $2
-            LIMIT 1
-          `,
-          [
-            username,
-            req.user.id,
-          ]
-        );
-
-      if (duplicate.rows.length) {
-        return jsonError(
-          res,
-          409,
-          "Этот username уже занят."
-        );
-      }
-
-      const result =
-        await pool.query(
-          `
-            UPDATE users
-            SET
-              username = $1,
-              bio = $2,
-              updated_at = NOW()
-            WHERE id = $3
-            RETURNING
-              id,
-              username,
-              email,
-              bio,
-              avatar_url,
-              created_at
-          `,
-          [
-            username,
-            bio,
-            req.user.id,
-          ]
-        );
-
-      res.json({
-        ok: true,
-        user:
-          result.rows[0],
-      });
-    } catch (error) {
-      console.error(
-        "UPDATE PROFILE:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Не удалось сохранить профиль."
-      );
-    }
-  }
-);
-
-/* ======================================================
-   FAVORITES
-====================================================== */
+/*
+=========================================================
+ FAVORITES
+=========================================================
+*/
 
 app.get(
   "/api/favorites",
-  requireAuth,
+  authRequired,
   async (req, res) => {
     try {
       const result =
         await pool.query(
           `
-            SELECT t.*
-            FROM favorites f
-            JOIN tracks t
-              ON t.id = f.track_id
-            WHERE f.user_id = $1
-            ORDER BY f.created_at DESC
+          SELECT t.*
+          FROM favorites f
+          JOIN tracks t
+            ON t.id = f.track_id
+          WHERE f.user_id = $1
+          ORDER BY f.created_at DESC
           `,
           [req.user.id]
         );
 
-      const tracks =
-        result.rows.map(parseTrack);
-
       res.json({
         ok: true,
-        favorites: tracks,
-        tracks,
-        data: tracks,
+
+        favorites:
+          result.rows.map(
+            normalizeTrack
+          ),
+
+        tracks:
+          result.rows.map(
+            normalizeTrack
+          ),
       });
     } catch (error) {
       console.error(
-        "GET FAVORITES:",
+        "GET favorites:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка избранного."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить избранное.",
+      });
     }
   }
 );
 
 app.post(
-  "/api/favorites",
-  requireAuth,
+  "/api/favorites/:trackId",
+  authRequired,
   async (req, res) => {
     try {
       const trackId =
-        req.body.track_id ||
-        req.body.trackId ||
-        req.body.id;
-
-      if (!trackId) {
-        return jsonError(
-          res,
-          400,
-          "Не указан track_id."
+        Number(
+          req.params.trackId
         );
+
+      if (
+        !Number.isInteger(
+          trackId
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Неверный ID трека.",
+        });
+      }
+
+      const existing =
+        await pool.query(
+          `
+          SELECT id
+          FROM favorites
+          WHERE user_id = $1
+            AND track_id = $2
+          LIMIT 1
+          `,
+          [
+            req.user.id,
+            trackId,
+          ]
+        );
+
+      if (existing.rows.length) {
+        await pool.query(
+          `
+          DELETE FROM favorites
+          WHERE user_id = $1
+            AND track_id = $2
+          `,
+          [
+            req.user.id,
+            trackId,
+          ]
+        );
+
+        return res.json({
+          ok: true,
+          favorite: false,
+        });
       }
 
       await pool.query(
         `
-          INSERT INTO favorites (
-            user_id,
-            track_id
-          )
-          VALUES ($1, $2)
-          ON CONFLICT (
-            user_id,
-            track_id
-          )
-          DO NOTHING
+        INSERT INTO favorites
+          (user_id, track_id)
+        VALUES
+          ($1, $2)
+        ON CONFLICT
+          (user_id, track_id)
+        DO NOTHING
         `,
         [
           req.user.id,
@@ -1857,76 +1961,42 @@ app.post(
       });
     } catch (error) {
       console.error(
-        "ADD FAVORITE:",
+        "POST favorite:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Не удалось добавить в избранное."
-      );
-    }
-  }
-);
-
-app.delete(
-  "/api/favorites/:trackId",
-  requireAuth,
-  async (req, res) => {
-    try {
-      await pool.query(
-        `
-          DELETE FROM favorites
-          WHERE user_id = $1
-            AND track_id = $2
-        `,
-        [
-          req.user.id,
-          req.params.trackId,
-        ]
-      );
-
-      res.json({
-        ok: true,
-        favorite: false,
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось изменить избранное.",
       });
-    } catch (error) {
-      console.error(
-        "DELETE FAVORITE:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Не удалось удалить из избранного."
-      );
     }
   }
 );
 
-/* ======================================================
-   HISTORY
-====================================================== */
+/*
+=========================================================
+ HISTORY
+=========================================================
+*/
 
 app.get(
   "/api/history",
-  requireAuth,
+  authRequired,
   async (req, res) => {
     try {
       const result =
         await pool.query(
           `
-            SELECT
-              t.*,
-              h.played_at
-            FROM listening_history h
-            JOIN tracks t
-              ON t.id = h.track_id
-            WHERE h.user_id = $1
-            ORDER BY h.played_at DESC
-            LIMIT 100
+          SELECT
+            t.*,
+            h.played_at
+          FROM listening_history h
+          JOIN tracks t
+            ON t.id = h.track_id
+          WHERE h.user_id = $1
+          ORDER BY h.played_at DESC
+          LIMIT 100
           `,
           [req.user.id]
         );
@@ -1934,7 +2004,7 @@ app.get(
       const history =
         result.rows.map(
           (row) => ({
-            ...parseTrack(row),
+            ...normalizeTrack(row),
             played_at:
               row.played_at,
           })
@@ -1943,49 +2013,56 @@ app.get(
       res.json({
         ok: true,
         history,
-        tracks: history,
-        data: history,
       });
     } catch (error) {
       console.error(
-        "GET HISTORY:",
+        "GET history:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка истории."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить историю.",
+      });
     }
   }
 );
 
 app.post(
-  "/api/history",
-  requireAuth,
+  "/api/history/:trackId",
+  authRequired,
   async (req, res) => {
     try {
       const trackId =
-        req.body.track_id ||
-        req.body.trackId ||
-        req.body.id;
-
-      if (!trackId) {
-        return jsonError(
-          res,
-          400,
-          "Не указан track_id."
+        Number(
+          req.params.trackId
         );
+
+      if (
+        !Number.isInteger(
+          trackId
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Неверный ID трека.",
+        });
       }
 
       await pool.query(
         `
-          INSERT INTO listening_history (
+        INSERT INTO listening_history
+          (
             user_id,
             track_id
           )
-          VALUES ($1, $2)
+        VALUES
+          (
+            $1,
+            $2
+          )
         `,
         [
           req.user.id,
@@ -1993,23 +2070,14 @@ app.post(
         ]
       );
 
-      /*
-      Ограничиваем историю 100 записями.
-      */
-
       await pool.query(
         `
-          DELETE FROM listening_history
-          WHERE user_id = $1
-            AND id NOT IN (
-              SELECT id
-              FROM listening_history
-              WHERE user_id = $1
-              ORDER BY played_at DESC
-              LIMIT 100
-            )
+        UPDATE tracks
+        SET plays_count =
+          COALESCE(plays_count, 0) + 1
+        WHERE id = $1
         `,
-        [req.user.id]
+        [trackId]
       );
 
       res.json({
@@ -2017,202 +2085,120 @@ app.post(
       });
     } catch (error) {
       console.error(
-        "ADD HISTORY:",
+        "POST history:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Не удалось сохранить историю."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось сохранить историю.",
+      });
     }
   }
 );
 
-/* ======================================================
-   PLAYLISTS
-====================================================== */
-
-async function getPlaylistWithTracks(
-  playlistId,
-  userId
-) {
-  const playlistResult =
-    await pool.query(
-      `
-        SELECT
-          id,
-          name,
-          is_public,
-          created_at,
-          updated_at
-        FROM playlists
-        WHERE id = $1
-          AND user_id = $2
-        LIMIT 1
-      `,
-      [
-        playlistId,
-        userId,
-      ]
-    );
-
-  if (
-    !playlistResult.rows.length
-  ) {
-    return null;
-  }
-
-  const playlist =
-    playlistResult.rows[0];
-
-  const tracksResult =
-    await pool.query(
-      `
-        SELECT t.*
-        FROM playlist_tracks pt
-        JOIN tracks t
-          ON t.id = pt.track_id
-        WHERE pt.playlist_id = $1
-        ORDER BY pt.position ASC, pt.added_at ASC
-      `,
-      [playlistId]
-    );
-
-  return {
-    id: playlist.id,
-    name: playlist.name,
-    public:
-      playlist.is_public,
-    is_public:
-      playlist.is_public,
-    created_at:
-      playlist.created_at,
-    updated_at:
-      playlist.updated_at,
-    tracks:
-      tracksResult.rows.map(
-        parseTrack
-      ),
-  };
-}
+/*
+=========================================================
+ PLAYLISTS
+=========================================================
+*/
 
 app.get(
   "/api/playlists",
-  requireAuth,
+  authRequired,
   async (req, res) => {
     try {
-      const result =
+      const playlists =
         await pool.query(
           `
-            SELECT
-              p.id,
-              p.name,
-              p.is_public,
-              p.created_at,
-              p.updated_at,
-              COUNT(pt.id)::INTEGER AS track_count
-            FROM playlists p
-            LEFT JOIN playlist_tracks pt
-              ON pt.playlist_id = p.id
-            WHERE p.user_id = $1
-            GROUP BY p.id
-            ORDER BY p.created_at DESC
+          SELECT
+            p.id,
+            p.name,
+            p.public,
+            p.created_at,
+
+            COUNT(pt.id)::INTEGER
+              AS track_count
+
+          FROM playlists p
+
+          LEFT JOIN playlist_tracks pt
+            ON pt.playlist_id = p.id
+
+          WHERE p.user_id = $1
+
+          GROUP BY
+            p.id
+
+          ORDER BY
+            p.created_at DESC
           `,
           [req.user.id]
         );
 
-      const playlists =
-        result.rows.map(
-          (row) => ({
-            id: row.id,
-            name: row.name,
-            public:
-              row.is_public,
-            is_public:
-              row.is_public,
-            tracks: [],
-            track_count:
-              Number(
-                row.track_count || 0
-              ),
-            created_at:
-              row.created_at,
-            updated_at:
-              row.updated_at,
-          })
-        );
-
       res.json({
         ok: true,
-        playlists,
-        data: playlists,
+        playlists:
+          playlists.rows,
       });
     } catch (error) {
       console.error(
-        "GET PLAYLISTS:",
+        "GET playlists:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка плейлистов."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить плейлисты.",
+      });
     }
   }
 );
 
 app.post(
   "/api/playlists",
-  requireAuth,
+  authRequired,
   async (req, res) => {
     try {
       const name =
-        String(
-          req.body.name || ""
-        )
-          .trim()
-          .slice(0, 120);
+        safeString(
+          req.body.name,
+          255
+        );
 
       const isPublic =
         Boolean(
-          req.body.public ??
-          req.body.is_public ??
-          false
+          req.body.public
         );
 
       if (!name) {
-        return jsonError(
-          res,
-          400,
-          "Введите название плейлиста."
-        );
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Укажи название плейлиста.",
+        });
       }
-
-      const id =
-        randomId();
 
       const result =
         await pool.query(
           `
-            INSERT INTO playlists (
-              id,
+          INSERT INTO playlists
+            (
               user_id,
               name,
-              is_public
+              public
             )
-            VALUES (
+          VALUES
+            (
               $1,
               $2,
-              $3,
-              $4
+              $3
             )
-            RETURNING *
+          RETURNING *
           `,
           [
-            id,
             req.user.id,
             name,
             isPublic,
@@ -2221,334 +2207,54 @@ app.post(
 
       res.status(201).json({
         ok: true,
-        playlist: {
-          id:
-            result.rows[0].id,
-          name:
-            result.rows[0].name,
-          public:
-            result.rows[0]
-              .is_public,
-          is_public:
-            result.rows[0]
-              .is_public,
-          tracks: [],
-          created_at:
-            result.rows[0]
-              .created_at,
-        },
-      });
-    } catch (error) {
-      console.error(
-        "CREATE PLAYLIST:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Не удалось создать плейлист."
-      );
-    }
-  }
-);
-
-app.get(
-  "/api/playlists/:id",
-  requireAuth,
-  async (req, res) => {
-    try {
-      const playlist =
-        await getPlaylistWithTracks(
-          req.params.id,
-          req.user.id
-        );
-
-      if (!playlist) {
-        return jsonError(
-          res,
-          404,
-          "Плейлист не найден."
-        );
-      }
-
-      res.json({
-        ok: true,
-        playlist,
-      });
-    } catch (error) {
-      console.error(
-        "GET PLAYLIST:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Ошибка плейлиста."
-      );
-    }
-  }
-);
-
-app.put(
-  "/api/playlists/:id",
-  requireAuth,
-  async (req, res) => {
-    try {
-      const name =
-        req.body.name !== undefined
-          ? String(
-              req.body.name
-            )
-              .trim()
-              .slice(0, 120)
-          : null;
-
-      const publicValue =
-        req.body.public !==
-        undefined
-          ? Boolean(
-              req.body.public
-            )
-          : req.body.is_public !==
-            undefined
-          ? Boolean(
-              req.body.is_public
-            )
-          : null;
-
-      const result =
-        await pool.query(
-          `
-            UPDATE playlists
-            SET
-              name =
-                COALESCE($1, name),
-              is_public =
-                COALESCE($2, is_public),
-              updated_at = NOW()
-            WHERE id = $3
-              AND user_id = $4
-            RETURNING *
-          `,
-          [
-            name,
-            publicValue,
-            req.params.id,
-            req.user.id,
-          ]
-        );
-
-      if (!result.rows.length) {
-        return jsonError(
-          res,
-          404,
-          "Плейлист не найден."
-        );
-      }
-
-      res.json({
-        ok: true,
         playlist:
           result.rows[0],
       });
     } catch (error) {
       console.error(
-        "UPDATE PLAYLIST:",
+        "POST playlist:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка изменения плейлиста."
-      );
-    }
-  }
-);
-
-app.post(
-  "/api/playlists/:id/tracks",
-  requireAuth,
-  async (req, res) => {
-    try {
-      const trackId =
-        req.body.track_id ||
-        req.body.trackId;
-
-      if (!trackId) {
-        return jsonError(
-          res,
-          400,
-          "Не указан track_id."
-        );
-      }
-
-      const playlist =
-        await pool.query(
-          `
-            SELECT id
-            FROM playlists
-            WHERE id = $1
-              AND user_id = $2
-            LIMIT 1
-          `,
-          [
-            req.params.id,
-            req.user.id,
-          ]
-        );
-
-      if (!playlist.rows.length) {
-        return jsonError(
-          res,
-          404,
-          "Плейлист не найден."
-        );
-      }
-
-      const positionResult =
-        await pool.query(
-          `
-            SELECT COALESCE(
-              MAX(position) + 1,
-              0
-            ) AS position
-            FROM playlist_tracks
-            WHERE playlist_id = $1
-          `,
-          [req.params.id]
-        );
-
-      const position =
-        Number(
-          positionResult.rows[0]
-            .position
-        ) || 0;
-
-      await pool.query(
-        `
-          INSERT INTO playlist_tracks (
-            playlist_id,
-            track_id,
-            position
-          )
-          VALUES ($1, $2, $3)
-          ON CONFLICT (
-            playlist_id,
-            track_id
-          )
-          DO NOTHING
-        `,
-        [
-          req.params.id,
-          trackId,
-          position,
-        ]
-      );
-
-      res.json({
-        ok: true,
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось создать плейлист.",
       });
-    } catch (error) {
-      console.error(
-        "ADD PLAYLIST TRACK:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Не удалось добавить трек."
-      );
-    }
-  }
-);
-
-app.delete(
-  "/api/playlists/:id/tracks/:trackId",
-  requireAuth,
-  async (req, res) => {
-    try {
-      const playlist =
-        await pool.query(
-          `
-            SELECT id
-            FROM playlists
-            WHERE id = $1
-              AND user_id = $2
-            LIMIT 1
-          `,
-          [
-            req.params.id,
-            req.user.id,
-          ]
-        );
-
-      if (!playlist.rows.length) {
-        return jsonError(
-          res,
-          404,
-          "Плейлист не найден."
-        );
-      }
-
-      await pool.query(
-        `
-          DELETE FROM playlist_tracks
-          WHERE playlist_id = $1
-            AND track_id = $2
-        `,
-        [
-          req.params.id,
-          req.params.trackId,
-        ]
-      );
-
-      res.json({
-        ok: true,
-      });
-    } catch (error) {
-      console.error(
-        "DELETE PLAYLIST TRACK:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Не удалось удалить трек."
-      );
     }
   }
 );
 
 app.delete(
   "/api/playlists/:id",
-  requireAuth,
+  authRequired,
   async (req, res) => {
     try {
+      const id =
+        Number(
+          req.params.id
+        );
+
       const result =
         await pool.query(
           `
-            DELETE FROM playlists
-            WHERE id = $1
-              AND user_id = $2
-            RETURNING id
+          DELETE FROM playlists
+          WHERE id = $1
+            AND user_id = $2
+          RETURNING id
           `,
           [
-            req.params.id,
+            id,
             req.user.id,
           ]
         );
 
       if (!result.rows.length) {
-        return jsonError(
-          res,
-          404,
-          "Плейлист не найден."
-        );
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Плейлист не найден.",
+        });
       }
 
       res.json({
@@ -2556,180 +2262,313 @@ app.delete(
       });
     } catch (error) {
       console.error(
-        "DELETE PLAYLIST:",
+        "DELETE playlist:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Не удалось удалить плейлист."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось удалить плейлист.",
+      });
     }
   }
 );
 
-/* ======================================================
-   NOTIFICATIONS
-====================================================== */
+/*
+=========================================================
+ ADD TRACK TO PLAYLIST
+=========================================================
+*/
+
+app.post(
+  "/api/playlists/:id/tracks/:trackId",
+  authRequired,
+  async (req, res) => {
+    try {
+      const playlistId =
+        Number(
+          req.params.id
+        );
+
+      const trackId =
+        Number(
+          req.params.trackId
+        );
+
+      const ownership =
+        await pool.query(
+          `
+          SELECT id
+          FROM playlists
+          WHERE id = $1
+            AND user_id = $2
+          LIMIT 1
+          `,
+          [
+            playlistId,
+            req.user.id,
+          ]
+        );
+
+      if (
+        !ownership.rows.length
+      ) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Плейлист не найден.",
+        });
+      }
+
+      await pool.query(
+        `
+        INSERT INTO playlist_tracks
+          (
+            playlist_id,
+            track_id
+          )
+        VALUES
+          (
+            $1,
+            $2
+          )
+        ON CONFLICT
+          (playlist_id, track_id)
+        DO NOTHING
+        `,
+        [
+          playlistId,
+          trackId,
+        ]
+      );
+
+      res.json({
+        ok: true,
+      });
+    } catch (error) {
+      console.error(
+        "ADD playlist track:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось добавить трек.",
+      });
+    }
+  }
+);
+
+/*
+=========================================================
+ PROFILE
+=========================================================
+*/
 
 app.get(
-  "/api/notifications",
-  requireAuth,
+  "/api/profile",
+  authRequired,
   async (req, res) => {
     try {
       const result =
         await pool.query(
           `
-            SELECT
-              id,
-              title,
-              text,
-              is_read,
-              created_at
-            FROM notifications
-            WHERE user_id = $1
-            ORDER BY created_at DESC
-            LIMIT 100
+          SELECT
+            id,
+            username,
+            email,
+            bio,
+            avatar_url,
+            created_at
+          FROM users
+          WHERE id = $1
+          LIMIT 1
           `,
           [req.user.id]
         );
 
-      const notifications =
-        result.rows.map(
-          (row) => ({
-            id: row.id,
-            title: row.title,
-            text: row.text,
-            is_read:
-              row.is_read,
-            created_at:
-              row.created_at,
-          })
-        );
-
       res.json({
         ok: true,
-        notifications,
-        data: notifications,
+        user:
+          userResponse(
+            result.rows[0]
+          ),
       });
     } catch (error) {
-      console.error(
-        "GET NOTIFICATIONS:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Ошибка уведомлений."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить профиль.",
+      });
     }
   }
 );
 
-app.post(
-  "/api/notifications",
-  requireAuth,
+app.put(
+  "/api/profile",
+  authRequired,
   async (req, res) => {
     try {
-      const title =
-        String(
-          req.body.title ||
-            "Новое уведомление"
-        ).slice(0, 200);
+      const username =
+        normalizeUsername(
+          req.body.username
+        );
 
-      const text =
-        String(
-          req.body.text || ""
-        ).slice(0, 2000);
+      const bio =
+        safeString(
+          req.body.bio,
+          2000
+        );
+
+      const avatarUrl =
+        safeString(
+          req.body.avatar_url,
+          2000
+        ) || null;
+
+      if (
+        username.length < 3
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Username слишком короткий.",
+        });
+      }
+
+      const duplicate =
+        await pool.query(
+          `
+          SELECT id
+          FROM users
+          WHERE LOWER(username) =
+                LOWER($1)
+            AND id <> $2
+          LIMIT 1
+          `,
+          [
+            username,
+            req.user.id,
+          ]
+        );
+
+      if (duplicate.rows.length) {
+        return res.status(409).json({
+          ok: false,
+          error:
+            "Этот username уже занят.",
+        });
+      }
 
       const result =
         await pool.query(
           `
-            INSERT INTO notifications (
-              id,
-              user_id,
-              title,
-              text
-            )
-            VALUES (
-              $1,
-              $2,
-              $3,
-              $4
-            )
-            RETURNING *
+          UPDATE users
+          SET
+            username = $1,
+            bio = $2,
+            avatar_url = $3,
+            updated_at = NOW()
+          WHERE id = $4
+
+          RETURNING
+            id,
+            username,
+            email,
+            bio,
+            avatar_url,
+            created_at
           `,
           [
-            randomId(),
+            username,
+            bio,
+            avatarUrl,
             req.user.id,
-            title,
-            text,
           ]
         );
 
-      res.status(201).json({
+      res.json({
         ok: true,
-        notification:
-          result.rows[0],
+        user:
+          userResponse(
+            result.rows[0]
+          ),
       });
     } catch (error) {
       console.error(
-        "CREATE NOTIFICATION:",
+        "PUT profile:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Не удалось создать уведомление."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось сохранить профиль.",
+      });
     }
   }
 );
 
-app.patch(
-  "/api/notifications/read",
-  requireAuth,
+/*
+=========================================================
+ NOTIFICATIONS
+=========================================================
+*/
+
+app.get(
+  "/api/notifications",
+  authRequired,
   async (req, res) => {
     try {
-      await pool.query(
-        `
-          UPDATE notifications
-          SET is_read = TRUE
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            title,
+            text,
+            is_read,
+            created_at
+          FROM notifications
           WHERE user_id = $1
-        `,
-        [req.user.id]
-      );
+          ORDER BY created_at DESC
+          LIMIT 100
+          `,
+          [req.user.id]
+        );
 
       res.json({
         ok: true,
+
+        notifications:
+          result.rows,
       });
     } catch (error) {
       console.error(
-        "READ NOTIFICATIONS:",
+        "GET notifications:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Ошибка уведомлений."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить уведомления.",
+      });
     }
   }
 );
 
 app.delete(
   "/api/notifications",
-  requireAuth,
+  authRequired,
   async (req, res) => {
     try {
       await pool.query(
         `
-          DELETE FROM notifications
-          WHERE user_id = $1
+        DELETE FROM notifications
+        WHERE user_id = $1
         `,
         [req.user.id]
       );
@@ -2738,105 +2577,62 @@ app.delete(
         ok: true,
       });
     } catch (error) {
-      console.error(
-        "DELETE NOTIFICATIONS:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Не удалось очистить уведомления."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось очистить уведомления.",
+      });
     }
   }
 );
 
-/* ======================================================
-   ADMIN / TRACK CREATION
-====================================================== */
-
 /*
-  Эти endpoints не нужны непосредственно
-  твоему frontend, но позволяют добавлять музыку
-  в PostgreSQL без отдельного файла.
+=========================================================
+ ADMIN/IMPORT TRACK
+=========================================================
 
-  Защита через ADMIN_KEY из переменной окружения.
-
-  POST /api/admin/tracks
+Можно использовать позже для добавления музыки.
+Защиты администратора здесь намеренно нет:
+не публикуй этот endpoint наружу без своей
+админской авторизации.
+=========================================================
 */
 
-function requireAdmin(
-  req,
-  res,
-  next
-) {
-  const configuredKey =
-    process.env.ADMIN_KEY;
-
-  if (!configuredKey) {
-    return jsonError(
-      res,
-      403,
-      "ADMIN_KEY не настроен."
-    );
-  }
-
-  const supplied =
-    req.headers["x-admin-key"] ||
-    req.body.admin_key ||
-    req.query.admin_key;
-
-  if (
-    String(supplied || "") !==
-    String(configuredKey)
-  ) {
-    return jsonError(
-      res,
-      403,
-      "Доступ запрещён."
-    );
-  }
-
-  next();
-}
-
 app.post(
-  "/api/admin/tracks",
-  requireAdmin,
+  "/api/tracks",
   async (req, res) => {
     try {
       const title =
-        String(
-          req.body.title || ""
-        ).trim();
+        safeString(
+          req.body.title,
+          255
+        );
+
+      if (!title) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Название трека обязательно.",
+        });
+      }
 
       const artistName =
-        String(
-          req.body.artist_name ||
-            req.body.artist ||
-            "Неизвестный артист"
-        ).trim();
+        safeString(
+          req.body.artist_name,
+          255
+        ) ||
+        "Неизвестный артист";
 
       const albumName =
-        String(
-          req.body.album_name ||
-            req.body.album ||
-            "Без альбома"
-        ).trim();
+        safeString(
+          req.body.album_name,
+          255
+        );
 
       const genre =
-        String(
-          req.body.genre ||
-            "Неизвестно"
-        ).trim();
-
-      const duration =
-        Math.max(
-          Number(
-            req.body.duration
-          ) || 0,
-          0
+        safeString(
+          req.body.genre,
+          100
         );
 
       const year =
@@ -2846,66 +2642,83 @@ app.post(
             )
           : null;
 
+      const duration =
+        Number(
+          req.body.duration || 0
+        );
+
       const coverUrl =
-        req.body.cover_url ||
-        null;
+        safeString(
+          req.body.cover_url,
+          4000
+        ) || null;
 
       const albumCoverUrl =
-        req.body.album_cover_url ||
-        coverUrl ||
-        null;
+        safeString(
+          req.body.album_cover_url,
+          4000
+        ) || null;
 
       const artistAvatar =
-        req.body.artist_avatar ||
-        null;
+        safeString(
+          req.body.artist_avatar,
+          4000
+        ) || null;
 
       const audioUrl =
-        req.body.audio_url ||
-        req.body.audio_file_url ||
-        null;
+        safeString(
+          req.body.audio_url,
+          4000
+        ) || null;
 
       const telegramFileId =
-        req.body.telegram_file_id ||
-        null;
-
-      if (!title) {
-        return jsonError(
-          res,
-          400,
-          "Название трека обязательно."
-        );
-      }
+        safeString(
+          req.body.telegram_file_id,
+          1000
+        ) || null;
 
       const result =
         await pool.query(
           `
-            INSERT INTO tracks (
+          INSERT INTO tracks
+            (
               title,
               artist_name,
               album_name,
               genre,
-              duration,
               year,
+              duration,
+              plays_count,
               cover_url,
               album_cover_url,
               artist_avatar,
               audio_url,
-              audio_file_url,
               telegram_file_id
             )
-            VALUES (
-              $1,$2,$3,$4,$5,$6,
-              $7,$8,$9,$10,$10,$11
+          VALUES
+            (
+              $1,
+              $2,
+              $3,
+              $4,
+              $5,
+              $6,
+              0,
+              $7,
+              $8,
+              $9,
+              $10,
+              $11
             )
-            RETURNING *
+          RETURNING *
           `,
           [
             title,
             artistName,
             albumName,
             genre,
-            duration,
             year,
+            duration,
             coverUrl,
             albumCoverUrl,
             artistAvatar,
@@ -2916,88 +2729,57 @@ app.post(
 
       res.status(201).json({
         ok: true,
-        track: parseTrack(
-          result.rows[0]
-        ),
+
+        track:
+          normalizeTrack(
+            result.rows[0]
+          ),
       });
     } catch (error) {
       console.error(
-        "ADMIN CREATE TRACK:",
+        "POST /api/tracks:",
         error
       );
 
-      return jsonError(
-        res,
-        500,
-        "Не удалось создать трек."
-      );
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось создать трек.",
+      });
     }
   }
 );
 
-/* ======================================================
-   ADMIN TRACK DELETE
-====================================================== */
-
-app.delete(
-  "/api/admin/tracks/:id",
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const result =
-        await pool.query(
-          `
-            DELETE FROM tracks
-            WHERE id = $1
-            RETURNING id
-          `,
-          [req.params.id]
-        );
-
-      if (!result.rows.length) {
-        return jsonError(
-          res,
-          404,
-          "Трек не найден."
-        );
-      }
-
-      res.json({
-        ok: true,
-      });
-    } catch (error) {
-      console.error(
-        "ADMIN DELETE TRACK:",
-        error
-      );
-
-      return jsonError(
-        res,
-        500,
-        "Не удалось удалить трек."
-      );
-    }
-  }
-);
-
-/* ======================================================
-   404
-====================================================== */
+/*
+=========================================================
+ 404
+=========================================================
+*/
 
 app.use(
   (req, res) => {
     res.status(404).json({
       ok: false,
+
       error: "Not Found",
-      path: req.path,
+
+      path: req.originalUrl,
+
       method: req.method,
+
+      service:
+        "Fenix Music Backend",
+
+      api: "/api",
     });
   }
 );
 
-/* ======================================================
-   GLOBAL ERROR
-====================================================== */
+/*
+=========================================================
+ ERROR HANDLER
+=========================================================
+*/
 
 app.use(
   (
@@ -3007,7 +2789,7 @@ app.use(
     next
   ) => {
     console.error(
-      "GLOBAL ERROR:",
+      "Unhandled server error:",
       error
     );
 
@@ -3020,18 +2802,46 @@ app.use(
     res.status(500).json({
       ok: false,
       error:
-        "Internal Server Error",
+        "Внутренняя ошибка сервера.",
     });
   }
 );
 
-/* ======================================================
-   START
-====================================================== */
+/*
+=========================================================
+ START
+=========================================================
+*/
 
 async function start() {
   try {
     await initDatabase();
+
+    /*
+    Clean expired sessions/captchas
+    */
+
+    setInterval(
+      async () => {
+        try {
+          await pool.query(`
+            DELETE FROM sessions
+            WHERE expires_at < NOW()
+          `);
+
+          await pool.query(`
+            DELETE FROM captchas
+            WHERE expires_at < NOW()
+          `);
+        } catch (error) {
+          console.error(
+            "Cleanup error:",
+            error.message
+          );
+        }
+      },
+      60 * 60 * 1000
+    );
 
     app.listen(
       PORT,
@@ -3042,28 +2852,37 @@ async function start() {
           "========================================"
         );
         console.log(
-          "🔥 FENIX MUSIC BACKEND 2.0.0"
+          "🔥 FENIX MUSIC BACKEND"
         );
         console.log(
           "========================================"
         );
         console.log(
-          `🚀 PORT: ${PORT}`
+          `✅ Server listening on port ${PORT}`
         );
         console.log(
-          "🌐 API: /api"
+          "✅ PostgreSQL connected"
         );
         console.log(
-          "❤️ HEALTH: /api/health"
+          "✅ API: /api"
         );
         console.log(
-          "🎵 TRACKS: /api/tracks"
+          "✅ Health: /api/health"
         );
         console.log(
-          "🔊 AUDIO: /api/tracks/:id/audio"
+          "✅ Tracks: /api/tracks"
         );
         console.log(
-          "🔐 AUTH: /api/auth/*"
+          "✅ Audio: /api/tracks/:id/audio"
+        );
+        console.log(
+          "✅ CAPTCHA: /api/auth/captcha"
+        );
+        console.log(
+          "✅ Register: /api/auth/register"
+        );
+        console.log(
+          "✅ Login: /api/auth/login"
         );
         console.log(
           "========================================"
@@ -3082,7 +2901,9 @@ async function start() {
     console.error(
       "========================================"
     );
-    console.error(error);
+    console.error(
+      error
+    );
     console.error(
       "========================================"
     );
@@ -3095,7 +2916,7 @@ process.on(
   "SIGTERM",
   async () => {
     console.log(
-      "SIGTERM received."
+      "SIGTERM received"
     );
 
     await pool.end();
@@ -3108,7 +2929,7 @@ process.on(
   "SIGINT",
   async () => {
     console.log(
-      "SIGINT received."
+      "SIGINT received"
     );
 
     await pool.end();
