@@ -5,7 +5,7 @@ import {
   Repeat, Shuffle, Crown, Flame, Clock, Menu, X,
   Sliders, VolumeX, Radio, Sparkles, Shield,
   Share2, MoreVertical, Plus, Check, Compass,
-  TrendingUp, Music, Mic, Upload
+  TrendingUp, Music, Upload
 } from 'lucide-react';
 
 export default function FenixMusicApp() {
@@ -19,7 +19,6 @@ export default function FenixMusicApp() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('all');
-  const [playlistDrawerOpen, setPlaylistDrawerOpen] = useState(false);
   const [likedTracks, setLikedTracks] = useState([1, 3]);
   const [notifications, setNotifications] = useState([]);
 
