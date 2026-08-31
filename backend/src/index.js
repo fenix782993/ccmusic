@@ -1,184 +1,1620 @@
+```js
+// src/index.js
 
-const express = require('express');
-const cors = require('cors');
-const crypto = require('crypto');
-const { Pool } = require('pg');
-require('dotenv').config();
+require("dotenv").config();
+
+const express = require("express");
+const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const { Pool } = require("pg");
 
 const app = express();
-app.use(cors());
-app.use(express.json({ limit: '2mb' }));
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
+/* =========================================================
+   CONFIG
+========================================================= */
 
-const PORT = process.env.PORT || 5000;
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHANNEL_ID = process.env.TELEGRAM_CHANNEL_ID;
-const PUBLIC_API_URL = process.env.PUBLIC_API_URL || `http://localhost:${PORT}`;
+const PORT = Number(process.env.PORT || 3000);
 
-function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return `${salt}:${hash}`;
-}
-function verifyPassword(password, stored) {
-  const [salt, key] = String(stored).split(':');
-  if (!salt || !key) return false;
-  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
-  return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(key, 'hex'));
-}
-const sessions = new Map();
-const captchas = new Map();
+const JWT_SECRET =
+  process.env.JWT_SECRET ||
+  "fenix-music-change-this-secret";
 
-function tokenFor(user) {
-  const token = crypto.randomBytes(32).toString('hex');
-  sessions.set(token, { userId: user.id, expires: Date.now() + 1000 * 60 * 60 * 24 * 30 });
-  return token;
-}
-async function auth(req,res,next){
-  const h=req.headers.authorization||'';
-  const token=h.startsWith('Bearer ')?h.slice(7):'';
-  const s=sessions.get(token);
-  if(!s || s.expires<Date.now()){ sessions.delete(token); return res.status(401).json({error:'Необходим вход'}); }
-  const r=await pool.query('SELECT id, username, email, avatar_url, subscription_tier FROM users WHERE id=$1',[s.userId]);
-  if(!r.rows[0]) return res.status(401).json({error:'Пользователь не найден'});
-  req.user=r.rows[0]; next();
-}
+const DATABASE_URL =
+  process.env.DATABASE_URL || "";
 
-app.get('/api/health',(req,res)=>res.json({status:'ok',service:'Fenix Music API'}));
+const FRONTEND_DIR =
+  process.env.FRONTEND_DIR ||
+  path.join(__dirname, "..", "frontend", "dist");
 
-app.get('/api/auth/captcha',(req,res)=>{
-  const id=crypto.randomBytes(12).toString('hex');
-  const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let text=''; for(let i=0;i<6;i++) text+=chars[crypto.randomInt(chars.length)];
-  captchas.set(id,{text,expires:Date.now()+5*60*1000});
-  res.json({id,text}); // For production, render this server-side as an image.
-});
-app.post('/api/auth/register',async(req,res)=>{
-  try{
-    const {username,email,password,captcha}=req.body||{};
-    if(!username||!email||!password||!captcha) return res.status(400).json({error:'Заполните все поля'});
-    const captchaId=req.body.captcha_id;
-    // Client can send the current captcha id. For compatibility with the UI, accept
-    // the newest valid captcha if only the text was supplied.
-    let entry=null, entryId=null;
-    if(captchaId && captchas.has(captchaId)){entry=captchas.get(captchaId);entryId=captchaId;}
-    else {
-      for(const [id,v] of captchas){ if(v.expires>Date.now()){entry=v;entryId=id;} }
-    }
-    if(!entry || entry.expires<Date.now() || entry.text.toUpperCase()!==String(captcha).trim().toUpperCase())
-      return res.status(400).json({error:'Неверная CAPTCHA'});
-    captchas.delete(entryId);
-    if(password.length<6) return res.status(400).json({error:'Пароль минимум 6 символов'});
-    const exists=await pool.query('SELECT id FROM users WHERE lower(username)=lower($1) OR lower(email)=lower($2)',[username,email]);
-    if(exists.rows.length) return res.status(409).json({error:'Пользователь или email уже существует'});
-    const ins=await pool.query('INSERT INTO users(username,email,password_hash) VALUES($1,$2,$3) RETURNING id,username,email,avatar_url,subscription_tier',[username,email,hashPassword(password)]);
-    const user=ins.rows[0]; res.json({token:tokenFor(user),user});
-  }catch(e){console.error(e);res.status(500).json({error:'Ошибка сервера'});}
-});
-app.post('/api/auth/login',async(req,res)=>{
-  try{
-    const {login,password}=req.body||{};
-    const r=await pool.query('SELECT * FROM users WHERE lower(email)=lower($1) OR lower(username)=lower($1) LIMIT 1',[login]);
-    const user=r.rows[0];
-    if(!user || !verifyPassword(password,user.password_hash)) return res.status(401).json({error:'Неверный логин или пароль'});
-    const safe={id:user.id,username:user.username,email:user.email,avatar_url:user.avatar_url,subscription_tier:user.subscription_tier};
-    res.json({token:tokenFor(safe),user:safe});
-  }catch(e){console.error(e);res.status(500).json({error:'Ошибка сервера'});}
-});
-app.get('/api/auth/me',auth,(req,res)=>res.json(req.user));
+const PUBLIC_DIR =
+  process.env.PUBLIC_DIR ||
+  path.join(__dirname, "..", "public");
 
-app.get('/api/tracks',async(req,res)=>{
-  try{
-    const {search,genre}=req.query;
-    let sql=`SELECT t.id,t.title,t.duration,t.audio_url,t.genre,t.plays_count,t.is_premium,t.created_at,
-      a.name AS artist_name, al.title AS album_title, al.cover_url
-      FROM tracks t JOIN artists a ON t.artist_id=a.id
-      LEFT JOIN albums al ON t.album_id=al.id`;
-    const p=[];
-    if(search){sql+=' WHERE t.title ILIKE $1 OR a.name ILIKE $1 OR t.genre ILIKE $1';p.push(`%${search}%`);}
-    else if(genre){sql+=' WHERE t.genre=$1';p.push(genre);}
-    sql+=' ORDER BY t.created_at DESC, t.plays_count DESC LIMIT 100';
-    const r=await pool.query(sql,p);res.json(r.rows);
-  }catch(e){console.error(e);res.status(500).json({error:'Server error'});}
-});
+const UPLOADS_DIR =
+  process.env.UPLOADS_DIR ||
+  path.join(PUBLIC_DIR, "uploads");
 
-async function telegram(method, body){
-  if(!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is not configured');
-  const r=await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`,{
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)
-  });
-  const data=await r.json();
-  if(!data.ok) throw new Error(data.description||'Telegram API error');
-  return data.result;
-}
+/* =========================================================
+   DIRECTORIES
+========================================================= */
 
-app.get('/api/tracks/:id/audio',async(req,res)=>{
-  try{
-    const r=await pool.query('SELECT telegram_file_id,audio_url FROM tracks WHERE id=$1',[req.params.id]);
-    if(!r.rows[0]) return res.status(404).end();
-    const t=r.rows[0];
-    if(t.telegram_file_id && BOT_TOKEN){
-      const file=await telegram('getFile',{file_id:t.telegram_file_id});
-      const url=`https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-      const rr=await fetch(url);
-      if(!rr.ok) return res.status(502).end();
-      res.setHeader('Content-Type',rr.headers.get('content-type')||'audio/mpeg');
-      res.setHeader('Cache-Control','public,max-age=3600');
-      rr.body.pipeTo(new WritableStream({write(chunk){res.write(Buffer.from(chunk));},close(){res.end();}}));
-      pool.query('UPDATE tracks SET plays_count=plays_count+1 WHERE id=$1',[req.params.id]).catch(()=>{});
-      return;
-    }
-    if(t.audio_url) return res.redirect(t.audio_url);
-    res.status(404).end();
-  }catch(e){console.error(e);res.status(500).end();}
-});
-
-// Telegram bot: send audio/document to the bot and it is automatically added to DB and channel.
-let offset=0;
-async function processTelegramUpdate(update){
-  const msg=update.message;
-  if(!msg) return;
-  const audio=msg.audio || (msg.document && String(msg.document.mime_type||'').startsWith('audio/') ? msg.document : null);
-  if(!audio) return;
-  try{
-    const title=audio.title || audio.file_name?.replace(/\.[^.]+$/,'') || 'Без названия';
-    const artist=audio.performer || msg.caption?.split('\\n')[0] || 'Неизвестный исполнитель';
-    const duration=Number(audio.duration||0);
-    const fileId=audio.file_id;
-    const cover=msg.photo?.length ? `telegram_photo:${msg.photo[msg.photo.length-1].file_id}` : '';
-    const genre='Music';
-
-    const artistR=await pool.query('SELECT id FROM artists WHERE lower(name)=lower($1) LIMIT 1',[artist]);
-    const artistId=artistR.rows[0]?.id || (await pool.query('INSERT INTO artists(name) VALUES($1) RETURNING id',[artist])).rows[0].id;
-
-    const trackR=await pool.query(`INSERT INTO tracks(title,artist_id,duration,audio_url,genre,telegram_file_id)
-      VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,[title,artistId,duration,`${PUBLIC_API_URL}/api/tracks/__ID__/audio`,genre,fileId]);
-    const trackId=trackR.rows[0].id;
-    await pool.query('UPDATE tracks SET audio_url=$1 WHERE id=$2',[`${PUBLIC_API_URL}/api/tracks/${trackId}/audio`,trackId]);
-
-    let channelMessageId=null;
-    if(CHANNEL_ID){
-      const sent=await telegram('sendAudio',{chat_id:CHANNEL_ID,audio:fileId,caption:`🎵 ${title}\\n👤 ${artist}\\n🆔 ID: ${trackId}`});
-      channelMessageId=sent.message_id;
-      await pool.query('UPDATE tracks SET telegram_channel_id=$1, telegram_message_id=$2 WHERE id=$3',[String(CHANNEL_ID),channelMessageId,trackId]);
-    }
-    await telegram('sendMessage',{chat_id:msg.chat.id,text:`✅ Трек добавлен!\\n\\n🎵 ${title}\\n👤 ${artist}\\n🆔 ID: ${trackId}\\n${CHANNEL_ID?'📢 Опубликован в канале и появился на сайте.':''}`});
-  }catch(e){
-    console.error('Telegram import error',e);
-    await telegram('sendMessage',{chat_id:msg.chat.id,text:`❌ Не удалось добавить трек: ${e.message}`}).catch(()=>{});
+for (const dir of [
+  PUBLIC_DIR,
+  UPLOADS_DIR,
+]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, {
+      recursive: true,
+    });
   }
 }
-async function botLoop(){
-  if(!BOT_TOKEN) return;
-  try{
-    const updates=await telegram('getUpdates',{offset,timeout:25,allowed_updates:['message']});
-    for(const u of updates){offset=u.update_id+1;await processTelegramUpdate(u);}
-  }catch(e){console.error('Telegram polling:',e.message);await new Promise(r=>setTimeout(r,3000));}
-  setImmediate(botLoop);
-}
-botLoop();
 
-app.listen(PORT,()=>console.log(`Fenix Music API running on ${PORT}`));
+/* =========================================================
+   DATABASE
+========================================================= */
+
+let pool = null;
+
+if (DATABASE_URL) {
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+
+    ssl:
+      process.env.NODE_ENV === "production"
+        ? {
+            rejectUnauthorized: false,
+          }
+        : false,
+  });
+} else {
+  console.warn(
+    "DATABASE_URL не задан. Backend запущен без PostgreSQL."
+  );
+}
+
+/* =========================================================
+   MIDDLEWARE
+========================================================= */
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
+
+app.use(
+  express.json({
+    limit: "20mb",
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "20mb",
+  })
+);
+
+/* =========================================================
+   STATIC FILES
+========================================================= */
+
+if (fs.existsSync(PUBLIC_DIR)) {
+  app.use(
+    "/uploads",
+    express.static(UPLOADS_DIR)
+  );
+
+  app.use(
+    "/public",
+    express.static(PUBLIC_DIR)
+  );
+}
+
+if (fs.existsSync(FRONTEND_DIR)) {
+  app.use(
+    express.static(FRONTEND_DIR)
+  );
+}
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+function randomCaptcha() {
+  return crypto
+    .randomBytes(4)
+    .toString("hex")
+    .toUpperCase()
+    .slice(0, 6);
+}
+
+function createToken(user) {
+  return jwt.sign(
+    {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+    },
+    JWT_SECRET,
+    {
+      expiresIn: "30d",
+    }
+  );
+}
+
+function normalizeUser(row) {
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    username: row.username,
+    email: row.email,
+    bio: row.bio || "",
+    avatar_url: row.avatar_url || null,
+    created_at: row.created_at,
+  };
+}
+
+function authRequired(req, res, next) {
+  try {
+    const header =
+      req.headers.authorization || "";
+
+    let token = "";
+
+    if (header.startsWith("Bearer ")) {
+      token = header.slice(7);
+    }
+
+    if (!token && req.cookies?.fenix_token) {
+      token = req.cookies.fenix_token;
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        error: "Требуется авторизация.",
+      });
+    }
+
+    const payload = jwt.verify(
+      token,
+      JWT_SECRET
+    );
+
+    req.user = payload;
+
+    next();
+  } catch {
+    return res.status(401).json({
+      error: "Недействительная сессия.",
+    });
+  }
+}
+
+/* =========================================================
+   DATABASE INIT
+========================================================= */
+
+async function initDatabase() {
+  if (!pool) {
+    return;
+  }
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id BIGSERIAL PRIMARY KEY,
+      username VARCHAR(50) NOT NULL UNIQUE,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      bio TEXT DEFAULT '',
+      avatar_url TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tracks (
+      id BIGSERIAL PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      artist_name VARCHAR(255) DEFAULT 'Unknown Artist',
+      album_name VARCHAR(255) DEFAULT 'Unknown Album',
+      genre VARCHAR(100) DEFAULT 'Unknown',
+      duration INTEGER DEFAULT 0,
+      plays BIGINT DEFAULT 0,
+      cover_url TEXT,
+      audio_url TEXT,
+      artist_avatar TEXT,
+      album_cover_url TEXT,
+      year INTEGER,
+      telegram_file_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS playlists (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name VARCHAR(255) NOT NULL,
+      is_public BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS playlist_tracks (
+      playlist_id BIGINT NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+      track_id BIGINT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (playlist_id, track_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS favorites (
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      track_id BIGINT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, track_id)
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS listening_history (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      track_id BIGINT NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+      played_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS captcha (
+      id UUID PRIMARY KEY,
+      code VARCHAR(20) NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+
+  console.log("PostgreSQL database ready.");
+}
+
+/* =========================================================
+   HEALTH
+========================================================= */
+
+app.get("/api/health", async (req, res) => {
+  let database = "disabled";
+
+  if (pool) {
+    try {
+      await pool.query("SELECT 1");
+      database = "connected";
+    } catch {
+      database = "error";
+    }
+  }
+
+  res.json({
+    ok: true,
+    service: "fenix-music-backend",
+    version: "2.0.0",
+    database,
+    time: new Date().toISOString(),
+  });
+});
+
+/* =========================================================
+   ROOT
+========================================================= */
+
+app.get("/", (req, res) => {
+  const indexFile = path.join(
+    FRONTEND_DIR,
+    "index.html"
+  );
+
+  if (fs.existsSync(indexFile)) {
+    return res.sendFile(indexFile);
+  }
+
+  return res.status(200).send(`
+    <!doctype html>
+    <html lang="ru">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport"
+          content="width=device-width, initial-scale=1.0" />
+        <title>Fenix Music</title>
+      </head>
+
+      <body
+        style="
+          margin:0;
+          background:#090909;
+          color:white;
+          font-family:Arial,sans-serif;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          min-height:100vh;
+        "
+      >
+        <div style="text-align:center">
+          <h1>FENIX MUSIC</h1>
+          <p>Backend работает.</p>
+          <p>
+            Frontend не найден в:
+            <br />
+            ${FRONTEND_DIR}
+          </p>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+/* =========================================================
+   TRACKS
+========================================================= */
+
+app.get("/api/tracks", async (req, res) => {
+  if (!pool) {
+    return res.json([]);
+  }
+
+  try {
+    const result = await pool.query(`
+      SELECT
+        id,
+        title,
+        artist_name,
+        album_name,
+        genre,
+        duration,
+        plays,
+        cover_url,
+        audio_url,
+        artist_avatar,
+        album_cover_url,
+        year,
+        telegram_file_id,
+        created_at
+      FROM tracks
+      ORDER BY created_at DESC, id DESC
+    `);
+
+    res.json(
+      result.rows.map((track) => ({
+        ...track,
+        id: String(track.id),
+        duration: Number(track.duration || 0),
+        plays: Number(track.plays || 0),
+
+        cover_url:
+          track.cover_url ||
+          "/public/default-cover.jpg",
+
+        audio_url:
+          track.audio_url ||
+          `/api/tracks/${track.id}/audio`,
+      }))
+    );
+  } catch (error) {
+    console.error(
+      "GET /api/tracks:",
+      error
+    );
+
+    res.status(500).json({
+      error: "Не удалось получить треки.",
+    });
+  }
+});
+
+/* =========================================================
+   SINGLE TRACK
+========================================================= */
+
+app.get(
+  "/api/tracks/:id",
+  async (req, res) => {
+    if (!pool) {
+      return res.status(404).json({
+        error: "Трек не найден.",
+      });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT *
+        FROM tracks
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [req.params.id]
+      );
+
+      if (!result.rows.length) {
+        return res.status(404).json({
+          error: "Трек не найден.",
+        });
+      }
+
+      const track = result.rows[0];
+
+      res.json({
+        ...track,
+        id: String(track.id),
+        duration: Number(
+          track.duration || 0
+        ),
+        plays: Number(
+          track.plays || 0
+        ),
+        cover_url:
+          track.cover_url ||
+          "/public/default-cover.jpg",
+        audio_url:
+          track.audio_url ||
+          `/api/tracks/${track.id}/audio`,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error: "Ошибка сервера.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   TRACK AUDIO
+========================================================= */
+
+app.get(
+  "/api/tracks/:id/audio",
+  async (req, res) => {
+    if (!pool) {
+      return res.status(404).send(
+        "Audio unavailable"
+      );
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT audio_url
+        FROM tracks
+        WHERE id = $1
+        LIMIT 1
+        `,
+        [req.params.id]
+      );
+
+      if (!result.rows.length) {
+        return res.status(404).send(
+          "Track not found"
+        );
+      }
+
+      const audioUrl =
+        result.rows[0].audio_url;
+
+      if (!audioUrl) {
+        return res.status(404).send(
+          "Audio not found"
+        );
+      }
+
+      /*
+       * Если audio_url уже является URL,
+       * перенаправляем браузер.
+       */
+      if (
+        audioUrl.startsWith("http://") ||
+        audioUrl.startsWith("https://")
+      ) {
+        return res.redirect(audioUrl);
+      }
+
+      const cleanPath =
+        audioUrl.startsWith("/")
+          ? audioUrl.slice(1)
+          : audioUrl;
+
+      const filePath = path.resolve(
+        PUBLIC_DIR,
+        cleanPath.replace(
+          /^public[\\/]/,
+          ""
+        )
+      );
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).send(
+          "Audio file not found"
+        );
+      }
+
+      res.sendFile(filePath);
+    } catch (error) {
+      console.error(
+        "Audio error:",
+        error
+      );
+
+      res.status(500).send(
+        "Audio server error"
+      );
+    }
+  }
+);
+
+/* =========================================================
+   CAPTCHA
+========================================================= */
+
+app.get(
+  "/api/auth/captcha",
+  async (req, res) => {
+    const code = randomCaptcha();
+
+    const id = crypto.randomUUID();
+
+    const expiresAt =
+      new Date(
+        Date.now() + 10 * 60 * 1000
+      );
+
+    if (pool) {
+      try {
+        await pool.query(
+          `
+          INSERT INTO captcha
+          (id, code, expires_at)
+          VALUES ($1, $2, $3)
+          `,
+          [
+            id,
+            code,
+            expiresAt,
+          ]
+        );
+      } catch (error) {
+        console.error(
+          "Captcha DB error:",
+          error
+        );
+      }
+    }
+
+    res.json({
+      id,
+      captcha_id: id,
+      text: code,
+      code,
+      expires_at:
+        expiresAt.toISOString(),
+    });
+  }
+);
+
+/* =========================================================
+   REGISTER
+========================================================= */
+
+app.post(
+  "/api/auth/register",
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      const {
+        username,
+        email,
+        password,
+        captcha,
+        captcha_id,
+      } = req.body || {};
+
+      const cleanUsername =
+        String(username || "").trim();
+
+      const cleanEmail =
+        String(email || "")
+          .trim()
+          .toLowerCase();
+
+      const cleanPassword =
+        String(password || "");
+
+      if (
+        !cleanUsername ||
+        !cleanEmail ||
+        !cleanPassword
+      ) {
+        return res.status(400).json({
+          error:
+            "Заполни все обязательные поля.",
+        });
+      }
+
+      if (
+        cleanUsername.length < 3 ||
+        cleanUsername.length > 50
+      ) {
+        return res.status(400).json({
+          error:
+            "Username должен содержать от 3 до 50 символов.",
+        });
+      }
+
+      if (cleanPassword.length < 6) {
+        return res.status(400).json({
+          error:
+            "Пароль должен содержать минимум 6 символов.",
+        });
+      }
+
+      /*
+       * CAPTCHA
+       */
+      if (captcha_id) {
+        const captchaResult =
+          await pool.query(
+            `
+            SELECT *
+            FROM captcha
+            WHERE id = $1
+            LIMIT 1
+            `,
+            [captcha_id]
+          );
+
+        if (
+          !captchaResult.rows.length
+        ) {
+          return res.status(400).json({
+            error:
+              "CAPTCHA устарела. Получи новую.",
+          });
+        }
+
+        const captchaRow =
+          captchaResult.rows[0];
+
+        if (
+          new Date(
+            captchaRow.expires_at
+          ).getTime() <
+          Date.now()
+        ) {
+          return res.status(400).json({
+            error:
+              "CAPTCHA истекла.",
+          });
+        }
+
+        if (
+          String(
+            captcha || ""
+          )
+            .trim()
+            .toUpperCase() !==
+          String(
+            captchaRow.code
+          )
+            .trim()
+            .toUpperCase()
+        ) {
+          return res.status(400).json({
+            error:
+              "Неверная CAPTCHA.",
+          });
+        }
+
+        await pool.query(
+          `
+          DELETE FROM captcha
+          WHERE id = $1
+          `,
+          [captcha_id]
+        );
+      }
+
+      /*
+       * Проверяем username/email
+       */
+      const exists =
+        await pool.query(
+          `
+          SELECT id
+          FROM users
+          WHERE LOWER(username) = LOWER($1)
+             OR LOWER(email) = LOWER($2)
+          LIMIT 1
+          `,
+          [
+            cleanUsername,
+            cleanEmail,
+          ]
+        );
+
+      if (exists.rows.length) {
+        return res.status(409).json({
+          error:
+            "Username или Email уже используется.",
+        });
+      }
+
+      const passwordHash =
+        await bcrypt.hash(
+          cleanPassword,
+          12
+        );
+
+      const result =
+        await pool.query(
+          `
+          INSERT INTO users
+          (
+            username,
+            email,
+            password_hash
+          )
+          VALUES ($1, $2, $3)
+          RETURNING
+            id,
+            username,
+            email,
+            bio,
+            avatar_url,
+            created_at
+          `,
+          [
+            cleanUsername,
+            cleanEmail,
+            passwordHash,
+          ]
+        );
+
+      const user =
+        normalizeUser(
+          result.rows[0]
+        );
+
+      const token =
+        createToken(user);
+
+      res.status(201).json({
+        ok: true,
+        token,
+        access_token: token,
+        user,
+        account: user,
+      });
+    } catch (error) {
+      console.error(
+        "REGISTER ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        error:
+          "Не удалось создать аккаунт.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   LOGIN
+========================================================= */
+
+app.post(
+  "/api/auth/login",
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      const {
+        login,
+        username,
+        email,
+        password,
+      } = req.body || {};
+
+      const identifier =
+        String(
+          login ||
+            email ||
+            username ||
+            ""
+        ).trim();
+
+      const cleanPassword =
+        String(password || "");
+
+      if (
+        !identifier ||
+        !cleanPassword
+      ) {
+        return res.status(400).json({
+          error:
+            "Введите логин и пароль.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT *
+          FROM users
+          WHERE
+            LOWER(username) = LOWER($1)
+            OR LOWER(email) = LOWER($1)
+          LIMIT 1
+          `,
+          [identifier]
+        );
+
+      if (!result.rows.length) {
+        return res.status(401).json({
+          error:
+            "Неверный логин или пароль.",
+        });
+      }
+
+      const row =
+        result.rows[0];
+
+      const valid =
+        await bcrypt.compare(
+          cleanPassword,
+          row.password_hash
+        );
+
+      if (!valid) {
+        return res.status(401).json({
+          error:
+            "Неверный логин или пароль.",
+        });
+      }
+
+      const user =
+        normalizeUser(row);
+
+      const token =
+        createToken(user);
+
+      res.json({
+        ok: true,
+        token,
+        access_token: token,
+        user,
+        account: user,
+      });
+    } catch (error) {
+      console.error(
+        "LOGIN ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        error:
+          "Ошибка авторизации.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   CURRENT USER
+========================================================= */
+
+app.get(
+  "/api/auth/me",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            username,
+            email,
+            bio,
+            avatar_url,
+            created_at
+          FROM users
+          WHERE id = $1
+          LIMIT 1
+          `,
+          [req.user.id]
+        );
+
+      if (!result.rows.length) {
+        return res.status(404).json({
+          error:
+            "Пользователь не найден.",
+        });
+      }
+
+      res.json({
+        user: normalizeUser(
+          result.rows[0]
+        ),
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось получить профиль.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   UPDATE PROFILE
+========================================================= */
+
+app.patch(
+  "/api/auth/profile",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      const {
+        username,
+        bio,
+        avatar_url,
+      } = req.body || {};
+
+      const cleanUsername =
+        String(
+          username || ""
+        ).trim();
+
+      const cleanBio =
+        String(
+          bio || ""
+        ).trim();
+
+      const result =
+        await pool.query(
+          `
+          UPDATE users
+          SET
+            username =
+              COALESCE(NULLIF($1, ''), username),
+            bio = $2,
+            avatar_url = $3
+          WHERE id = $4
+          RETURNING
+            id,
+            username,
+            email,
+            bio,
+            avatar_url,
+            created_at
+          `,
+          [
+            cleanUsername,
+            cleanBio,
+            avatar_url || null,
+            req.user.id,
+          ]
+        );
+
+      if (!result.rows.length) {
+        return res.status(404).json({
+          error:
+            "Пользователь не найден.",
+        });
+      }
+
+      res.json({
+        ok: true,
+        user: normalizeUser(
+          result.rows[0]
+        ),
+      });
+    } catch (error) {
+      console.error(
+        "PROFILE UPDATE:",
+        error
+      );
+
+      res.status(500).json({
+        error:
+          "Не удалось сохранить профиль.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   FAVORITES
+========================================================= */
+
+app.get(
+  "/api/favorites",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.json([]);
+    }
+
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            t.*
+          FROM favorites f
+          JOIN tracks t
+            ON t.id = f.track_id
+          WHERE f.user_id = $1
+          ORDER BY f.created_at DESC
+          `,
+          [req.user.id]
+        );
+
+      res.json(
+        result.rows.map((track) => ({
+          ...track,
+          id: String(track.id),
+          duration: Number(
+            track.duration || 0
+          ),
+          plays: Number(
+            track.plays || 0
+          ),
+        }))
+      );
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось получить избранное.",
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/favorites/:trackId",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      await pool.query(
+        `
+        INSERT INTO favorites
+        (user_id, track_id)
+        VALUES ($1, $2)
+        ON CONFLICT DO NOTHING
+        `,
+        [
+          req.user.id,
+          req.params.trackId,
+        ]
+      );
+
+      res.json({
+        ok: true,
+        favorite: true,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось сохранить трек.",
+      });
+    }
+  }
+);
+
+app.delete(
+  "/api/favorites/:trackId",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      await pool.query(
+        `
+        DELETE FROM favorites
+        WHERE user_id = $1
+          AND track_id = $2
+        `,
+        [
+          req.user.id,
+          req.params.trackId,
+        ]
+      );
+
+      res.json({
+        ok: true,
+        favorite: false,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось удалить трек.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   LISTENING HISTORY
+========================================================= */
+
+app.get(
+  "/api/history",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.json([]);
+    }
+
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            t.*,
+            h.played_at
+          FROM listening_history h
+          JOIN tracks t
+            ON t.id = h.track_id
+          WHERE h.user_id = $1
+          ORDER BY h.played_at DESC
+          LIMIT 100
+          `,
+          [req.user.id]
+        );
+
+      res.json(
+        result.rows.map((track) => ({
+          ...track,
+          id: String(track.id),
+          duration: Number(
+            track.duration || 0
+          ),
+          plays: Number(
+            track.plays || 0
+          ),
+        }))
+      );
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось получить историю.",
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/history/:trackId",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      await pool.query(
+        `
+        INSERT INTO listening_history
+        (user_id, track_id)
+        VALUES ($1, $2)
+        `,
+        [
+          req.user.id,
+          req.params.trackId,
+        ]
+      );
+
+      await pool.query(
+        `
+        UPDATE tracks
+        SET plays = plays + 1
+        WHERE id = $1
+        `,
+        [req.params.trackId]
+      );
+
+      res.json({
+        ok: true,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось сохранить историю.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   PLAYLISTS
+========================================================= */
+
+app.get(
+  "/api/playlists",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.json([]);
+    }
+
+    try {
+      const result =
+        await pool.query(
+          `
+          SELECT
+            p.id,
+            p.name,
+            p.is_public,
+            p.created_at,
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', t.id,
+                  'title', t.title,
+                  'artist_name', t.artist_name,
+                  'album_name', t.album_name,
+                  'genre', t.genre,
+                  'duration', t.duration,
+                  'cover_url', t.cover_url,
+                  'audio_url', t.audio_url
+                )
+                ORDER BY pt.position
+              )
+              FILTER (WHERE t.id IS NOT NULL),
+              '[]'
+            ) AS tracks
+          FROM playlists p
+          LEFT JOIN playlist_tracks pt
+            ON pt.playlist_id = p.id
+          LEFT JOIN tracks t
+            ON t.id = pt.track_id
+          WHERE p.user_id = $1
+          GROUP BY
+            p.id
+          ORDER BY
+            p.created_at DESC
+          `,
+          [req.user.id]
+        );
+
+      res.json(
+        result.rows.map(
+          (playlist) => ({
+            id: String(
+              playlist.id
+            ),
+            name: playlist.name,
+            public:
+              playlist.is_public,
+            created_at:
+              playlist.created_at,
+            tracks:
+              playlist.tracks || [],
+          })
+        )
+      );
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось получить плейлисты.",
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/playlists",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      const {
+        name,
+        public: isPublic,
+      } = req.body || {};
+
+      const cleanName =
+        String(
+          name || ""
+        ).trim();
+
+      if (!cleanName) {
+        return res.status(400).json({
+          error:
+            "Название плейлиста обязательно.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          INSERT INTO playlists
+          (
+            user_id,
+            name,
+            is_public
+          )
+          VALUES ($1, $2, $3)
+          RETURNING *
+          `,
+          [
+            req.user.id,
+            cleanName,
+            Boolean(isPublic),
+          ]
+        );
+
+      res.status(201).json({
+        ok: true,
+        playlist: {
+          id: String(
+            result.rows[0].id
+          ),
+          name:
+            result.rows[0].name,
+          public:
+            result.rows[0]
+              .is_public,
+          tracks: [],
+        },
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось создать плейлист.",
+      });
+    }
+  }
+);
+
+app.delete(
+  "/api/playlists/:id",
+  authRequired,
+  async (req, res) => {
+    if (!pool) {
+      return res.status(503).json({
+        error:
+          "PostgreSQL не подключён.",
+      });
+    }
+
+    try {
+      await pool.query(
+        `
+        DELETE FROM playlists
+        WHERE id = $1
+          AND user_id = $2
+        `,
+        [
+          req.params.id,
+          req.user.id,
+        ]
+      );
+
+      res.json({
+        ok: true,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        error:
+          "Не удалось удалить плейлист.",
+      });
+    }
+  }
+);
+
+/* =========================================================
+   404 API
+========================================================= */
+
+app.use(
+  "/api",
+  (req, res) => {
+    res.status(404).json({
+      error: "API endpoint not found.",
+      path: req.originalUrl,
+    });
+  }
+);
+
+/* =========================================================
+   SPA FALLBACK
+========================================================= */
+
+app.get(
+  "*",
+  (req, res, next) => {
+    if (
+      req.path.startsWith("/api/")
+    ) {
+      return next();
+    }
+
+    const indexFile =
+      path.join(
+        FRONTEND_DIR,
+        "index.html"
+      );
+
+    if (
+      fs.existsSync(indexFile)
+    ) {
+      return res.sendFile(
+        indexFile
+      );
+    }
+
+    res.status(404).send(
+      "Frontend not found."
+    );
+  }
+);
+
+/* =========================================================
+   ERROR HANDLER
+========================================================= */
+
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+    console.error(
+      "UNHANDLED ERROR:",
+      error
+    );
+
+    res.status(500).json({
+      error:
+        "Internal server error.",
+    });
+  }
+);
+
+/* =========================================================
+   START
+========================================================= */
+
+async function start() {
+  try {
+    await initDatabase();
+
+    app.listen(
+      PORT,
+      "0.0.0.0",
+      () => {
+        console.log("");
+        console.log(
+          "========================================"
+        );
+        console.log(
+          "        FENIX MUSIC BACKEND"
+        );
+        console.log(
+          "========================================"
+        );
+        console.log(
+          `Server: http://0.0.0.0:${PORT}`
+        );
+        console.log(
+          `Health: http://0.0.0.0:${PORT}/api/health`
+        );
+        console.log(
+          `Frontend: ${FRONTEND_DIR}`
+        );
+        console.log(
+          `Uploads: ${UPLOADS_DIR}`
+        );
+        console.log(
+          `PostgreSQL: ${
+            pool
+              ? "enabled"
+              : "disabled"
+          }`
+        );
+        console.log(
+          "========================================"
+        );
+        console.log("");
+      }
+    );
+  } catch (error) {
+    console.error(
+      "FATAL START ERROR:",
+      error
+    );
+
+    process.exit(1);
+  }
+}
+
+start();
+```
