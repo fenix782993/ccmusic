@@ -4,7 +4,7 @@ import {
   Play, Pause, SkipBack, SkipForward, Volume2,  
   Repeat, Shuffle, Crown, Flame, Clock, Menu, X,
   Sliders, ListMusic, VolumeX, Radio, Sparkles, Shield,
-  Share2, Download, MoreVertical, Plus, Check, Compass,
+  Share2, MoreVertical, Plus, Check, Compass,
   TrendingUp, Music, Mic, Upload
 } from 'lucide-react';
 
@@ -141,7 +141,6 @@ export default function FenixMusicApp() {
         className="hidden" 
       />
 
-      {/* Уведомления */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-xs w-full px-4">
         {notifications.map(n => (
           <div key={n.id} className="bg-zinc-900/95 border border-violet-500/30 text-white px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md text-xs sm:text-sm font-medium flex items-center gap-3">
@@ -151,7 +150,6 @@ export default function FenixMusicApp() {
         ))}
       </div>
 
-      {/* Десктопный сайдбар */}
       <aside className="hidden md:flex flex-col w-64 lg:w-72 bg-[#0c0c10] border-r border-white/5 p-6 justify-between z-20">
         <div>
           <div className="flex items-center gap-3 mb-10 px-2">
@@ -205,7 +203,6 @@ export default function FenixMusicApp() {
         </div>
       </aside>
 
-      {/* Мобильный сайдбар ( Drawer ) */}
       {mobileMenuOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden bg-black/80 backdrop-blur-md">
           <div className="w-72 bg-[#0c0c10] h-full p-6 flex flex-col justify-between border-r border-white/10 overflow-y-auto">
@@ -240,9 +237,7 @@ export default function FenixMusicApp() {
         </div>
       )}
 
-      {/* Основной контент */}
       <main className="flex-1 flex flex-col h-full overflow-y-auto pb-28">
-        {/* Шапка */}
         <header className="flex justify-between items-center px-4 sm:px-8 py-4 sticky top-0 bg-[#070709]/90 backdrop-blur-xl z-20 border-b border-white/5 gap-3">
           <div className="flex items-center gap-3 md:hidden">
             <button onClick={() => setMobileMenuOpen(true)} className="p-2 -ml-2 text-zinc-300">
@@ -283,9 +278,7 @@ export default function FenixMusicApp() {
           </div>
         </header>
 
-        {/* Контейнер страниц */}
         <div className="p-4 sm:p-8 flex-1 max-w-7xl w-full mx-auto space-y-6 sm:space-y-8">
-          
           {currentTab === 'home' && (
             <div className="space-y-8 animate-fade-in">
               <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-violet-950/60 via-purple-950/30 to-[#070709] border border-white/10 p-6 sm:p-10 flex flex-col justify-end min-h-[260px] sm:min-h-[320px] shadow-2xl">
@@ -559,7 +552,6 @@ export default function FenixMusicApp() {
         </div>
       </main>
 
-      {/* Адаптивный нижний плеер */}
       <footer className="fixed bottom-0 left-0 right-0 h-20 sm:h-24 bg-[#0d0d12]/95 backdrop-blur-2xl border-t border-white/10 px-4 sm:px-6 flex items-center justify-between z-40 gap-2">
         <div className="flex items-center gap-3 w-1/3 sm:w-1/4 min-w-0">
           <img src={currentTrack.cover_url} alt="" className="w-11 h-11 sm:w-13 sm:h-13 rounded-xl object-cover shadow-lg shrink-0" />
