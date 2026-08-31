@@ -5,7 +5,7 @@ import {
   Repeat, Shuffle, Crown, Flame, Clock, Menu, X,
   Sliders, VolumeX, Radio, Sparkles, Shield,
   Share2, Plus, Check, Compass,
-  TrendingUp, Music, Upload
+  TrendingUp, Disc3, Upload
 } from 'lucide-react';
 
 export default function FenixMusicApp() {
@@ -543,7 +543,7 @@ export default function FenixMusicApp() {
 
           {(currentTab === 'history' || currentTab === 'radio' || currentTab === 'profile') && (
             <div className="flex flex-col items-center justify-center py-20 text-center animate-fade-in">
-              <Disc className="w-12 h-12 mb-3 text-violet-500/30 animate-spin" />
+              <Disc3 className="w-12 h-12 mb-3 text-violet-500/30 animate-spin" />
               <h2 className="text-base font-bold mb-1">Раздел в разработке</h2>
               <p className="text-xs text-zinc-500">Скоро здесь появится расширенный функционал.</p>
             </div>
