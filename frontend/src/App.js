@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Home, Search, Library, Heart, Play, Pause, SkipBack, SkipForward, Volume2, Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle, Send, Music, User, Clock, Radio, ListMusic, Download, Sparkles
+  Home, Search, Library, Heart, Play, Pause, SkipBack, SkipForward, Volume2, Repeat, Shuffle, Crown, Flame, Shield, PhoneCall, LogOut, Upload, CheckCircle, Send, User, Clock, Radio, Download, Sparkles
 } from 'lucide-react';
 
 export default function App() {
@@ -488,7 +488,7 @@ export default function App() {
                 </div>
                 <div className="bg-white/10 border border-white/10 p-4 rounded-2xl cursor-pointer hover:bg-white/20 transition">
                   <div className="w-12 h-12 rounded-xl bg-sky-600/30 flex items-center justify-center text-sky-400 mb-3">
-                    <ListMusic className="w-6 h-6" />
+                    <Library className="w-6 h-6" />
                   </div>
                   <h4 className="font-bold text-sm">Плейлисты</h4>
                   <p className="text-xs text-zinc-400">2 плейлиста</p>
@@ -799,7 +799,7 @@ function NavItem({ icon, label, active, onClick }) {
           : 'text-zinc-400 hover:bg-white/10 hover:text-white'
       }`}
     >
-      {React.isValidElement(icon) && React.cloneElement(icon, { className: 'w-4 h-4' })}
+      {React.cloneElement(icon, { className: 'w-4 h-4' })}
       <span>{label}</span>
     </div>
   );
