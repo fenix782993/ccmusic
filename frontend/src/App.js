@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {  
-  Home, Search, Library, Heart, Disc, User,  
+  Home, Search, Library, Heart, Disc3, User,  
   Play, Pause, SkipBack, SkipForward, Volume2,  
   Repeat, Shuffle, Crown, Flame, Clock, Menu, X,
   Sliders, VolumeX, Radio, Sparkles, Shield,
   Share2, Plus, Check, Compass,
-  TrendingUp, Disc3, Upload
+  TrendingUp, Upload
 } from 'lucide-react';
 
 export default function FenixMusicApp() {
