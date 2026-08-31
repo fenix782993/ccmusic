@@ -1,17 +1,28 @@
-```jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import "./App.css";
 
 /*
-  FENIX MUSIC
-  Full frontend App.js
-  Без lucide-react.
+============================================================
+ FENIX MUSIC
+ Финальный App.js
+ Без lucide-react.
+ Один audio element.
+ React 18/19 compatible.
+============================================================
 */
 
-const API =
+const API = (
   process.env.REACT_APP_API_URL ||
   process.env.PUBLIC_API_URL ||
-  "";
+  ""
+).replace(/\/+$/, "");
 
 const DEFAULT_COVER =
   "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800";
@@ -71,6 +82,10 @@ const DEMO_TRACKS = [
   },
 ];
 
+/* ============================================================
+   ICONS
+============================================================ */
+
 const ICONS = {
   home: "⌂",
   search: "⌕",
@@ -111,22 +126,42 @@ const ICONS = {
 
 function Icon({ name, className = "" }) {
   return (
-    <span className={`fenix-icon ${className}`} aria-hidden="true">
+    <span
+      className={`fenix-icon ${className}`}
+      aria-hidden="true"
+    >
       {ICONS[name] || "•"}
     </span>
   );
 }
 
+/* ============================================================
+   HELPERS
+============================================================ */
+
 function formatTime(value) {
-  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  const seconds = Math.max(
+    0,
+    Math.floor(Number(value) || 0)
+  );
+
   const minutes = Math.floor(seconds / 60);
-  const secondsPart = String(seconds % 60).padStart(2, "0");
+  const secondsPart = String(seconds % 60).padStart(
+    2,
+    "0"
+  );
 
   return `${minutes}:${secondsPart}`;
 }
 
 function apiUrl(path) {
-  return `${API}${path}`;
+  if (!path) return API;
+
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+
+  return `${API}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
 function readStorage(key, fallback) {
@@ -145,9 +180,20 @@ function readStorage(key, fallback) {
 
 function saveStorage(key, value) {
   try {
-    localStorage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(
+      key,
+      JSON.stringify(value)
+    );
   } catch {
-    // localStorage может быть отключён браузером.
+    // localStorage может быть недоступен.
+  }
+}
+
+function removeStorage(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
   }
 }
 
@@ -158,379 +204,1151 @@ function randomCaptcha() {
     .toUpperCase();
 }
 
-function normalizeTrack(track) {
+function normalizeTrack(track = {}) {
   return {
     ...track,
-    id: track.id ?? track.track_id,
-    title: track.title || track.name || "Без названия",
+
+    id:
+      track.id ??
+      track.track_id ??
+      track._id ??
+      Math.random().toString(36),
+
+    title:
+      track.title ||
+      track.name ||
+      "Без названия",
+
     artist_name:
       track.artist_name ||
       track.artist ||
       track.author ||
+      track.performer ||
       "Неизвестный артист",
+
     album_name:
       track.album_name ||
       track.album ||
       "Без альбома",
-    genre: track.genre || "Music",
-    duration: Number(track.duration || 0),
-    plays: Number(track.plays || track.play_count || 0),
+
+    genre:
+      track.genre ||
+      "Music",
+
+    duration:
+      Number(
+        track.duration ||
+        track.duration_seconds ||
+        0
+      ),
+
+    plays:
+      Number(
+        track.plays ||
+        track.play_count ||
+        track.listen_count ||
+        0
+      ),
+
     cover_url:
       track.cover_url ||
       track.cover ||
       track.album_cover_url ||
+      track.thumbnail ||
       DEFAULT_COVER,
+
     audio_url:
       track.audio_url ||
       track.stream_url ||
+      track.streamUrl ||
+      track.audio ||
       track.url ||
       "",
   };
 }
 
-/* =========================
-   MAIN APP
-========================= */
+function normalizeTrackList(data) {
+  let list = [];
+
+  if (Array.isArray(data)) {
+    list = data;
+  } else if (Array.isArray(data?.tracks)) {
+    list = data.tracks;
+  } else if (Array.isArray(data?.items)) {
+    list = data.items;
+  } else if (Array.isArray(data?.results)) {
+    list = data.results;
+  } else if (Array.isArray(data?.data)) {
+    list = data.data;
+  }
+
+  return list.map(normalizeTrack);
+}
+
+async function requestJSON(
+  path,
+  options = {}
+) {
+  const token =
+    localStorage.getItem("fenix_token");
+
+  const headers = {
+    ...(options.headers || {}),
+  };
+
+  if (
+    options.body &&
+    typeof options.body !== "string"
+  ) {
+    headers["Content-Type"] =
+      "application/json";
+
+    options = {
+      ...options,
+      body: JSON.stringify(
+        options.body
+      ),
+    };
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(
+    apiUrl(path),
+    {
+      ...options,
+      headers,
+      credentials: "include",
+    }
+  );
+
+  const text =
+    await response.text();
+
+  let data = {};
+
+  try {
+    data = text
+      ? JSON.parse(text)
+      : {};
+  } catch {
+    data = {
+      raw: text,
+    };
+  }
+
+  if (!response.ok) {
+    const error = new Error(
+      data?.error ||
+      data?.message ||
+      `HTTP ${response.status}`
+    );
+
+    error.status =
+      response.status;
+
+    throw error;
+  }
+
+  return data;
+}
+
+/* ============================================================
+   APP
+============================================================ */
 
 export default function App() {
   const audioRef = useRef(null);
 
-  const [page, setPage] = useState("home");
+  const positionSaveTimer =
+    useRef(null);
 
-  const [tracks, setTracks] = useState([]);
-  const [loadingTracks, setLoadingTracks] = useState(true);
-  const [apiError, setApiError] = useState("");
+  const [page, setPage] =
+    useState("home");
 
-  const [currentTrack, setCurrentTrack] = useState(null);
-  const [playing, setPlaying] = useState(false);
+  const [tracks, setTracks] =
+    useState([]);
 
-  const [search, setSearch] = useState("");
+  const [loadingTracks, setLoadingTracks] =
+    useState(true);
 
-  const [position, setPosition] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(
-    Number(localStorage.getItem("fenix_volume") || 0.8)
+  const [apiError, setApiError] =
+    useState("");
+
+  const [currentTrack, setCurrentTrack] =
+    useState(null);
+
+  const [playing, setPlaying] =
+    useState(false);
+
+  const [search, setSearch] =
+    useState("");
+
+  const [position, setPosition] =
+    useState(0);
+
+  const [duration, setDuration] =
+    useState(0);
+
+  const [volume, setVolume] =
+    useState(() => {
+      const stored =
+        Number(
+          localStorage.getItem(
+            "fenix_volume"
+          )
+        );
+
+      if (
+        Number.isFinite(stored) &&
+        stored >= 0 &&
+        stored <= 1
+      ) {
+        return stored;
+      }
+
+      return 0.8;
+    });
+
+  const [shuffle, setShuffle] =
+    useState(() =>
+      readStorage(
+        "fenix_shuffle",
+        false
+      )
+    );
+
+  const [repeat, setRepeat] =
+    useState(() =>
+      readStorage(
+        "fenix_repeat",
+        "off"
+      )
+    );
+
+  const [queue, setQueue] =
+    useState(() =>
+      readStorage(
+        "fenix_queue",
+        []
+      )
+    );
+
+  const [queueOpen, setQueueOpen] =
+    useState(false);
+
+  const [fullPlayer, setFullPlayer] =
+    useState(false);
+
+  const [favorites, setFavorites] =
+    useState(() =>
+      readStorage(
+        "fenix_favorites",
+        []
+      )
+    );
+
+  const [history, setHistory] =
+    useState(() =>
+      readStorage(
+        "fenix_history",
+        []
+      )
+    );
+
+  const [playlists, setPlaylists] =
+    useState(() =>
+      readStorage(
+        "fenix_playlists",
+        []
+      )
+    );
+
+  const [notifications, setNotifications] =
+    useState(() =>
+      readStorage(
+        "fenix_notifications",
+        []
+      )
+    );
+
+  const [settings, setSettings] =
+    useState(() =>
+      readStorage(
+        "fenix_settings",
+        {
+          theme: "dark",
+          quality: "high",
+          autoplay: true,
+          autoNext: true,
+          notifications: true,
+          language: "ru",
+        }
+      )
+    );
+
+  const [user, setUser] =
+    useState(() =>
+      readStorage(
+        "fenix_user",
+        null
+      )
+    );
+
+  const [authOpen, setAuthOpen] =
+    useState(false);
+
+  const [authMode, setAuthMode] =
+    useState("login");
+
+  const [mobileMenu, setMobileMenu] =
+    useState(false);
+
+  const [toast, setToast] =
+    useState(null);
+
+  /* ==========================================================
+     TOAST
+  ========================================================== */
+
+  const showToast = useCallback(
+    (message, type = "info") => {
+      setToast({
+        id: Date.now(),
+        message,
+        type,
+      });
+    },
+    []
   );
-
-  const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState("off");
-
-  const [queue, setQueue] = useState([]);
-  const [queueOpen, setQueueOpen] = useState(false);
-
-  const [fullPlayer, setFullPlayer] = useState(false);
-
-  const [favorites, setFavorites] = useState(() =>
-    readStorage("fenix_favorites", [])
-  );
-
-  const [history, setHistory] = useState(() =>
-    readStorage("fenix_history", [])
-  );
-
-  const [playlists, setPlaylists] = useState(() =>
-    readStorage("fenix_playlists", [])
-  );
-
-  const [notifications, setNotifications] = useState(() =>
-    readStorage("fenix_notifications", [])
-  );
-
-  const [settings, setSettings] = useState(() =>
-    readStorage("fenix_settings", {
-      theme: "dark",
-      quality: "high",
-      autoplay: true,
-      autoNext: true,
-      notifications: true,
-      language: "ru",
-    })
-  );
-
-  const [user, setUser] = useState(() =>
-    readStorage("fenix_user", null)
-  );
-
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState("login");
-
-  const [mobileMenu, setMobileMenu] = useState(false);
-
-  /* =========================
-     STORAGE
-  ========================= */
 
   useEffect(() => {
-    saveStorage("fenix_user", user);
+    if (!toast) return;
+
+    const timer = setTimeout(() => {
+      setToast(null);
+    }, 3200);
+
+    return () =>
+      clearTimeout(timer);
+  }, [toast]);
+
+  /* ==========================================================
+     STORAGE
+  ========================================================== */
+
+  useEffect(() => {
+    saveStorage(
+      "fenix_user",
+      user
+    );
   }, [user]);
 
   useEffect(() => {
-    saveStorage("fenix_favorites", favorites);
+    saveStorage(
+      "fenix_favorites",
+      favorites
+    );
   }, [favorites]);
 
   useEffect(() => {
-    saveStorage("fenix_history", history);
+    saveStorage(
+      "fenix_history",
+      history
+    );
   }, [history]);
 
   useEffect(() => {
-    saveStorage("fenix_playlists", playlists);
+    saveStorage(
+      "fenix_playlists",
+      playlists
+    );
   }, [playlists]);
 
   useEffect(() => {
-    saveStorage("fenix_notifications", notifications);
+    saveStorage(
+      "fenix_notifications",
+      notifications
+    );
   }, [notifications]);
 
   useEffect(() => {
-    saveStorage("fenix_settings", settings);
+    saveStorage(
+      "fenix_settings",
+      settings
+    );
   }, [settings]);
 
   useEffect(() => {
-    localStorage.setItem("fenix_volume", String(volume));
+    localStorage.setItem(
+      "fenix_volume",
+      String(volume)
+    );
   }, [volume]);
 
-  /* =========================
-     LOAD TRACKS
-  ========================= */
+  useEffect(() => {
+    saveStorage(
+      "fenix_shuffle",
+      shuffle
+    );
+  }, [shuffle]);
 
-  const loadTracks = async () => {
-    try {
-      setApiError("");
+  useEffect(() => {
+    saveStorage(
+      "fenix_repeat",
+      repeat
+    );
+  }, [repeat]);
 
-      const response = await fetch(apiUrl("/api/tracks"), {
-        credentials: "include",
-      });
+  useEffect(() => {
+    saveStorage(
+      "fenix_queue",
+      queue
+    );
+  }, [queue]);
 
-      if (!response.ok) {
-        throw new Error("Ошибка API");
-      }
+  /* ==========================================================
+     LOAD SESSION
+  ========================================================== */
 
-      const data = await response.json();
-
-      let list = [];
-
-      if (Array.isArray(data)) {
-        list = data;
-      } else if (Array.isArray(data.tracks)) {
-        list = data.tracks;
-      } else if (Array.isArray(data.items)) {
-        list = data.items;
-      }
-
-      setTracks(list.map(normalizeTrack));
-    } catch {
-      setTracks((previous) =>
-        previous.length ? previous : DEMO_TRACKS
+  useEffect(() => {
+    const token =
+      localStorage.getItem(
+        "fenix_token"
       );
 
-      setApiError(
-        "API музыки временно недоступен. Показана локальная библиотека."
-      );
-    } finally {
-      setLoadingTracks(false);
+    if (!token) {
+      return;
     }
-  };
+
+    const checkSession =
+      async () => {
+        try {
+          const data =
+            await requestJSON(
+              "/api/auth/me"
+            );
+
+          const account =
+            data.user ||
+            data.account ||
+            data;
+
+          if (
+            account &&
+            (
+              account.id ||
+              account.user_id ||
+              account.username ||
+              account.email
+            )
+          ) {
+            setUser(account);
+          }
+        } catch {
+          /*
+           Не удаляем токен мгновенно:
+           backend может не иметь /api/auth/me.
+          */
+        }
+      };
+
+    checkSession();
+  }, []);
+
+  /* ==========================================================
+     LOAD TRACKS
+  ========================================================== */
+
+  const loadTracks =
+    useCallback(
+      async (
+        silent = false
+      ) => {
+        if (!silent) {
+          setLoadingTracks(true);
+        }
+
+        try {
+          setApiError("");
+
+          const candidates = [
+            "/api/tracks",
+            "/tracks",
+          ];
+
+          let result = null;
+          let lastError = null;
+
+          for (
+            const endpoint of candidates
+          ) {
+            try {
+              result =
+                await requestJSON(
+                  endpoint
+                );
+
+              break;
+            } catch (error) {
+              lastError = error;
+            }
+          }
+
+          if (!result) {
+            throw (
+              lastError ||
+              new Error(
+                "API недоступен"
+              )
+            );
+          }
+
+          const list =
+            normalizeTrackList(
+              result
+            );
+
+          setTracks(
+            list.length
+              ? list
+              : DEMO_TRACKS
+          );
+        } catch {
+          setTracks(
+            previous =>
+              previous.length
+                ? previous
+                : DEMO_TRACKS
+          );
+
+          setApiError(
+            "API музыки временно недоступен. Показана локальная библиотека."
+          );
+        } finally {
+          setLoadingTracks(false);
+        }
+      },
+      []
+    );
 
   useEffect(() => {
     loadTracks();
 
-    const timer = setInterval(() => {
-      loadTracks();
-    }, 10000);
+    const timer =
+      setInterval(() => {
+        loadTracks(true);
+      }, 10000);
 
-    return () => clearInterval(timer);
-  }, []);
+    return () =>
+      clearInterval(timer);
+  }, [loadTracks]);
 
-  /* =========================
-     AUDIO
-  ========================= */
+  /* ==========================================================
+     VOLUME
+  ========================================================== */
 
   useEffect(() => {
     if (!audioRef.current) {
       return;
     }
 
-    audioRef.current.volume = volume;
+    audioRef.current.volume =
+      Math.max(
+        0,
+        Math.min(1, volume)
+      );
   }, [volume]);
 
-  useEffect(() => {
-    const audio = audioRef.current;
+  /* ==========================================================
+     RESTORE LAST TRACK
+  ========================================================== */
 
-    if (!audio || !currentTrack) {
+  useEffect(() => {
+    const saved =
+      readStorage(
+        "fenix_current_track",
+        null
+      );
+
+    if (!saved) {
       return;
     }
 
-    const source =
-      currentTrack.audio_url ||
-      `${API}/api/tracks/${currentTrack.id}/audio`;
+    setCurrentTrack(
+      normalizeTrack(saved)
+    );
 
-    if (source && audio.src !== new URL(source, window.location.origin).href) {
-      audio.src = source;
+    const savedPosition =
+      Number(
+        localStorage.getItem(
+          "fenix_current_position"
+        ) || 0
+      );
+
+    if (
+      Number.isFinite(
+        savedPosition
+      )
+    ) {
+      setPosition(
+        savedPosition
+      );
+    }
+  }, []);
+
+  /* ==========================================================
+     AUDIO SOURCE
+  ========================================================== */
+
+  useEffect(() => {
+    const audio =
+      audioRef.current;
+
+    if (
+      !audio ||
+      !currentTrack
+    ) {
+      return;
+    }
+
+    let source =
+      currentTrack.audio_url;
+
+    if (!source) {
+      source =
+        apiUrl(
+          `/api/tracks/${encodeURIComponent(
+            currentTrack.id
+          )}/audio`
+        );
+    }
+
+    if (!source) {
+      setPlaying(false);
+      return;
+    }
+
+    const absoluteSource =
+      /^https?:\/\//i.test(
+        source
+      )
+        ? source
+        : apiUrl(source);
+
+    if (
+      audio.dataset.source !==
+      absoluteSource
+    ) {
+      audio.dataset.source =
+        absoluteSource;
+
+      audio.src =
+        absoluteSource;
+
       audio.load();
+
+      const savedTrack =
+        readStorage(
+          "fenix_current_track",
+          null
+        );
+
+      const savedPosition =
+        Number(
+          localStorage.getItem(
+            "fenix_current_position"
+          ) || 0
+        );
+
+      if (
+        savedTrack &&
+        String(savedTrack.id) ===
+          String(currentTrack.id) &&
+        savedPosition > 0
+      ) {
+        const restore =
+          () => {
+            try {
+              if (
+                Number.isFinite(
+                  audio.duration
+                ) &&
+                savedPosition <
+                  audio.duration
+              ) {
+                audio.currentTime =
+                  savedPosition;
+                setPosition(
+                  savedPosition
+                );
+              }
+            } catch {
+              // ignore
+            }
+          };
+
+        audio.addEventListener(
+          "loadedmetadata",
+          restore,
+          { once: true }
+        );
+      }
     }
 
     if (playing) {
-      audio.play().catch(() => {
-        setPlaying(false);
-      });
+      audio
+        .play()
+        .catch(() => {
+          setPlaying(false);
+        });
     } else {
       audio.pause();
     }
-  }, [currentTrack, playing]);
+  }, [
+    currentTrack,
+    playing,
+  ]);
 
-  const playTrack = (track, list = tracks) => {
-    const normalized = normalizeTrack(track);
+  /* ==========================================================
+     CURRENT TRACK STORAGE
+  ========================================================== */
 
-    setCurrentTrack(normalized);
-    setPlaying(true);
-
-    setQueue(
-      list && list.length
-        ? list.map(normalizeTrack)
-        : [normalized]
-    );
-
-    setHistory((previous) => {
-      const cleaned = previous.filter(
-        (item) => String(item.id) !== String(normalized.id)
-      );
-
-      return [
-        {
-          ...normalized,
-          played_at: Date.now(),
-        },
-        ...cleaned,
-      ].slice(0, 100);
-    });
-  };
-
-  const nextTrack = () => {
+  useEffect(() => {
     if (!currentTrack) {
       return;
     }
 
-    const list = queue.length ? queue : tracks;
+    saveStorage(
+      "fenix_current_track",
+      currentTrack
+    );
+  }, [currentTrack]);
 
-    if (!list.length) {
+  /* ==========================================================
+     POSITION STORAGE
+  ========================================================== */
+
+  useEffect(() => {
+    if (!currentTrack) {
       return;
     }
 
-    if (repeat === "one") {
-      const audio = audioRef.current;
+    if (positionSaveTimer.current) {
+      clearTimeout(
+        positionSaveTimer.current
+      );
+    }
+
+    positionSaveTimer.current =
+      setTimeout(() => {
+        localStorage.setItem(
+          "fenix_current_position",
+          String(position)
+        );
+      }, 300);
+
+    return () => {
+      if (
+        positionSaveTimer.current
+      ) {
+        clearTimeout(
+          positionSaveTimer.current
+        );
+      }
+    };
+  }, [
+    position,
+    currentTrack,
+  ]);
+
+  /* ==========================================================
+     PLAY TRACK
+  ========================================================== */
+
+  const playTrack =
+    useCallback(
+      (
+        track,
+        list = tracks
+      ) => {
+        const normalized =
+          normalizeTrack(track);
+
+        setCurrentTrack(
+          normalized
+        );
+
+        setPlaying(true);
+
+        const normalizedList =
+          list?.length
+            ? list.map(
+                normalizeTrack
+              )
+            : [normalized];
+
+        setQueue(
+          normalizedList
+        );
+
+        setPosition(0);
+
+        setDuration(
+          Number(
+            normalized.duration ||
+              0
+          )
+        );
+
+        setHistory(previous => {
+          const cleaned =
+            previous.filter(
+              item =>
+                String(
+                  item.id
+                ) !==
+                String(
+                  normalized.id
+                )
+            );
+
+          return [
+            {
+              ...normalized,
+              played_at:
+                Date.now(),
+            },
+            ...cleaned,
+          ].slice(0, 100);
+        });
+
+        localStorage.setItem(
+          "fenix_current_position",
+          "0"
+        );
+      },
+      [tracks]
+    );
+
+  /* ==========================================================
+     NEXT
+  ========================================================== */
+
+  const nextTrack =
+    useCallback(() => {
+      if (!currentTrack) {
+        return;
+      }
+
+      const list =
+        queue.length
+          ? queue
+          : tracks;
+
+      if (!list.length) {
+        return;
+      }
+
+      if (repeat === "one") {
+        const audio =
+          audioRef.current;
+
+        if (audio) {
+          audio.currentTime = 0;
+
+          audio
+            .play()
+            .catch(() => {});
+        }
+
+        setPlaying(true);
+        return;
+      }
+
+      let index =
+        list.findIndex(
+          item =>
+            String(item.id) ===
+            String(
+              currentTrack.id
+            )
+        );
+
+      if (index < 0) {
+        index = 0;
+      }
+
+      if (shuffle) {
+        if (list.length > 1) {
+          let next =
+            Math.floor(
+              Math.random() *
+                list.length
+            );
+
+          if (
+            next === index
+          ) {
+            next =
+              (next + 1) %
+              list.length;
+          }
+
+          index = next;
+        }
+      } else {
+        index += 1;
+      }
+
+      if (
+        index >=
+        list.length
+      ) {
+        if (
+          repeat === "all"
+        ) {
+          index = 0;
+        } else {
+          setPlaying(false);
+          return;
+        }
+      }
+
+      const next =
+        normalizeTrack(
+          list[index]
+        );
+
+      setCurrentTrack(next);
+      setPosition(0);
+      setDuration(
+        Number(
+          next.duration || 0
+        )
+      );
+      setPlaying(true);
+
+      setHistory(previous => {
+        const cleaned =
+          previous.filter(
+            item =>
+              String(item.id) !==
+              String(next.id)
+          );
+
+        return [
+          {
+            ...next,
+            played_at:
+              Date.now(),
+          },
+          ...cleaned,
+        ].slice(0, 100);
+      });
+
+      localStorage.setItem(
+        "fenix_current_position",
+        "0"
+      );
+    }, [
+      currentTrack,
+      queue,
+      tracks,
+      repeat,
+      shuffle,
+    ]);
+
+  /* ==========================================================
+     PREVIOUS
+  ========================================================== */
+
+  const previousTrack =
+    useCallback(() => {
+      const audio =
+        audioRef.current;
+
+      if (
+        audio &&
+        audio.currentTime > 5
+      ) {
+        audio.currentTime = 0;
+        setPosition(0);
+        return;
+      }
+
+      const list =
+        queue.length
+          ? queue
+          : tracks;
+
+      if (!list.length) {
+        return;
+      }
+
+      let index =
+        list.findIndex(
+          item =>
+            String(item.id) ===
+            String(
+              currentTrack?.id
+            )
+        );
+
+      if (index < 0) {
+        index = 0;
+      }
+
+      index -= 1;
+
+      if (index < 0) {
+        index =
+          list.length - 1;
+      }
+
+      const previous =
+        normalizeTrack(
+          list[index]
+        );
+
+      setCurrentTrack(
+        previous
+      );
+
+      setPosition(0);
+
+      setDuration(
+        Number(
+          previous.duration || 0
+        )
+      );
+
+      setPlaying(true);
+    }, [
+      queue,
+      tracks,
+      currentTrack,
+    ]);
+
+  /* ==========================================================
+     PLAY / PAUSE
+  ========================================================== */
+
+  const togglePlaying =
+    useCallback(() => {
+      if (!currentTrack) {
+        if (tracks[0]) {
+          playTrack(
+            tracks[0],
+            tracks
+          );
+        }
+
+        return;
+      }
+
+      setPlaying(
+        value => !value
+      );
+    }, [
+      currentTrack,
+      tracks,
+      playTrack,
+    ]);
+
+  /* ==========================================================
+     SEEK
+  ========================================================== */
+
+  const seek = useCallback(
+    event => {
+      const value =
+        Number(
+          event.target.value
+        );
+
+      const audio =
+        audioRef.current;
+
+      if (
+        !audio ||
+        !Number.isFinite(
+          audio.duration
+        ) ||
+        audio.duration <= 0
+      ) {
+        return;
+      }
+
+      const nextPosition =
+        value *
+        audio.duration;
+
+      audio.currentTime =
+        nextPosition;
+
+      setPosition(
+        nextPosition
+      );
+    },
+    []
+  );
+
+  /* ==========================================================
+     AUDIO EVENTS
+  ========================================================== */
+
+  const handleTimeUpdate =
+    () => {
+      const audio =
+        audioRef.current;
+
+      if (!audio) {
+        return;
+      }
+
+      setPosition(
+        audio.currentTime || 0
+      );
+    };
+
+  const handleLoadedMetadata =
+    () => {
+      const audio =
+        audioRef.current;
+
+      if (!audio) {
+        return;
+      }
+
+      const value =
+        Number(
+          audio.duration ||
+            currentTrack?.duration ||
+            0
+        );
+
+      setDuration(value);
+    };
+
+  const handleEnded = () => {
+    if (
+      repeat === "one"
+    ) {
+      const audio =
+        audioRef.current;
 
       if (audio) {
         audio.currentTime = 0;
-        audio.play().catch(() => {});
+
+        audio
+          .play()
+          .catch(() => {});
       }
 
       setPlaying(true);
-      return;
-    }
-
-    let index = list.findIndex(
-      (item) => String(item.id) === String(currentTrack.id)
-    );
-
-    if (index < 0) {
-      index = 0;
-    }
-
-    if (shuffle) {
-      index = Math.floor(Math.random() * list.length);
-    } else {
-      index += 1;
-    }
-
-    if (index >= list.length) {
-      if (repeat === "all") {
-        index = 0;
-      } else {
-        setPlaying(false);
-        return;
-      }
-    }
-
-    playTrack(list[index], list);
-  };
-
-  const previousTrack = () => {
-    const list = queue.length ? queue : tracks;
-
-    if (!list.length) {
-      return;
-    }
-
-    let index = list.findIndex(
-      (item) => String(item.id) === String(currentTrack?.id)
-    );
-
-    if (index < 0) {
-      index = 0;
-    }
-
-    index -= 1;
-
-    if (index < 0) {
-      index = list.length - 1;
-    }
-
-    playTrack(list[index], list);
-  };
-
-  const togglePlaying = () => {
-    if (!currentTrack) {
-      if (tracks[0]) {
-        playTrack(tracks[0], tracks);
-      }
-
-      return;
-    }
-
-    setPlaying((value) => !value);
-  };
-
-  const seek = (event) => {
-    const value = Number(event.target.value);
-
-    if (!audioRef.current || !audioRef.current.duration) {
-      return;
-    }
-
-    audioRef.current.currentTime =
-      value * audioRef.current.duration;
-
-    setPosition(value * audioRef.current.duration);
-  };
-
-  const handleTimeUpdate = () => {
-    if (!audioRef.current) {
-      return;
-    }
-
-    setPosition(audioRef.current.currentTime || 0);
-  };
-
-  const handleLoadedMetadata = () => {
-    if (!audioRef.current) {
-      return;
-    }
-
-    setDuration(
-      Number(
-        audioRef.current.duration ||
-          currentTrack?.duration ||
-          0
-      )
-    );
-  };
-
-  const handleEnded = () => {
-    if (repeat === "one") {
-      if (audioRef.current) {
-        audioRef.current.currentTime = 0;
-        audioRef.current.play().catch(() => {});
-      }
-
       return;
     }
 
@@ -541,216 +1359,454 @@ export default function App() {
     }
   };
 
-  /* =========================
+  /* ==========================================================
      FAVORITES
-  ========================= */
+  ========================================================== */
 
-  const isFavorite = (track) => {
-    if (!track) {
-      return false;
-    }
+  const isFavorite =
+    useCallback(
+      track => {
+        if (!track) {
+          return false;
+        }
 
-    return favorites.some(
-      (item) => String(item.id) === String(track.id)
-    );
-  };
-
-  const toggleFavorite = (track) => {
-    const normalized = normalizeTrack(track);
-
-    setFavorites((previous) => {
-      const exists = previous.some(
-        (item) => String(item.id) === String(normalized.id)
-      );
-
-      if (exists) {
-        return previous.filter(
-          (item) => String(item.id) !== String(normalized.id)
+        return favorites.some(
+          item =>
+            String(item.id) ===
+            String(track.id)
         );
+      },
+      [favorites]
+    );
+
+  const toggleFavorite =
+    useCallback(
+      async track => {
+        const normalized =
+          normalizeTrack(
+            track
+          );
+
+        const exists =
+          favorites.some(
+            item =>
+              String(item.id) ===
+              String(
+                normalized.id
+              )
+          );
+
+        setFavorites(
+          previous => {
+            if (exists) {
+              return previous.filter(
+                item =>
+                  String(
+                    item.id
+                  ) !==
+                  String(
+                    normalized.id
+                  )
+              );
+            }
+
+            return [
+              normalized,
+              ...previous,
+            ];
+          }
+        );
+
+        showToast(
+          exists
+            ? "Удалено из избранного"
+            : "Добавлено в избранное",
+          "success"
+        );
+
+        const token =
+          localStorage.getItem(
+            "fenix_token"
+          );
+
+        if (!token) {
+          return;
+        }
+
+        try {
+          if (exists) {
+            await requestJSON(
+              `/api/favorites/${encodeURIComponent(
+                normalized.id
+              )}`,
+              {
+                method: "DELETE",
+              }
+            );
+          } else {
+            await requestJSON(
+              "/api/favorites",
+              {
+                method: "POST",
+                body: {
+                  track_id:
+                    normalized.id,
+                },
+              }
+            );
+          }
+        } catch {
+          // Локальное состояние сохраняется,
+          // даже если endpoint отсутствует.
+        }
+      },
+      [
+        favorites,
+        showToast,
+      ]
+    );
+
+  /* ==========================================================
+     SEARCH
+  ========================================================== */
+
+  const filteredTracks =
+    useMemo(() => {
+      const query =
+        search
+          .trim()
+          .toLowerCase();
+
+      if (!query) {
+        return tracks;
       }
 
-      return [...previous, normalized];
-    });
-  };
+      return tracks.filter(
+        track => {
+          const text = [
+            track.title,
+            track.artist_name,
+            track.album_name,
+            track.genre,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
 
-  /* =========================
-     SEARCH
-  ========================= */
+          return text.includes(
+            query
+          );
+        }
+      );
+    }, [
+      tracks,
+      search,
+    ]);
 
-  const filteredTracks = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  /* ==========================================================
+     LOGOUT
+  ========================================================== */
 
-    if (!query) {
-      return tracks;
-    }
+  const logout = useCallback(
+    async () => {
+      try {
+        await requestJSON(
+          "/api/auth/logout",
+          {
+            method: "POST",
+          }
+        );
+      } catch {
+        // backend endpoint может отсутствовать
+      }
 
-    return tracks.filter((track) => {
-      const text = [
-        track.title,
-        track.artist_name,
-        track.album_name,
-        track.genre,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+      removeStorage(
+        "fenix_token"
+      );
 
-      return text.includes(query);
-    });
-  }, [tracks, search]);
+      removeStorage(
+        "fenix_user"
+      );
 
-  /* =========================
-     USER
-  ========================= */
+      setUser(null);
+      setPage("home");
 
-  const logout = () => {
-    localStorage.removeItem("fenix_token");
-    localStorage.removeItem("fenix_user");
+      showToast(
+        "Вы вышли из аккаунта",
+        "success"
+      );
+    },
+    [showToast]
+  );
 
-    setUser(null);
-    setPage("home");
-  };
+  /* ==========================================================
+     PAGE NAVIGATION
+  ========================================================== */
 
-  /* =========================
+  const navigate = useCallback(
+    nextPage => {
+      setPage(nextPage);
+      setMobileMenu(false);
+    },
+    []
+  );
+
+  /* ==========================================================
      RENDER
-  ========================= */
+  ========================================================== */
 
   return (
-    <div className={`fenix-app theme-${settings.theme}`}>
+    <div
+      className={`fenix-app theme-${settings.theme}`}
+    >
+      {/* ======================================================
+          SINGLE AUDIO ELEMENT
+      ====================================================== */}
+
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        onTimeUpdate={
+          handleTimeUpdate
+        }
+        onLoadedMetadata={
+          handleLoadedMetadata
+        }
+        onEnded={handleEnded}
+        onPlay={() =>
+          setPlaying(true)
+        }
+        onPause={() =>
+          setPlaying(false)
+        }
+        onError={() => {
+          setPlaying(false);
+
+          if (
+            currentTrack?.audio_url
+          ) {
+            showToast(
+              "Не удалось загрузить аудиофайл",
+              "error"
+            );
+          }
+        }}
+      />
+
+      <Toast toast={toast} />
+
+      {/* ======================================================
+          SIDEBAR
+      ====================================================== */}
+
       <aside
         className={`sidebar ${
-          mobileMenu ? "sidebar-open" : ""
+          mobileMenu
+            ? "sidebar-open"
+            : ""
         }`}
       >
         <div className="brand">
-          <div className="brand-logo">FX</div>
+          <div className="brand-logo">
+            FX
+          </div>
 
           <div className="brand-text">
-            <strong>FENIX MUSIC</strong>
-            <small>HI-RES STREAMING</small>
+            <strong>
+              FENIX MUSIC
+            </strong>
+
+            <small>
+              HI-RES STREAMING
+            </small>
           </div>
 
           <button
             className="sidebar-close"
-            onClick={() => setMobileMenu(false)}
+            onClick={() =>
+              setMobileMenu(false)
+            }
           >
             <Icon name="close" />
           </button>
         </div>
 
         <div className="nav-group">
-          <span className="nav-label">Меню</span>
+          <span className="nav-label">
+            Меню
+          </span>
 
           <NavItem
             icon="home"
             label="Главная"
-            active={page === "home"}
-            onClick={() => {
-              setPage("home");
-              setMobileMenu(false);
-            }}
+            active={
+              page === "home"
+            }
+            onClick={() =>
+              navigate("home")
+            }
           />
 
           <NavItem
             icon="search"
             label="Поиск"
-            active={page === "search"}
-            onClick={() => {
-              setPage("search");
-              setMobileMenu(false);
-            }}
+            active={
+              page === "search"
+            }
+            onClick={() =>
+              navigate("search")
+            }
           />
 
           <NavItem
             icon="radio"
             label="Рекомендации"
-            active={page === "recommendations"}
-            onClick={() => {
-              setPage("recommendations");
-              setMobileMenu(false);
-            }}
+            active={
+              page ===
+              "recommendations"
+            }
+            onClick={() =>
+              navigate(
+                "recommendations"
+              )
+            }
           />
         </div>
 
         <div className="nav-group">
-          <span className="nav-label">Медиатека</span>
+          <span className="nav-label">
+            Медиатека
+          </span>
 
           <NavItem
             icon="library"
             label="Библиотека"
-            active={page === "library"}
-            onClick={() => setPage("library")}
+            active={
+              page === "library"
+            }
+            onClick={() =>
+              navigate("library")
+            }
           />
 
           <NavItem
             icon="heart"
             label="Избранное"
-            active={page === "favorites"}
-            badge={favorites.length}
-            onClick={() => setPage("favorites")}
+            active={
+              page ===
+              "favorites"
+            }
+            badge={
+              favorites.length
+            }
+            onClick={() =>
+              navigate(
+                "favorites"
+              )
+            }
           />
 
           <NavItem
             icon="clock"
             label="История"
-            active={page === "history"}
-            onClick={() => setPage("history")}
+            active={
+              page === "history"
+            }
+            onClick={() =>
+              navigate("history")
+            }
           />
 
           <NavItem
             icon="music"
             label="Плейлисты"
-            active={page === "playlists"}
-            onClick={() => setPage("playlists")}
+            active={
+              page ===
+              "playlists"
+            }
+            onClick={() =>
+              navigate(
+                "playlists"
+              )
+            }
           />
 
           <NavItem
             icon="album"
             label="Альбомы"
-            active={page === "albums"}
-            onClick={() => setPage("albums")}
+            active={
+              page === "albums"
+            }
+            onClick={() =>
+              navigate("albums")
+            }
           />
 
           <NavItem
             icon="user"
             label="Артисты"
-            active={page === "artists"}
-            onClick={() => setPage("artists")}
+            active={
+              page === "artists"
+            }
+            onClick={() =>
+              navigate("artists")
+            }
           />
         </div>
 
         <div className="sidebar-bottom">
           <button
             className="premium-side"
-            onClick={() => setPage("premium")}
+            onClick={() =>
+              navigate("premium")
+            }
           >
             <Icon name="crown" />
-            <span>Fenix Premium</span>
+            <span>
+              Fenix Premium
+            </span>
           </button>
 
           <button
             className="sidebar-account"
             onClick={() =>
-              setPage(user ? "profile" : "login")
+              navigate(
+                user
+                  ? "profile"
+                  : "login"
+              )
             }
           >
             <div className="mini-avatar">
-              {(user?.username || "FX")
+              {(
+                user?.username ||
+                "FX"
+              )
                 .slice(0, 2)
                 .toUpperCase()}
             </div>
 
             <span>
-              <b>{user?.username || "Гость"}</b>
+              <b>
+                {user?.username ||
+                  "Гость"}
+              </b>
+
               <small>
-                {user ? "Открыть профиль" : "Войти в аккаунт"}
+                {user
+                  ? "Открыть профиль"
+                  : "Войти в аккаунт"}
               </small>
             </span>
           </button>
 
           <button
             className="settings-side"
-            onClick={() => setPage("settings")}
+            onClick={() =>
+              navigate(
+                "settings"
+              )
+            }
           >
             <Icon name="settings" />
             Настройки
@@ -758,17 +1814,33 @@ export default function App() {
         </div>
       </aside>
 
+      {/* ======================================================
+          MAIN
+      ====================================================== */}
+
       <main className="main-content">
         <header className="topbar">
           <button
             className="mobile-menu-button"
-            onClick={() => setMobileMenu(!mobileMenu)}
+            onClick={() =>
+              setMobileMenu(
+                value => !value
+              )
+            }
           >
-            <Icon name={mobileMenu ? "close" : "menu"} />
+            <Icon
+              name={
+                mobileMenu
+                  ? "close"
+                  : "menu"
+              }
+            />
           </button>
 
           <div className="mobile-brand">
-            <span>FENIX</span>
+            <span>
+              FENIX
+            </span>
           </div>
 
           <div className="top-search">
@@ -776,11 +1848,19 @@ export default function App() {
 
             <input
               value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
+              onChange={event => {
+                const value =
+                  event.target
+                    .value;
 
-                if (event.target.value.trim()) {
-                  setPage("search");
+                setSearch(value);
+
+                if (
+                  value.trim()
+                ) {
+                  setPage(
+                    "search"
+                  );
                 }
               }}
               placeholder="Что хотите послушать?"
@@ -790,7 +1870,11 @@ export default function App() {
           <div className="top-actions">
             <button
               className="telegram-button"
-              onClick={() => setPage("telegram")}
+              onClick={() =>
+                navigate(
+                  "telegram"
+                )
+              }
             >
               <Icon name="telegram" />
               Telegram
@@ -798,18 +1882,31 @@ export default function App() {
 
             <button
               className="notification-button"
-              onClick={() => setPage("notifications")}
+              onClick={() =>
+                navigate(
+                  "notifications"
+                )
+              }
             >
               <Icon name="bell" />
 
-              {notifications.length > 0 && (
-                <i>{notifications.length}</i>
+              {notifications.length >
+                0 && (
+                <i>
+                  {
+                    notifications.length
+                  }
+                </i>
               )}
             </button>
 
             <button
               className="premium-button"
-              onClick={() => setPage("premium")}
+              onClick={() =>
+                navigate(
+                  "premium"
+                )
+              }
             >
               💎 Premium
             </button>
@@ -817,10 +1914,17 @@ export default function App() {
             <button
               className="top-avatar"
               onClick={() =>
-                setPage(user ? "profile" : "login")
+                navigate(
+                  user
+                    ? "profile"
+                    : "login"
+                )
               }
             >
-              {(user?.username || "FX")
+              {(
+                user?.username ||
+                "FX"
+              )
                 .slice(0, 2)
                 .toUpperCase()}
             </button>
@@ -830,126 +1934,229 @@ export default function App() {
         <div className="page-container">
           {apiError && (
             <div className="api-warning">
-              {apiError}
+              <span>
+                {apiError}
+              </span>
+
+              <button
+                onClick={() =>
+                  loadTracks()
+                }
+              >
+                Повторить
+              </button>
             </div>
           )}
 
           {page === "home" && (
             <HomePage
               tracks={tracks}
-              visibleTracks={filteredTracks}
+              visibleTracks={
+                filteredTracks
+              }
               history={history}
-              loading={loadingTracks}
-              playTrack={playTrack}
-              toggleFavorite={toggleFavorite}
-              isFavorite={isFavorite}
-              setPage={setPage}
+              loading={
+                loadingTracks
+              }
+              playTrack={
+                playTrack
+              }
+              toggleFavorite={
+                toggleFavorite
+              }
+              isFavorite={
+                isFavorite
+              }
+              setPage={
+                navigate
+              }
             />
           )}
 
           {page === "search" && (
             <SearchPage
               search={search}
-              setSearch={setSearch}
-              tracks={filteredTracks}
-              playTrack={playTrack}
-              toggleFavorite={toggleFavorite}
-              isFavorite={isFavorite}
+              setSearch={
+                setSearch
+              }
+              tracks={
+                filteredTracks
+              }
+              playTrack={
+                playTrack
+              }
+              toggleFavorite={
+                toggleFavorite
+              }
+              isFavorite={
+                isFavorite
+              }
             />
           )}
 
-          {page === "recommendations" && (
+          {page ===
+            "recommendations" && (
             <RecommendationsPage
               tracks={tracks}
               history={history}
-              playTrack={playTrack}
-              toggleFavorite={toggleFavorite}
-              isFavorite={isFavorite}
+              playTrack={
+                playTrack
+              }
+              toggleFavorite={
+                toggleFavorite
+              }
+              isFavorite={
+                isFavorite
+              }
             />
           )}
 
-          {page === "library" && (
+          {page ===
+            "library" && (
             <LibraryPage
-              favorites={favorites}
-              history={history}
-              playlists={playlists}
+              favorites={
+                favorites
+              }
+              history={
+                history
+              }
+              playlists={
+                playlists
+              }
               tracks={tracks}
-              playTrack={playTrack}
-              setPage={setPage}
+              playTrack={
+                playTrack
+              }
+              setPage={
+                navigate
+              }
             />
           )}
 
-          {page === "favorites" && (
+          {page ===
+            "favorites" && (
             <TrackListPage
               title="Избранное"
               subtitle={`${favorites.length} сохранённых треков`}
               tracks={favorites}
-              playTrack={playTrack}
-              toggleFavorite={toggleFavorite}
-              isFavorite={isFavorite}
+              playTrack={
+                playTrack
+              }
+              toggleFavorite={
+                toggleFavorite
+              }
+              isFavorite={
+                isFavorite
+              }
             />
           )}
 
-          {page === "history" && (
+          {page ===
+            "history" && (
             <TrackListPage
               title="История"
               subtitle="Недавно прослушанные треки"
               tracks={history}
-              playTrack={playTrack}
-              toggleFavorite={toggleFavorite}
-              isFavorite={isFavorite}
+              playTrack={
+                playTrack
+              }
+              toggleFavorite={
+                toggleFavorite
+              }
+              isFavorite={
+                isFavorite
+              }
             />
           )}
 
-          {page === "playlists" && (
+          {page ===
+            "playlists" && (
             <PlaylistsPage
-              playlists={playlists}
-              setPlaylists={setPlaylists}
+              playlists={
+                playlists
+              }
+              setPlaylists={
+                setPlaylists
+              }
               tracks={tracks}
-              playTrack={playTrack}
+              playTrack={
+                playTrack
+              }
+              token={
+                Boolean(
+                  localStorage.getItem(
+                    "fenix_token"
+                  )
+                )
+              }
             />
           )}
 
           {page === "albums" && (
             <AlbumsPage
               tracks={tracks}
-              playTrack={playTrack}
+              playTrack={
+                playTrack
+              }
             />
           )}
 
           {page === "artists" && (
             <ArtistsPage
               tracks={tracks}
-              playTrack={playTrack}
+              playTrack={
+                playTrack
+              }
             />
           )}
 
-          {page === "notifications" && (
+          {page ===
+            "notifications" && (
             <NotificationsPage
-              notifications={notifications}
-              setNotifications={setNotifications}
+              notifications={
+                notifications
+              }
+              setNotifications={
+                setNotifications
+              }
             />
           )}
 
-          {page === "telegram" && <TelegramPage />}
+          {page === "telegram" && (
+            <TelegramPage />
+          )}
 
-          {page === "premium" && <PremiumPage />}
+          {page === "premium" && (
+            <PremiumPage />
+          )}
 
           {page === "profile" && (
             <ProfilePage
               user={user}
-              setUser={setUser}
-              history={history}
-              favorites={favorites}
+              setUser={
+                setUser
+              }
+              history={
+                history
+              }
+              favorites={
+                favorites
+              }
               logout={logout}
-              setPage={setPage}
+              setPage={
+                navigate
+              }
             />
           )}
 
           {page === "settings" && (
             <SettingsPage
-              settings={settings}
-              setSettings={setSettings}
+              settings={
+                settings
+              }
+              setSettings={
+                setSettings
+              }
               logout={logout}
             />
           )}
@@ -958,8 +2165,13 @@ export default function App() {
             <SecurityPage
               user={user}
               openAuth={() => {
-                setAuthMode("login");
-                setAuthOpen(true);
+                setAuthMode(
+                  "login"
+                );
+
+                setAuthOpen(
+                  true
+                );
               }}
             />
           )}
@@ -967,26 +2179,46 @@ export default function App() {
           {page === "login" && (
             <LoginPage
               onLogin={() => {
-                setAuthMode("login");
-                setAuthOpen(true);
+                setAuthMode(
+                  "login"
+                );
+
+                setAuthOpen(
+                  true
+                );
               }}
               onRegister={() => {
-                setAuthMode("register");
-                setAuthOpen(true);
+                setAuthMode(
+                  "register"
+                );
+
+                setAuthOpen(
+                  true
+                );
               }}
             />
           )}
         </div>
       </main>
 
+      {/* ======================================================
+          MOBILE NAV
+      ====================================================== */}
+
       <MobileNavigation
         page={page}
-        setPage={setPage}
+        setPage={navigate}
       />
+
+      {/* ======================================================
+          PLAYER
+      ====================================================== */}
 
       {currentTrack && (
         <PlayerBar
-          track={currentTrack}
+          track={
+            currentTrack
+          }
           playing={playing}
           position={position}
           duration={
@@ -995,67 +2227,150 @@ export default function App() {
             0
           }
           volume={volume}
-          setVolume={setVolume}
-          shuffle={shuffle}
-          setShuffle={setShuffle}
-          repeat={repeat}
-          setRepeat={setRepeat}
-          togglePlaying={togglePlaying}
-          nextTrack={nextTrack}
-          previousTrack={previousTrack}
-          seek={seek}
-          openFull={() => setFullPlayer(true)}
-          openQueue={() => setQueueOpen(true)}
-        />
-      )}
-
-      {currentTrack && queueOpen && (
-        <QueuePanel
-          queue={queue.length ? queue : tracks}
-          currentTrack={currentTrack}
-          playTrack={playTrack}
-          close={() => setQueueOpen(false)}
-        />
-      )}
-
-      {currentTrack && fullPlayer && (
-        <FullPlayer
-          track={currentTrack}
-          playing={playing}
-          position={position}
-          duration={
-            duration ||
-            currentTrack.duration ||
-            0
+          setVolume={
+            setVolume
           }
           shuffle={shuffle}
-          setShuffle={setShuffle}
+          setShuffle={
+            setShuffle
+          }
           repeat={repeat}
-          setRepeat={setRepeat}
-          togglePlaying={togglePlaying}
-          nextTrack={nextTrack}
-          previousTrack={previousTrack}
+          setRepeat={
+            setRepeat
+          }
+          togglePlaying={
+            togglePlaying
+          }
+          nextTrack={
+            nextTrack
+          }
+          previousTrack={
+            previousTrack
+          }
           seek={seek}
-          close={() => setFullPlayer(false)}
+          openFull={() =>
+            setFullPlayer(
+              true
+            )
+          }
+          openQueue={() =>
+            setQueueOpen(
+              true
+            )
+          }
+          favorite={
+            isFavorite(
+              currentTrack
+            )
+          }
+          onFavorite={() =>
+            toggleFavorite(
+              currentTrack
+            )
+          }
         />
       )}
 
-      <audio
-        ref={audioRef}
-        preload="metadata"
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onEnded={handleEnded}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-      />
+      {/* ======================================================
+          QUEUE
+      ====================================================== */}
+
+      {currentTrack &&
+        queueOpen && (
+          <QueuePanel
+            queue={
+              queue.length
+                ? queue
+                : tracks
+            }
+            currentTrack={
+              currentTrack
+            }
+            playTrack={
+              playTrack
+            }
+            close={() =>
+              setQueueOpen(
+                false
+              )
+            }
+          />
+        )}
+
+      {/* ======================================================
+          FULL PLAYER
+      ====================================================== */}
+
+      {currentTrack &&
+        fullPlayer && (
+          <FullPlayer
+            track={
+              currentTrack
+            }
+            playing={playing}
+            position={position}
+            duration={
+              duration ||
+              currentTrack.duration ||
+              0
+            }
+            shuffle={
+              shuffle
+            }
+            setShuffle={
+              setShuffle
+            }
+            repeat={repeat}
+            setRepeat={
+              setRepeat
+            }
+            togglePlaying={
+              togglePlaying
+            }
+            nextTrack={
+              nextTrack
+            }
+            previousTrack={
+              previousTrack
+            }
+            seek={seek}
+            close={() =>
+              setFullPlayer(
+                false
+              )
+            }
+            favorite={
+              isFavorite(
+                currentTrack
+              )
+            }
+            onFavorite={() =>
+              toggleFavorite(
+                currentTrack
+              )
+            }
+          />
+        )}
+
+      {/* ======================================================
+          AUTH
+      ====================================================== */}
 
       {authOpen && (
         <AuthModal
           mode={authMode}
-          setMode={setAuthMode}
-          close={() => setAuthOpen(false)}
-          onSuccess={(account, token) => {
+          setMode={
+            setAuthMode
+          }
+          close={() =>
+            setAuthOpen(
+              false
+            )
+          }
+          onSuccess={(
+            account,
+            token
+          ) => {
             if (token) {
               localStorage.setItem(
                 "fenix_token",
@@ -1066,6 +2381,11 @@ export default function App() {
             setUser(account);
             setAuthOpen(false);
             setPage("home");
+
+            showToast(
+              "Добро пожаловать в Fenix Music",
+              "success"
+            );
           }}
         />
       )}
@@ -1073,9 +2393,9 @@ export default function App() {
   );
 }
 
-/* =========================
+/* ============================================================
    NAVIGATION
-========================= */
+============================================================ */
 
 function NavItem({
   icon,
@@ -1086,7 +2406,9 @@ function NavItem({
 }) {
   return (
     <button
-      className={`nav-item ${active ? "active" : ""}`}
+      className={`nav-item ${
+        active ? "active" : ""
+      }`}
       onClick={onClick}
     >
       <Icon name={icon} />
@@ -1107,40 +2429,74 @@ function MobileNavigation({
   return (
     <nav className="mobile-navigation">
       <button
-        className={page === "home" ? "active" : ""}
-        onClick={() => setPage("home")}
+        className={
+          page === "home"
+            ? "active"
+            : ""
+        }
+        onClick={() =>
+          setPage("home")
+        }
       >
         <Icon name="home" />
         <span>Главная</span>
       </button>
 
       <button
-        className={page === "search" ? "active" : ""}
-        onClick={() => setPage("search")}
+        className={
+          page === "search"
+            ? "active"
+            : ""
+        }
+        onClick={() =>
+          setPage("search")
+        }
       >
         <Icon name="search" />
         <span>Поиск</span>
       </button>
 
       <button
-        className={page === "library" ? "active" : ""}
-        onClick={() => setPage("library")}
+        className={
+          page === "library"
+            ? "active"
+            : ""
+        }
+        onClick={() =>
+          setPage("library")
+        }
       >
         <Icon name="library" />
         <span>Моя музыка</span>
       </button>
 
       <button
-        className={page === "favorites" ? "active" : ""}
-        onClick={() => setPage("favorites")}
+        className={
+          page === "favorites"
+            ? "active"
+            : ""
+        }
+        onClick={() =>
+          setPage(
+            "favorites"
+          )
+        }
       >
         <Icon name="heart" />
         <span>Избранное</span>
       </button>
 
       <button
-        className={page === "profile" ? "active" : ""}
-        onClick={() => setPage("profile")}
+        className={
+          page === "profile"
+            ? "active"
+            : ""
+        }
+        onClick={() =>
+          setPage(
+            "profile"
+          )
+        }
       >
         <Icon name="user" />
         <span>Профиль</span>
@@ -1149,9 +2505,9 @@ function MobileNavigation({
   );
 }
 
-/* =========================
+/* ============================================================
    HOME
-========================= */
+============================================================ */
 
 function HomePage({
   tracks,
@@ -1163,6 +2519,10 @@ function HomePage({
   isFavorite,
   setPage,
 }) {
+  const first =
+    visibleTracks[0] ||
+    tracks[0];
+
   return (
     <div className="page">
       <section className="hero">
@@ -1174,22 +2534,27 @@ function HomePage({
           <h1>
             Твоя музыка.
             <br />
-            <span>Твоя вселенная.</span>
+            <span>
+              Твоя вселенная.
+            </span>
           </h1>
 
           <p>
-            Слушай любимые треки, открывай новых
-            артистов и собирай собственную музыкальную
+            Слушай любимые треки,
+            открывай новых
+            артистов и собирай
+            собственную
+            музыкальную
             библиотеку.
           </p>
 
           <div className="hero-buttons">
-            {visibleTracks[0] && (
+            {first && (
               <button
                 className="primary-button"
                 onClick={() =>
                   playTrack(
-                    visibleTracks[0],
+                    first,
                     visibleTracks
                   )
                 }
@@ -1202,7 +2567,9 @@ function HomePage({
             <button
               className="secondary-button"
               onClick={() =>
-                setPage("recommendations")
+                setPage(
+                  "recommendations"
+                )
               }
             >
               ✦ Для вас
@@ -1211,9 +2578,12 @@ function HomePage({
         </div>
 
         <div className="hero-art">
-          {tracks[0] && (
+          {first && (
             <img
-              src={tracks[0].cover_url}
+              src={
+                first.cover_url ||
+                DEFAULT_COVER
+              }
               alt=""
             />
           )}
@@ -1223,19 +2593,39 @@ function HomePage({
       <MusicSection
         title="Для вас"
         subtitle="Персональные рекомендации"
-        tracks={visibleTracks.slice(0, 6)}
-        playTrack={playTrack}
-        toggleFavorite={toggleFavorite}
-        isFavorite={isFavorite}
+        tracks={
+          visibleTracks.slice(
+            0,
+            6
+          )
+        }
+        playTrack={
+          playTrack
+        }
+        toggleFavorite={
+          toggleFavorite
+        }
+        isFavorite={
+          isFavorite
+        }
       />
 
       <MusicSection
         title="Новинки"
         subtitle="Свежие релизы"
-        tracks={tracks.slice(0, 6)}
-        playTrack={playTrack}
-        toggleFavorite={toggleFavorite}
-        isFavorite={isFavorite}
+        tracks={tracks.slice(
+          0,
+          6
+        )}
+        playTrack={
+          playTrack
+        }
+        toggleFavorite={
+          toggleFavorite
+        }
+        isFavorite={
+          isFavorite
+        }
       />
 
       <MusicSection
@@ -1244,13 +2634,23 @@ function HomePage({
         tracks={[...tracks]
           .sort(
             (a, b) =>
-              Number(b.plays || 0) -
-              Number(a.plays || 0)
+              Number(
+                b.plays || 0
+              ) -
+              Number(
+                a.plays || 0
+              )
           )
           .slice(0, 6)}
-        playTrack={playTrack}
-        toggleFavorite={toggleFavorite}
-        isFavorite={isFavorite}
+        playTrack={
+          playTrack
+        }
+        toggleFavorite={
+          toggleFavorite
+        }
+        isFavorite={
+          isFavorite
+        }
       />
 
       <MusicSection
@@ -1259,25 +2659,42 @@ function HomePage({
         tracks={[...tracks]
           .reverse()
           .slice(0, 6)}
-        playTrack={playTrack}
-        toggleFavorite={toggleFavorite}
-        isFavorite={isFavorite}
+        playTrack={
+          playTrack
+        }
+        toggleFavorite={
+          toggleFavorite
+        }
+        isFavorite={
+          isFavorite
+        }
       />
 
-      {history.length > 0 && (
+      {history.length >
+        0 && (
         <MusicSection
           title="Недавно прослушанное"
           subtitle="Продолжить слушать"
-          tracks={history.slice(0, 6)}
-          playTrack={playTrack}
-          toggleFavorite={toggleFavorite}
-          isFavorite={isFavorite}
+          tracks={history.slice(
+            0,
+            6
+          )}
+          playTrack={
+            playTrack
+          }
+          toggleFavorite={
+            toggleFavorite
+          }
+          isFavorite={
+            isFavorite
+          }
         />
       )}
 
       {loading && (
         <div className="empty-state">
-          Загрузка музыкального каталога…
+          Загрузка музыкального
+          каталога…
         </div>
       )}
     </div>
@@ -1299,26 +2716,41 @@ function MusicSection({
           <h2>{title}</h2>
 
           {subtitle && (
-            <span>{subtitle}</span>
+            <span>
+              {subtitle}
+            </span>
           )}
         </div>
 
-        <button>
+        <button type="button">
           Показать всё →
         </button>
       </div>
 
-      {tracks.length > 0 ? (
+      {tracks.length >
+      0 ? (
         <div className="track-grid">
-          {tracks.map((track) => (
-            <TrackCard
-              key={track.id}
-              track={track}
-              playTrack={playTrack}
-              toggleFavorite={toggleFavorite}
-              isFavorite={isFavorite}
-            />
-          ))}
+          {tracks.map(
+            track => (
+              <TrackCard
+                key={
+                  track.id
+                }
+                track={
+                  track
+                }
+                playTrack={
+                  playTrack
+                }
+                toggleFavorite={
+                  toggleFavorite
+                }
+                isFavorite={
+                  isFavorite
+                }
+              />
+            )
+          )}
         </div>
       ) : (
         <div className="empty-state small">
@@ -1335,15 +2767,24 @@ function TrackCard({
   toggleFavorite,
   isFavorite,
 }) {
+  const liked =
+    isFavorite(track);
+
   return (
     <article className="track-card">
       <button
         className="track-cover"
-        onClick={() => playTrack(track)}
+        onClick={() =>
+          playTrack(track)
+        }
       >
         <img
-          src={track.cover_url || DEFAULT_COVER}
+          src={
+            track.cover_url ||
+            DEFAULT_COVER
+          }
           alt=""
+          loading="lazy"
         />
 
         <span className="track-play">
@@ -1354,7 +2795,9 @@ function TrackCard({
       <div className="track-card-info">
         <button
           className="track-title"
-          onClick={() => playTrack(track)}
+          onClick={() =>
+            playTrack(track)
+          }
         >
           {track.title}
         </button>
@@ -1364,25 +2807,33 @@ function TrackCard({
         </span>
 
         <div className="track-meta">
-          <small>{track.genre}</small>
           <small>
-            {formatTime(track.duration)}
+            {track.genre}
+          </small>
+
+          <small>
+            {formatTime(
+              track.duration
+            )}
           </small>
         </div>
 
         <button
           className={`favorite-button ${
-            isFavorite(track)
+            liked
               ? "liked"
               : ""
           }`}
           onClick={() =>
-            toggleFavorite(track)
+            toggleFavorite(
+              track
+            )
           }
+          aria-label="Избранное"
         >
           <Icon
             name={
-              isFavorite(track)
+              liked
                 ? "heartFill"
                 : "heart"
             }
@@ -1393,9 +2844,9 @@ function TrackCard({
   );
 }
 
-/* =========================
+/* ============================================================
    SEARCH
-========================= */
+============================================================ */
 
 function SearchPage({
   search,
@@ -1415,8 +2866,9 @@ function SearchPage({
         <h1>Поиск</h1>
 
         <p>
-          Найди трек, артиста, альбом или
-          свою любимую музыку.
+          Найди трек, артиста,
+          альбом или свою
+          любимую музыку.
         </p>
       </div>
 
@@ -1426,8 +2878,11 @@ function SearchPage({
         <input
           autoFocus
           value={search}
-          onChange={(event) =>
-            setSearch(event.target.value)
+          onChange={event =>
+            setSearch(
+              event.target
+                .value
+            )
           }
           placeholder="Трек, артист, альбом, жанр…"
         />
@@ -1435,20 +2890,31 @@ function SearchPage({
 
       {search && (
         <p className="search-result-count">
-          Найдено: {tracks.length}
+          Найдено:{" "}
+          {tracks.length}
         </p>
       )}
 
       <div className="track-grid">
-        {tracks.map((track) => (
-          <TrackCard
-            key={track.id}
-            track={track}
-            playTrack={playTrack}
-            toggleFavorite={toggleFavorite}
-            isFavorite={isFavorite}
-          />
-        ))}
+        {tracks.map(
+          track => (
+            <TrackCard
+              key={
+                track.id
+              }
+              track={track}
+              playTrack={
+                playTrack
+              }
+              toggleFavorite={
+                toggleFavorite
+              }
+              isFavorite={
+                isFavorite
+              }
+            />
+          )
+        )}
       </div>
 
       {!tracks.length && (
@@ -1460,9 +2926,9 @@ function SearchPage({
   );
 }
 
-/* =========================
+/* ============================================================
    RECOMMENDATIONS
-========================= */
+============================================================ */
 
 function RecommendationsPage({
   tracks,
@@ -1471,19 +2937,30 @@ function RecommendationsPage({
   toggleFavorite,
   isFavorite,
 }) {
-  const genres = [
-    ...new Set(
-      history
-        .map((item) => item.genre)
-        .filter(Boolean)
-    ),
-  ];
+  const genres =
+    useMemo(
+      () => [
+        ...new Set(
+          history
+            .map(
+              item =>
+                item.genre
+            )
+            .filter(Boolean)
+        ),
+      ],
+      [history]
+    );
 
-  const recommendations = genres.length
-    ? tracks.filter((track) =>
-        genres.includes(track.genre)
-      )
-    : tracks;
+  const recommendations =
+    genres.length
+      ? tracks.filter(
+          track =>
+            genres.includes(
+              track.genre
+            )
+        )
+      : tracks;
 
   return (
     <div className="page">
@@ -1495,39 +2972,64 @@ function RecommendationsPage({
         <h1>Для вас</h1>
 
         <p>
-          Рекомендации формируются на основе
-          истории прослушиваний.
+          Рекомендации
+          формируются на основе
+          истории
+          прослушиваний.
         </p>
       </div>
 
-      {genres.length > 0 && (
+      {genres.length >
+        0 && (
         <div className="genre-tags">
-          {genres.map((genre) => (
-            <span key={genre}>
-              {genre}
-            </span>
-          ))}
+          {genres.map(
+            genre => (
+              <span
+                key={genre}
+              >
+                {genre}
+              </span>
+            )
+          )}
         </div>
       )}
 
       <div className="track-grid">
-        {recommendations.map((track) => (
-          <TrackCard
-            key={track.id}
-            track={track}
-            playTrack={playTrack}
-            toggleFavorite={toggleFavorite}
-            isFavorite={isFavorite}
-          />
-        ))}
+        {recommendations.map(
+          track => (
+            <TrackCard
+              key={
+                track.id
+              }
+              track={track}
+              playTrack={
+                playTrack
+              }
+              toggleFavorite={
+                toggleFavorite
+              }
+              isFavorite={
+                isFavorite
+              }
+            />
+          )
+        )}
       </div>
+
+      {!recommendations.length && (
+        <div className="empty-state">
+          Пока недостаточно
+          данных для
+          рекомендаций.
+        </div>
+      )}
     </div>
   );
 }
 
-/* =========================
+/* ============================================================
    LIBRARY
-========================= */
+============================================================ */
 
 function LibraryPage({
   favorites,
@@ -1547,7 +3049,9 @@ function LibraryPage({
         <h1>Библиотека</h1>
 
         <p>
-          Всё сохранённое и недавно прослушанное.
+          Всё сохранённое и
+          недавно
+          прослушанное.
         </p>
       </div>
 
@@ -1556,38 +3060,61 @@ function LibraryPage({
           icon="heart"
           title="Избранное"
           description={`${favorites.length} треков`}
-          onClick={() => setPage("favorites")}
+          onClick={() =>
+            setPage(
+              "favorites"
+            )
+          }
         />
 
         <LibraryTile
           icon="clock"
           title="История"
           description={`${history.length} прослушанных`}
-          onClick={() => setPage("history")}
+          onClick={() =>
+            setPage(
+              "history"
+            )
+          }
         />
 
         <LibraryTile
           icon="music"
           title="Плейлисты"
           description={`${playlists.length} плейлистов`}
-          onClick={() => setPage("playlists")}
+          onClick={() =>
+            setPage(
+              "playlists"
+            )
+          }
         />
 
         <LibraryTile
           icon="album"
           title="Альбомы"
           description="Музыкальные альбомы"
-          onClick={() => setPage("albums")}
+          onClick={() =>
+            setPage(
+              "albums"
+            )
+          }
         />
       </div>
 
       <MusicSection
         title="Продолжить слушать"
         subtitle="Музыка из каталога"
-        tracks={tracks.slice(0, 6)}
-        playTrack={playTrack}
+        tracks={tracks.slice(
+          0,
+          6
+        )}
+        playTrack={
+          playTrack
+        }
         toggleFavorite={() => {}}
-        isFavorite={() => false}
+        isFavorite={() =>
+          false
+        }
       />
     </div>
   );
@@ -1606,18 +3133,24 @@ function LibraryTile({
     >
       <Icon name={icon} />
 
-      <strong>{title}</strong>
+      <strong>
+        {title}
+      </strong>
 
-      <small>{description}</small>
+      <small>
+        {description}
+      </small>
 
-      <span>Открыть →</span>
+      <span>
+        Открыть →
+      </span>
     </button>
   );
 }
 
-/* =========================
+/* ============================================================
    TRACK LIST
-========================= */
+============================================================ */
 
 function TrackListPage({
   title,
@@ -1636,13 +3169,18 @@ function TrackListPage({
 
         <h1>{title}</h1>
 
-        <p>{subtitle}</p>
+        <p>
+          {subtitle}
+        </p>
 
         {tracks[0] && (
           <button
             className="primary-button"
             onClick={() =>
-              playTrack(tracks[0], tracks)
+              playTrack(
+                tracks[0],
+                tracks
+              )
             }
           >
             <Icon name="play" />
@@ -1652,123 +3190,291 @@ function TrackListPage({
       </div>
 
       <div className="track-list">
-        {tracks.map((track, index) => (
-          <div
-            className="track-list-row"
-            key={`${track.id}-${index}`}
-          >
-            <span className="track-number">
-              {index + 1}
-            </span>
+        {tracks.map(
+          (
+            track,
+            index
+          ) => {
+            const liked =
+              isFavorite(
+                track
+              );
 
-            <img
-              src={track.cover_url || DEFAULT_COVER}
-              alt=""
-            />
+            return (
+              <div
+                className="track-list-row"
+                key={`${track.id}-${index}`}
+              >
+                <span className="track-number">
+                  {index +
+                    1}
+                </span>
 
-            <button
-              className="track-list-main"
-              onClick={() =>
-                playTrack(track, tracks)
-              }
-            >
-              <b>{track.title}</b>
-              <small>
-                {track.artist_name}
-              </small>
-            </button>
+                <img
+                  src={
+                    track.cover_url ||
+                    DEFAULT_COVER
+                  }
+                  alt=""
+                  loading="lazy"
+                />
 
-            <span className="track-list-grow" />
+                <button
+                  className="track-list-main"
+                  onClick={() =>
+                    playTrack(
+                      track,
+                      tracks
+                    )
+                  }
+                >
+                  <b>
+                    {track.title}
+                  </b>
 
-            <span className="track-list-duration">
-              {formatTime(track.duration)}
-            </span>
+                  <small>
+                    {
+                      track.artist_name
+                    }
+                  </small>
+                </button>
 
-            <button
-              className={`icon-button ${
-                isFavorite(track)
-                  ? "liked"
-                  : ""
-              }`}
-              onClick={() =>
-                toggleFavorite(track)
-              }
-            >
-              <Icon
-                name={
-                  isFavorite(track)
-                    ? "heartFill"
-                    : "heart"
-                }
-              />
-            </button>
+                <span className="track-list-grow" />
 
-            <button
-              className="round-play"
-              onClick={() =>
-                playTrack(track, tracks)
-              }
-            >
-              <Icon name="play" />
-            </button>
-          </div>
-        ))}
+                <span className="track-list-duration">
+                  {formatTime(
+                    track.duration
+                  )}
+                </span>
+
+                <button
+                  className={`icon-button ${
+                    liked
+                      ? "liked"
+                      : ""
+                  }`}
+                  onClick={() =>
+                    toggleFavorite(
+                      track
+                    )
+                  }
+                >
+                  <Icon
+                    name={
+                      liked
+                        ? "heartFill"
+                        : "heart"
+                    }
+                  />
+                </button>
+
+                <button
+                  className="round-play"
+                  onClick={() =>
+                    playTrack(
+                      track,
+                      tracks
+                    )
+                  }
+                >
+                  <Icon name="play" />
+                </button>
+              </div>
+            );
+          }
+        )}
       </div>
 
       {!tracks.length && (
         <div className="empty-state">
-          Здесь пока ничего нет.
+          Здесь пока ничего
+          нет.
         </div>
       )}
     </div>
   );
 }
 
-/* =========================
+/* ============================================================
    PLAYLISTS
-========================= */
+============================================================ */
 
 function PlaylistsPage({
   playlists,
   setPlaylists,
   tracks,
   playTrack,
+  token,
 }) {
-  const [name, setName] = useState("");
-  const [publicPlaylist, setPublicPlaylist] =
-    useState(false);
+  const [name, setName] =
+    useState("");
 
-  const createPlaylist = () => {
-    const cleanName = name.trim();
+  const [
+    publicPlaylist,
+    setPublicPlaylist,
+  ] = useState(false);
 
-    if (!cleanName) {
-      return;
-    }
+  const [
+    selectedPlaylist,
+    setSelectedPlaylist,
+  ] = useState(null);
 
-    const playlist = {
-      id: Date.now(),
-      name: cleanName,
-      public: publicPlaylist,
-      tracks: [],
-      created_at: Date.now(),
+  const createPlaylist =
+    async () => {
+      const cleanName =
+        name.trim();
+
+      if (!cleanName) {
+        return;
+      }
+
+      const playlist = {
+        id: `local-${Date.now()}`,
+        name: cleanName,
+        public:
+          publicPlaylist,
+        tracks: [],
+        created_at:
+          Date.now(),
+      };
+
+      setPlaylists(
+        previous => [
+          ...previous,
+          playlist,
+        ]
+      );
+
+      setName("");
+      setPublicPlaylist(
+        false
+      );
+
+      if (token) {
+        try {
+          const data =
+            await requestJSON(
+              "/api/playlists",
+              {
+                method:
+                  "POST",
+                body: {
+                  name: cleanName,
+                  public:
+                    publicPlaylist,
+                },
+              }
+            );
+
+          if (
+            data?.playlist
+          ) {
+            setPlaylists(
+              previous =>
+                previous.map(
+                  item =>
+                    item.id ===
+                    playlist.id
+                      ? {
+                          ...item,
+                          ...data.playlist,
+                        }
+                      : item
+                )
+            );
+          }
+        } catch {
+          // local fallback
+        }
+      }
     };
 
-    setPlaylists((previous) => [
-      ...previous,
-      playlist,
-    ]);
+  const deletePlaylist =
+    async id => {
+      setPlaylists(
+        previous =>
+          previous.filter(
+            playlist =>
+              String(
+                playlist.id
+              ) !==
+              String(id)
+          )
+      );
 
-    setName("");
-    setPublicPlaylist(false);
-  };
+      if (token) {
+        try {
+          await requestJSON(
+            `/api/playlists/${encodeURIComponent(
+              id
+            )}`,
+            {
+              method:
+                "DELETE",
+            }
+          );
+        } catch {
+          // local fallback
+        }
+      }
+    };
 
-  const deletePlaylist = (id) => {
-    setPlaylists((previous) =>
-      previous.filter(
-        (playlist) => playlist.id !== id
-      )
-    );
-  };
+  const addTrack =
+    playlistId => {
+      if (!tracks.length) {
+        return;
+      }
+
+      const track =
+        normalizeTrack(
+          tracks[0]
+        );
+
+      setPlaylists(
+        previous =>
+          previous.map(
+            playlist => {
+              if (
+                String(
+                  playlist.id
+                ) !==
+                String(
+                  playlistId
+                )
+              ) {
+                return playlist;
+              }
+
+              const exists =
+                (
+                  playlist.tracks ||
+                  []
+                ).some(
+                  item =>
+                    String(
+                      item.id
+                    ) ===
+                    String(
+                      track.id
+                    )
+                );
+
+              if (exists) {
+                return playlist;
+              }
+
+              return {
+                ...playlist,
+                tracks: [
+                  ...(playlist.tracks ||
+                    []),
+                  track,
+                ],
+              };
+            }
+          )
+      );
+    };
 
   return (
     <div className="page">
@@ -1780,16 +3486,19 @@ function PlaylistsPage({
         <h1>Плейлисты</h1>
 
         <p>
-          Создавай публичные и приватные
-          музыкальные подборки.
+          Создавай публичные и
+          приватные музыкальные
+          подборки.
         </p>
       </div>
 
       <div className="create-playlist">
         <input
           value={name}
-          onChange={(event) =>
-            setName(event.target.value)
+          onChange={event =>
+            setName(
+              event.target.value
+            )
           }
           placeholder="Название нового плейлиста"
         />
@@ -1797,19 +3506,27 @@ function PlaylistsPage({
         <label className="checkbox">
           <input
             type="checkbox"
-            checked={publicPlaylist}
-            onChange={(event) =>
+            checked={
+              publicPlaylist
+            }
+            onChange={event =>
               setPublicPlaylist(
-                event.target.checked
+                event.target
+                  .checked
               )
             }
           />
-          <span>Публичный</span>
+
+          <span>
+            Публичный
+          </span>
         </label>
 
         <button
           className="primary-button"
-          onClick={createPlaylist}
+          onClick={
+            createPlaylist
+          }
         >
           <Icon name="plus" />
           Создать
@@ -1817,85 +3534,184 @@ function PlaylistsPage({
       </div>
 
       <div className="playlist-grid">
-        {playlists.map((playlist) => (
-          <article
-            className="playlist-card"
-            key={playlist.id}
-          >
-            <div className="playlist-cover">
-              <Icon name="music" />
-            </div>
+        {playlists.map(
+          playlist => (
+            <article
+              className={`playlist-card ${
+                selectedPlaylist ===
+                playlist.id
+                  ? "selected"
+                  : ""
+              }`}
+              key={
+                playlist.id
+              }
+            >
+              <button
+                className="playlist-cover"
+                onClick={() =>
+                  setSelectedPlaylist(
+                    selectedPlaylist ===
+                      playlist.id
+                      ? null
+                      : playlist.id
+                  )
+                }
+              >
+                <Icon name="music" />
+              </button>
 
-            <h3>{playlist.name}</h3>
+              <h3>
+                {playlist.name}
+              </h3>
 
-            <span>
-              {playlist.public
-                ? "Публичный"
-                : "Приватный"}
-              {" · "}
-              {playlist.tracks?.length || 0}{" "}
-              треков
-            </span>
+              <span>
+                {playlist.public
+                  ? "Публичный"
+                  : "Приватный"}
+                {" · "}
+                {
+                  playlist
+                    .tracks
+                    ?.length ||
+                  0
+                }{" "}
+                треков
+              </span>
 
-            <div className="playlist-actions">
-              {playlist.tracks?.length > 0 && (
+              <div className="playlist-actions">
+                {playlist
+                  .tracks
+                  ?.length >
+                  0 && (
+                  <button
+                    onClick={() =>
+                      playTrack(
+                        playlist
+                          .tracks[0],
+                        playlist.tracks
+                      )
+                    }
+                  >
+                    ▶ Слушать
+                  </button>
+                )}
+
                 <button
                   onClick={() =>
-                    playTrack(
-                      playlist.tracks[0],
-                      playlist.tracks
+                    addTrack(
+                      playlist.id
                     )
                   }
                 >
-                  ▶ Слушать
+                  + Трек
                 </button>
-              )}
 
-              <button
-                className="danger-text"
-                onClick={() =>
-                  deletePlaylist(playlist.id)
-                }
-              >
-                Удалить
-              </button>
-            </div>
-          </article>
-        ))}
+                <button
+                  className="danger-text"
+                  onClick={() =>
+                    deletePlaylist(
+                      playlist.id
+                    )
+                  }
+                >
+                  Удалить
+                </button>
+              </div>
+
+              {selectedPlaylist ===
+                playlist.id && (
+                <div className="playlist-track-preview">
+                  {playlist
+                    .tracks
+                    ?.length ? (
+                    playlist.tracks.map(
+                      track => (
+                        <button
+                          key={
+                            track.id
+                          }
+                          onClick={() =>
+                            playTrack(
+                              track,
+                              playlist.tracks
+                            )
+                          }
+                        >
+                          <img
+                            src={
+                              track.cover_url ||
+                              DEFAULT_COVER
+                            }
+                            alt=""
+                          />
+
+                          <span>
+                            {
+                              track.title
+                            }
+                          </span>
+                        </button>
+                      )
+                    )
+                  ) : (
+                    <small>
+                      В плейлисте
+                      пока нет
+                      треков.
+                    </small>
+                  )}
+                </div>
+              )}
+            </article>
+          )
+        )}
       </div>
 
       {!playlists.length && (
         <div className="empty-state">
-          Создай свой первый плейлист.
+          Создай свой первый
+          плейлист.
         </div>
       )}
     </div>
   );
 }
 
-/* =========================
+/* ============================================================
    ARTISTS
-========================= */
+============================================================ */
 
 function ArtistsPage({
   tracks,
   playTrack,
 }) {
-  const artists = useMemo(() => {
-    const map = new Map();
+  const artists =
+    useMemo(() => {
+      const map =
+        new Map();
 
-    tracks.forEach((track) => {
-      const name =
-        track.artist_name ||
-        "Неизвестный артист";
+      tracks.forEach(
+        track => {
+          const name =
+            track.artist_name ||
+            "Неизвестный артист";
 
-      if (!map.has(name)) {
-        map.set(name, track);
-      }
-    });
+          if (
+            !map.has(name)
+          ) {
+            map.set(
+              name,
+              track
+            );
+          }
+        }
+      );
 
-    return [...map.values()];
-  }, [tracks]);
+      return [
+        ...map.values(),
+      ];
+    }, [tracks]);
 
   return (
     <div className="page">
@@ -1907,69 +3723,94 @@ function ArtistsPage({
         <h1>Артисты</h1>
 
         <p>
-          Исполнители из твоего музыкального
-          каталога.
+          Исполнители из твоего
+          музыкального каталога.
         </p>
       </div>
 
       <div className="artist-grid">
-        {artists.map((track) => (
-          <article
-            className="artist-card"
-            key={
-              track.artist_name ||
-              track.id
-            }
-            onClick={() =>
-              playTrack(track, tracks)
-            }
-          >
-            <img
-              src={
-                track.artist_avatar ||
-                track.cover_url ||
-                DEFAULT_COVER
+        {artists.map(
+          track => (
+            <article
+              className="artist-card"
+              key={
+                track.artist_name ||
+                track.id
               }
-              alt=""
-            />
+              onClick={() =>
+                playTrack(
+                  track,
+                  tracks
+                )
+              }
+            >
+              <img
+                src={
+                  track.artist_avatar ||
+                  track.cover_url ||
+                  DEFAULT_COVER
+                }
+                alt=""
+                loading="lazy"
+              />
 
-            <h3>
-              {track.artist_name}
-            </h3>
+              <h3>
+                {
+                  track.artist_name
+                }
+              </h3>
 
-            <span>
-              Слушать артиста →
-            </span>
-          </article>
-        ))}
+              <span>
+                Слушать артиста →
+              </span>
+            </article>
+          )
+        )}
       </div>
+
+      {!artists.length && (
+        <div className="empty-state">
+          Артистов пока нет.
+        </div>
+      )}
     </div>
   );
 }
 
-/* =========================
+/* ============================================================
    ALBUMS
-========================= */
+============================================================ */
 
 function AlbumsPage({
   tracks,
   playTrack,
 }) {
-  const albums = useMemo(() => {
-    const map = new Map();
+  const albums =
+    useMemo(() => {
+      const map =
+        new Map();
 
-    tracks.forEach((track) => {
-      const name =
-        track.album_name ||
-        "Без альбома";
+      tracks.forEach(
+        track => {
+          const name =
+            track.album_name ||
+            "Без альбома";
 
-      if (!map.has(name)) {
-        map.set(name, track);
-      }
-    });
+          if (
+            !map.has(name)
+          ) {
+            map.set(
+              name,
+              track
+            );
+          }
+        }
+      );
 
-    return [...map.values()];
-  }, [tracks]);
+      return [
+        ...map.values(),
+      ];
+    }, [tracks]);
 
   return (
     <div className="page">
@@ -1981,49 +3822,64 @@ function AlbumsPage({
         <h1>Альбомы</h1>
 
         <p>
-          Все доступные релизы.
+          Все доступные
+          релизы.
         </p>
       </div>
 
       <div className="album-grid">
-        {albums.map((track) => (
-          <article
-            className="album-card"
-            key={track.album_name || track.id}
-            onClick={() =>
-              playTrack(track, tracks)
-            }
-          >
-            <img
-              src={
-                track.album_cover_url ||
-                track.cover_url ||
-                DEFAULT_COVER
+        {albums.map(
+          track => (
+            <article
+              className="album-card"
+              key={
+                track.album_name ||
+                track.id
               }
-              alt=""
-            />
+              onClick={() =>
+                playTrack(
+                  track,
+                  tracks
+                )
+              }
+            >
+              <img
+                src={
+                  track.album_cover_url ||
+                  track.cover_url ||
+                  DEFAULT_COVER
+                }
+                alt=""
+                loading="lazy"
+              />
 
-            <h3>
-              {track.album_name}
-            </h3>
+              <h3>
+                {
+                  track.album_name
+                }
+              </h3>
 
-            <span>
-              {track.artist_name}
-            </span>
+              <span>
+                {
+                  track.artist_name
+                }
+              </span>
 
-            <small>
-              {track.year || "—"}
-            </small>
-          </article>
-        ))}
+              <small>
+                {track.year ||
+                  "—"}
+              </small>
+            </article>
+          )
+        )}
       </div>
     </div>
   );
 }
 
-/* =========================
+/* ============================================================
    NOTIFICATIONS
-========================= */
+============================================================ */
 
 function NotificationsPage({
   notifications,
@@ -2037,14 +3893,19 @@ function NotificationsPage({
             NOTIFICATIONS
           </span>
 
-          <h1>Уведомления</h1>
+          <h1>
+            Уведомления
+          </h1>
         </div>
 
-        {notifications.length > 0 && (
+        {notifications.length >
+          0 && (
           <button
             className="secondary-button"
             onClick={() =>
-              setNotifications([])
+              setNotifications(
+                []
+              )
             }
           >
             Очистить
@@ -2052,10 +3913,14 @@ function NotificationsPage({
         )}
       </div>
 
-      {notifications.length > 0 ? (
+      {notifications.length >
+      0 ? (
         <div className="notification-list">
           {notifications.map(
-            (notification, index) => (
+            (
+              notification,
+              index
+            ) => (
               <article
                 className="notification-card"
                 key={
@@ -2084,16 +3949,17 @@ function NotificationsPage({
         </div>
       ) : (
         <div className="empty-state">
-          Новых уведомлений нет.
+          Новых уведомлений
+          нет.
         </div>
       )}
     </div>
   );
 }
 
-/* =========================
+/* ============================================================
    TELEGRAM
-========================= */
+============================================================ */
 
 function TelegramPage() {
   return (
@@ -2113,11 +3979,14 @@ function TelegramPage() {
           </h1>
 
           <p>
-            Отправляй песни боту. Backend
-            сохраняет Telegram file_id,
-            метаданные и публикует трек в
-            канал. После этого сайт
-            автоматически подхватывает новую
+            Отправляй песни
+            боту. Backend
+            сохраняет Telegram
+            file_id, метаданные
+            и публикует трек в
+            канал. После этого
+            сайт автоматически
+            подхватывает новую
             запись через API.
           </p>
         </div>
@@ -2151,9 +4020,12 @@ function TelegramPage() {
 
       <div className="integration-note">
         <Icon name="check" />
+
         <span>
-          Автоподхват новых песен выполняется
-          frontend через периодический запрос
+          Автоподхват новых
+          песен выполняется
+          frontend через
+          периодический запрос
           /api/tracks.
         </span>
       </div>
@@ -2169,15 +4041,21 @@ function IntegrationStep({
   return (
     <article className="integration-step">
       <b>{number}</b>
-      <h3>{title}</h3>
-      <p>{text}</p>
+
+      <h3>
+        {title}
+      </h3>
+
+      <p>
+        {text}
+      </p>
     </article>
   );
 }
 
-/* =========================
+/* ============================================================
    PREMIUM
-========================= */
+============================================================ */
 
 function PremiumPage() {
   return (
@@ -2192,11 +4070,13 @@ function PremiumPage() {
         </span>
 
         <h1>
-          Музыка без ограничений.
+          Музыка без
+          ограничений.
         </h1>
 
         <p>
-          Больше качества. Больше музыки.
+          Больше качества.
+          Больше музыки.
           Больше возможностей.
         </p>
       </div>
@@ -2261,15 +4141,21 @@ function PremiumPlan({
 
       <h3>{name}</h3>
 
-      <strong>{price}</strong>
+      <strong>
+        {price}
+      </strong>
 
       <div className="premium-features">
-        {features.map((feature) => (
-          <span key={feature}>
-            <Icon name="check" />
-            {feature}
-          </span>
-        ))}
+        {features.map(
+          feature => (
+            <span
+              key={feature}
+            >
+              <Icon name="check" />
+              {feature}
+            </span>
+          )
+        )}
       </div>
 
       <button
@@ -2285,9 +4171,9 @@ function PremiumPlan({
   );
 }
 
-/* =========================
+/* ============================================================
    PROFILE
-========================= */
+============================================================ */
 
 function ProfilePage({
   user,
@@ -2298,36 +4184,92 @@ function ProfilePage({
   setPage,
 }) {
   const [username, setUsername] =
-    useState(user?.username || "");
+    useState(
+      user?.username || ""
+    );
 
   const [bio, setBio] =
-    useState(user?.bio || "");
+    useState(
+      user?.bio || ""
+    );
 
-  const saveProfile = () => {
-    const updated = {
-      ...(user || {}),
-      username,
-      bio,
+  useEffect(() => {
+    setUsername(
+      user?.username || ""
+    );
+
+    setBio(
+      user?.bio || ""
+    );
+  }, [user]);
+
+  const saveProfile =
+    async () => {
+      const updated = {
+        ...(user || {}),
+        username:
+          username.trim(),
+        bio: bio.trim(),
+      };
+
+      setUser(updated);
+
+      const token =
+        localStorage.getItem(
+          "fenix_token"
+        );
+
+      if (token) {
+        try {
+          const data =
+            await requestJSON(
+              "/api/auth/profile",
+              {
+                method:
+                  "PATCH",
+                body: {
+                  username:
+                    username.trim(),
+                  bio: bio.trim(),
+                },
+              }
+            );
+
+          if (
+            data?.user
+          ) {
+            setUser(
+              data.user
+            );
+          }
+        } catch {
+          // local fallback
+        }
+      }
     };
-
-    setUser(updated);
-  };
 
   if (!user) {
     return (
       <LoginPage
-        onLogin={() => setPage("login")}
-        onRegister={() => setPage("login")}
+        onLogin={() =>
+          setPage("login")
+        }
+        onRegister={() =>
+          setPage("login")
+        }
       />
     );
   }
 
-  const totalSeconds = history.reduce(
-    (total, track) =>
-      total +
-      Number(track.duration || 0),
-    0
-  );
+  const totalSeconds =
+    history.reduce(
+      (total, track) =>
+        total +
+        Number(
+          track.duration || 0
+        ),
+      0
+    );
 
   return (
     <div className="page">
@@ -2347,7 +4289,8 @@ function ProfilePage({
           </span>
 
           <h1>
-            {username || "Пользователь"}
+            {username ||
+              "Пользователь"}
           </h1>
 
           <p>
@@ -2362,27 +4305,39 @@ function ProfilePage({
           <strong>
             {history.length}
           </strong>
-          <span>прослушиваний</span>
+
+          <span>
+            прослушиваний
+          </span>
         </div>
 
         <div>
           <strong>
             {favorites.length}
           </strong>
-          <span>избранных</span>
+
+          <span>
+            избранных
+          </span>
         </div>
 
         <div>
           <strong>
-            {formatTime(totalSeconds)}
+            {formatTime(
+              totalSeconds
+            )}
           </strong>
-          <span>времени</span>
+
+          <span>
+            времени
+          </span>
         </div>
       </div>
 
       <div className="form-card">
         <h2>
-          Редактирование профиля
+          Редактирование
+          профиля
         </h2>
 
         <label>
@@ -2390,9 +4345,10 @@ function ProfilePage({
 
           <input
             value={username}
-            onChange={(event) =>
+            onChange={event =>
               setUsername(
-                event.target.value
+                event.target
+                  .value
               )
             }
           />
@@ -2403,8 +4359,11 @@ function ProfilePage({
 
           <textarea
             value={bio}
-            onChange={(event) =>
-              setBio(event.target.value)
+            onChange={event =>
+              setBio(
+                event.target
+                  .value
+              )
             }
             placeholder="Расскажи о себе"
           />
@@ -2412,7 +4371,9 @@ function ProfilePage({
 
         <button
           className="primary-button"
-          onClick={saveProfile}
+          onClick={
+            saveProfile
+          }
         >
           Сохранить
         </button>
@@ -2421,7 +4382,9 @@ function ProfilePage({
       <div className="profile-links">
         <button
           onClick={() =>
-            setPage("settings")
+            setPage(
+              "settings"
+            )
           }
         >
           <Icon name="settings" />
@@ -2430,7 +4393,9 @@ function ProfilePage({
 
         <button
           onClick={() =>
-            setPage("security")
+            setPage(
+              "security"
+            )
           }
         >
           <Icon name="shield" />
@@ -2448,20 +4413,25 @@ function ProfilePage({
   );
 }
 
-/* =========================
+/* ============================================================
    SETTINGS
-========================= */
+============================================================ */
 
 function SettingsPage({
   settings,
   setSettings,
   logout,
 }) {
-  const update = (key, value) => {
-    setSettings((previous) => ({
-      ...previous,
-      [key]: value,
-    }));
+  const update = (
+    key,
+    value
+  ) => {
+    setSettings(
+      previous => ({
+        ...previous,
+        [key]: value,
+      })
+    );
   };
 
   return (
@@ -2471,21 +4441,27 @@ function SettingsPage({
           SETTINGS
         </span>
 
-        <h1>Настройки</h1>
+        <h1>
+          Настройки
+        </h1>
 
         <p>
-          Настрой Fenix Music под себя.
+          Настрой Fenix Music
+          под себя.
         </p>
       </div>
 
       <div className="settings-card">
         <SettingRow title="Тема">
           <select
-            value={settings.theme}
-            onChange={(event) =>
+            value={
+              settings.theme
+            }
+            onChange={event =>
               update(
                 "theme",
-                event.target.value
+                event.target
+                  .value
               )
             }
           >
@@ -2501,11 +4477,14 @@ function SettingsPage({
 
         <SettingRow title="Качество звука">
           <select
-            value={settings.quality}
-            onChange={(event) =>
+            value={
+              settings.quality
+            }
+            onChange={event =>
               update(
                 "quality",
-                event.target.value
+                event.target
+                  .value
               )
             }
           >
@@ -2525,24 +4504,36 @@ function SettingsPage({
 
         <ToggleRow
           title="Автоплей"
-          value={settings.autoplay}
-          onChange={(value) =>
-            update("autoplay", value)
+          value={
+            settings.autoplay
+          }
+          onChange={value =>
+            update(
+              "autoplay",
+              value
+            )
           }
         />
 
         <ToggleRow
           title="Автоматический переход"
-          value={settings.autoNext}
-          onChange={(value) =>
-            update("autoNext", value)
+          value={
+            settings.autoNext
+          }
+          onChange={value =>
+            update(
+              "autoNext",
+              value
+            )
           }
         />
 
         <ToggleRow
           title="Уведомления"
-          value={settings.notifications}
-          onChange={(value) =>
+          value={
+            settings.notifications
+          }
+          onChange={value =>
             update(
               "notifications",
               value
@@ -2552,11 +4543,14 @@ function SettingsPage({
 
         <SettingRow title="Язык">
           <select
-            value={settings.language}
-            onChange={(event) =>
+            value={
+              settings.language
+            }
+            onChange={event =>
               update(
                 "language",
-                event.target.value
+                event.target
+                  .value
               )
             }
           >
@@ -2588,6 +4582,7 @@ function SettingRow({
   return (
     <div className="setting-row">
       <span>{title}</span>
+
       {children}
     </div>
   );
@@ -2609,6 +4604,7 @@ function ToggleRow({
         onClick={() =>
           onChange(!value)
         }
+        aria-label={title}
       >
         <i />
       </button>
@@ -2616,14 +4612,46 @@ function ToggleRow({
   );
 }
 
-/* =========================
+/* ============================================================
    SECURITY
-========================= */
+============================================================ */
 
 function SecurityPage({
   user,
   openAuth,
 }) {
+  const [
+    busyLogout,
+    setBusyLogout,
+  ] = useState(false);
+
+  const logoutAll =
+    async () => {
+      setBusyLogout(true);
+
+      try {
+        await requestJSON(
+          "/api/auth/logout-all",
+          {
+            method:
+              "POST",
+          }
+        );
+      } catch {
+        // backend endpoint optional
+      }
+
+      removeStorage(
+        "fenix_token"
+      );
+
+      removeStorage(
+        "fenix_user"
+      );
+
+      window.location.reload();
+    };
+
   return (
     <div className="page">
       <div className="page-title">
@@ -2631,10 +4659,13 @@ function SecurityPage({
           SECURITY
         </span>
 
-        <h1>Безопасность</h1>
+        <h1>
+          Безопасность
+        </h1>
 
         <p>
-          Управление доступом к аккаунту.
+          Управление доступом
+          к аккаунту.
         </p>
       </div>
 
@@ -2647,13 +4678,26 @@ function SecurityPage({
           </h3>
 
           <p>
-            Сессия сохраняется после
-            входа и не требует повторной
-            регистрации каждый раз.
+            Сессия сохраняется
+            после входа и не
+            требует повторной
+            регистрации при
+            каждом открытии
+            сайта.
           </p>
 
-          <button className="secondary-button">
-            Выйти со всех устройств
+          <button
+            className="secondary-button"
+            onClick={
+              logoutAll
+            }
+            disabled={
+              busyLogout
+            }
+          >
+            {busyLogout
+              ? "Выходим…"
+              : "Выйти со всех устройств"}
           </button>
         </article>
 
@@ -2665,14 +4709,18 @@ function SecurityPage({
           </h3>
 
           <p>
-            Пароль должен проверяться
-            backend и храниться в базе
-            только как защищённый hash.
+            Пароль должен
+            проверяться backend
+            и храниться в базе
+            только как
+            защищённый hash.
           </p>
 
           <button
             className="secondary-button"
-            onClick={openAuth}
+            onClick={
+              openAuth
+            }
           >
             Сменить пароль
           </button>
@@ -2686,8 +4734,12 @@ function SecurityPage({
           </h3>
 
           <p>
-            При регистрации используется
-            новая CAPTCHA.
+            При регистрации
+            используется новая
+            CAPTCHA. При
+            серверной проверке
+            код дополнительно
+            проверяется backend.
           </p>
 
           <span className="security-ok">
@@ -2699,7 +4751,8 @@ function SecurityPage({
 
       {!user && (
         <div className="empty-state">
-          Войди в аккаунт для управления
+          Войди в аккаунт для
+          управления
           безопасностью.
         </div>
       )}
@@ -2707,9 +4760,9 @@ function SecurityPage({
   );
 }
 
-/* =========================
-   LOGIN PAGE
-========================= */
+/* ============================================================
+   LOGIN
+============================================================ */
 
 function LoginPage({
   onLogin,
@@ -2727,26 +4780,32 @@ function LoginPage({
         </span>
 
         <h1>
-          Музыка начинается здесь
+          Музыка начинается
+          здесь
         </h1>
 
         <p>
-          Войди в аккаунт, чтобы
-          сохранить избранное,
-          историю, настройки и
+          Войди в аккаунт,
+          чтобы сохранить
+          избранное, историю,
+          настройки и
           плейлисты.
         </p>
 
         <button
           className="primary-button wide"
-          onClick={onLogin}
+          onClick={
+            onLogin
+          }
         >
           Войти
         </button>
 
         <button
           className="secondary-button wide"
-          onClick={onRegister}
+          onClick={
+            onRegister
+          }
         >
           Создать аккаунт
         </button>
@@ -2755,9 +4814,9 @@ function LoginPage({
   );
 }
 
-/* =========================
+/* ============================================================
    AUTH MODAL
-========================= */
+============================================================ */
 
 function AuthModal({
   mode,
@@ -2774,14 +4833,20 @@ function AuthModal({
   const [password, setPassword] =
     useState("");
 
-  const [confirmPassword, setConfirmPassword] =
-    useState("");
+  const [
+    confirmPassword,
+    setConfirmPassword,
+  ] = useState("");
 
-  const [captchaText, setCaptchaText] =
-    useState("");
+  const [
+    captchaText,
+    setCaptchaText,
+  ] = useState("");
 
-  const [captchaAnswer, setCaptchaAnswer] =
-    useState("");
+  const [
+    captchaAnswer,
+    setCaptchaAnswer,
+  ] = useState("");
 
   const [busy, setBusy] =
     useState(false);
@@ -2789,171 +4854,212 @@ function AuthModal({
   const [error, setError] =
     useState("");
 
-  const [serverCaptcha, setServerCaptcha] =
-    useState(null);
+  const [
+    serverCaptcha,
+    setServerCaptcha,
+  ] = useState(null);
 
-  const getCaptcha = async () => {
-    setError("");
+  const getCaptcha =
+    useCallback(
+      async () => {
+        setError("");
 
-    try {
-      const response = await fetch(
-        apiUrl("/api/auth/captcha"),
-        {
-          credentials: "include",
+        try {
+          const data =
+            await requestJSON(
+              "/api/auth/captcha"
+            );
+
+          setServerCaptcha(
+            data
+          );
+
+          const text =
+            data.text ||
+            data.code ||
+            data.captcha ||
+            data.question ||
+            "";
+
+          if (text) {
+            setCaptchaText(
+              String(text)
+            );
+          } else {
+            setCaptchaText(
+              randomCaptcha()
+            );
+          }
+        } catch {
+          setServerCaptcha(
+            null
+          );
+
+          setCaptchaText(
+            randomCaptcha()
+          );
         }
-      );
 
-      if (!response.ok) {
-        throw new Error();
-      }
-
-      const data = await response.json();
-
-      setServerCaptcha(data);
-
-      setCaptchaText(
-        data.text ||
-          data.code ||
-          data.captcha ||
-          ""
-      );
-    } catch {
-      setServerCaptcha(null);
-      setCaptchaText(
-        randomCaptcha()
-      );
-    }
-
-    setCaptchaAnswer("");
-  };
+        setCaptchaAnswer("");
+      },
+      []
+    );
 
   useEffect(() => {
-    if (mode === "register") {
+    if (
+      mode ===
+      "register"
+    ) {
       getCaptcha();
     }
-  }, [mode]);
+  }, [
+    mode,
+    getCaptcha,
+  ]);
 
-  const submit = async (event) => {
-    event.preventDefault();
+  const submit =
+    async event => {
+      event.preventDefault();
 
-    setError("");
+      setError("");
 
-    if (
-      mode === "register" &&
-      password !== confirmPassword
-    ) {
-      setError(
-        "Пароли не совпадают."
-      );
-      return;
-    }
-
-    if (
-      mode === "register" &&
-      captchaAnswer
-        .trim()
-        .toUpperCase() !==
-        captchaText
-          .trim()
-          .toUpperCase()
-    ) {
-      setError(
-        "Неверная CAPTCHA."
-      );
-
-      getCaptcha();
-      return;
-    }
-
-    setBusy(true);
-
-    try {
-      const endpoint =
-        mode === "register"
-          ? "/api/auth/register"
-          : "/api/auth/login";
-
-      const payload =
-        mode === "register"
-          ? {
-              username,
-              email,
-              password,
-              captcha:
-                captchaAnswer,
-              captcha_id:
-                serverCaptcha?.id ||
-                serverCaptcha?.captcha_id ||
-                undefined,
-            }
-          : {
-              login:
-                email || username,
-              email,
-              username,
-              password,
-            };
-
-      const response = await fetch(
-        apiUrl(endpoint),
-        {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify(payload),
+      if (
+        mode ===
+        "register"
+      ) {
+        if (
+          !username.trim()
+        ) {
+          setError(
+            "Введите username."
+          );
+          return;
         }
-      );
 
-      const data =
-        await response
-          .json()
-          .catch(() => ({}));
+        if (
+          password !==
+          confirmPassword
+        ) {
+          setError(
+            "Пароли не совпадают."
+          );
+          return;
+        }
 
-      if (!response.ok) {
-        throw new Error(
-          data.error ||
-            data.message ||
-            "Ошибка авторизации."
+        if (
+          password.length <
+          6
+        ) {
+          setError(
+            "Пароль должен содержать минимум 6 символов."
+          );
+          return;
+        }
+
+        if (
+          captchaAnswer
+            .trim()
+            .toUpperCase() !==
+          captchaText
+            .trim()
+            .toUpperCase()
+        ) {
+          setError(
+            "Неверная CAPTCHA."
+          );
+
+          getCaptcha();
+          return;
+        }
+      }
+
+      setBusy(true);
+
+      try {
+        const endpoint =
+          mode ===
+          "register"
+            ? "/api/auth/register"
+            : "/api/auth/login";
+
+        const payload =
+          mode ===
+          "register"
+            ? {
+                username:
+                  username.trim(),
+                email:
+                  email.trim(),
+                password,
+                captcha:
+                  captchaAnswer.trim(),
+                captcha_id:
+                  serverCaptcha?.id ||
+                  serverCaptcha?.captcha_id ||
+                  undefined,
+              }
+            : {
+                login:
+                  email.trim() ||
+                  username.trim(),
+                email:
+                  email.trim(),
+                username:
+                  username.trim(),
+                password,
+              };
+
+        const data =
+          await requestJSON(
+            endpoint,
+            {
+              method:
+                "POST",
+              body: payload,
+            }
+          );
+
+        const token =
+          data.token ||
+          data.access_token ||
+          data.session_token ||
+          null;
+
+        const account =
+          data.user ||
+          data.account ||
+          {
+            id:
+              data.id ||
+              data.user_id,
+            username:
+              data.username ||
+              username.trim(),
+            email:
+              data.email ||
+              email.trim(),
+          };
+
+        onSuccess(
+          account,
+          token
         );
+      } catch (err) {
+        setError(
+          err?.message ||
+            "Сервер авторизации недоступен."
+        );
+
+        if (
+          mode ===
+          "register"
+        ) {
+          getCaptcha();
+        }
+      } finally {
+        setBusy(false);
       }
-
-      const token =
-        data.token ||
-        data.access_token ||
-        data.session_token ||
-        null;
-
-      const account =
-        data.user ||
-        data.account || {
-          username:
-            data.username ||
-            username,
-          email:
-            data.email ||
-            email,
-        };
-
-      onSuccess(
-        account,
-        token
-      );
-    } catch (err) {
-      setError(
-        err.message ||
-          "Сервер авторизации недоступен."
-      );
-
-      if (mode === "register") {
-        getCaptcha();
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
+    };
 
   return (
     <div
@@ -2962,7 +5068,7 @@ function AuthModal({
     >
       <div
         className="auth-modal"
-        onMouseDown={(event) =>
+        onMouseDown={event =>
           event.stopPropagation()
         }
       >
@@ -2978,86 +5084,120 @@ function AuthModal({
         </div>
 
         <span className="eyebrow">
-          {mode === "register"
+          {mode ===
+          "register"
             ? "CREATE ACCOUNT"
             : "WELCOME BACK"}
         </span>
 
         <h2>
-          {mode === "register"
+          {mode ===
+          "register"
             ? "Создай свой аккаунт"
             : "С возвращением"}
         </h2>
 
         <p>
-          {mode === "register"
+          {mode ===
+          "register"
             ? "Сохраняй музыку, историю, настройки и плейлисты."
             : "Вход проверяется через backend."}
         </p>
 
-        <form onSubmit={submit}>
-          {mode === "register" && (
+        <form
+          onSubmit={submit}
+        >
+          {mode ===
+            "register" && (
             <input
-              value={username}
-              onChange={(event) =>
+              value={
+                username
+              }
+              onChange={event =>
                 setUsername(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               placeholder="Имя пользователя"
+              autoComplete="username"
               required
             />
           )}
 
           <input
             value={email}
-            onChange={(event) =>
+            onChange={event =>
               setEmail(
-                event.target.value
+                event.target
+                  .value
               )
             }
             type={
-              mode === "register"
+              mode ===
+              "register"
                 ? "email"
                 : "text"
             }
             placeholder={
-              mode === "register"
+              mode ===
+              "register"
                 ? "Email"
                 : "Email или username"
+            }
+            autoComplete={
+              mode ===
+              "register"
+                ? "email"
+                : "username"
             }
             required
           />
 
           <input
-            value={password}
-            onChange={(event) =>
+            value={
+              password
+            }
+            onChange={event =>
               setPassword(
-                event.target.value
+                event.target
+                  .value
               )
             }
             type="password"
             placeholder="Пароль"
             minLength={6}
+            autoComplete={
+              mode ===
+              "register"
+                ? "new-password"
+                : "current-password"
+            }
             required
           />
 
-          {mode === "register" && (
+          {mode ===
+            "register" && (
             <input
-              value={confirmPassword}
-              onChange={(event) =>
+              value={
+                confirmPassword
+              }
+              onChange={event =>
                 setConfirmPassword(
-                  event.target.value
+                  event.target
+                    .value
                 )
               }
               type="password"
               placeholder="Повтори пароль"
               minLength={6}
+              autoComplete="new-password"
               required
             />
           )}
 
-          {mode === "register" && (
+          {mode ===
+            "register" && (
             <>
               <div className="captcha-box">
                 <strong>
@@ -3067,20 +5207,27 @@ function AuthModal({
 
                 <button
                   type="button"
-                  onClick={getCaptcha}
+                  onClick={
+                    getCaptcha
+                  }
+                  aria-label="Новая CAPTCHA"
                 >
                   <Icon name="refresh" />
                 </button>
               </div>
 
               <input
-                value={captchaAnswer}
-                onChange={(event) =>
+                value={
+                  captchaAnswer
+                }
+                onChange={event =>
                   setCaptchaAnswer(
-                    event.target.value
+                    event.target
+                      .value
                   )
                 }
                 placeholder="Введите CAPTCHA"
+                autoComplete="off"
                 required
               />
             </>
@@ -3094,11 +5241,15 @@ function AuthModal({
 
           <button
             className="primary-button wide"
-            disabled={busy}
+            disabled={
+              busy
+            }
+            type="submit"
           >
             {busy
               ? "Проверяем…"
-              : mode === "register"
+              : mode ===
+                "register"
               ? "Создать аккаунт"
               : "Войти"}
           </button>
@@ -3110,13 +5261,15 @@ function AuthModal({
             setError("");
 
             setMode(
-              mode === "register"
+              mode ===
+                "register"
                 ? "login"
                 : "register"
             );
           }}
         >
-          {mode === "register"
+          {mode ===
+          "register"
             ? "Уже есть аккаунт? Войти"
             : "Нет аккаунта? Регистрация"}
         </button>
@@ -3125,9 +5278,9 @@ function AuthModal({
   );
 }
 
-/* =========================
-   PLAYER
-========================= */
+/* ============================================================
+   PLAYER BAR
+============================================================ */
 
 function PlayerBar({
   track,
@@ -3146,17 +5299,28 @@ function PlayerBar({
   seek,
   openFull,
   openQueue,
+  favorite,
+  onFavorite,
 }) {
   const progress =
     duration > 0
-      ? position / duration
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            position /
+              duration
+          )
+        )
       : 0;
 
   return (
     <footer className="player-bar">
       <button
         className="now-playing"
-        onClick={openFull}
+        onClick={
+          openFull
+        }
       >
         <img
           src={
@@ -3167,9 +5331,14 @@ function PlayerBar({
         />
 
         <span>
-          <b>{track.title}</b>
+          <b>
+            {track.title}
+          </b>
+
           <small>
-            {track.artist_name}
+            {
+              track.artist_name
+            }
           </small>
         </span>
       </button>
@@ -3178,22 +5347,40 @@ function PlayerBar({
         <div className="player-controls">
           <button
             className={
-              shuffle ? "control-active" : ""
+              shuffle
+                ? "control-active"
+                : ""
             }
             onClick={() =>
-              setShuffle(!shuffle)
+              setShuffle(
+                value =>
+                  !value
+              )
             }
+            aria-label="Перемешивание"
           >
             <Icon name="shuffle" />
           </button>
 
-          <button onClick={previousTrack}>
+          <button
+            onClick={
+              previousTrack
+            }
+            aria-label="Предыдущий"
+          >
             <Icon name="previous" />
           </button>
 
           <button
             className="player-play"
-            onClick={togglePlaying}
+            onClick={
+              togglePlaying
+            }
+            aria-label={
+              playing
+                ? "Пауза"
+                : "Воспроизвести"
+            }
           >
             <Icon
               name={
@@ -3204,25 +5391,34 @@ function PlayerBar({
             />
           </button>
 
-          <button onClick={nextTrack}>
+          <button
+            onClick={
+              nextTrack
+            }
+            aria-label="Следующий"
+          >
             <Icon name="next" />
           </button>
 
           <button
             className={
-              repeat !== "off"
+              repeat !==
+              "off"
                 ? "control-active"
                 : ""
             }
             onClick={() => {
               setRepeat(
-                repeat === "off"
+                repeat ===
+                  "off"
                   ? "all"
-                  : repeat === "all"
+                  : repeat ===
+                    "all"
                   ? "one"
                   : "off"
               );
             }}
+            aria-label="Повтор"
           >
             <Icon name="repeat" />
           </button>
@@ -3230,7 +5426,9 @@ function PlayerBar({
 
         <div className="player-progress">
           <span>
-            {formatTime(position)}
+            {formatTime(
+              position
+            )}
           </span>
 
           <input
@@ -3238,22 +5436,60 @@ function PlayerBar({
             min="0"
             max="1"
             step="0.001"
-            value={progress}
-            onChange={seek}
+            value={
+              progress
+            }
+            onChange={
+              seek
+            }
+            aria-label="Прогресс"
           />
 
           <span>
-            {formatTime(duration)}
+            {formatTime(
+              duration
+            )}
           </span>
         </div>
       </div>
 
       <div className="player-right">
-        <button onClick={openQueue}>
+        <button
+          className={
+            favorite
+              ? "control-active"
+              : ""
+          }
+          onClick={
+            onFavorite
+          }
+          aria-label="Избранное"
+        >
+          <Icon
+            name={
+              favorite
+                ? "heartFill"
+                : "heart"
+            }
+          />
+        </button>
+
+        <button
+          onClick={
+            openQueue
+          }
+          aria-label="Очередь"
+        >
           ☷
         </button>
 
-        <Icon name="volume" />
+        <Icon
+          name={
+            volume > 0
+              ? "volume"
+              : "mute"
+          }
+        />
 
         <input
           type="range"
@@ -3261,20 +5497,24 @@ function PlayerBar({
           max="1"
           step="0.01"
           value={volume}
-          onChange={(event) =>
+          onChange={event =>
             setVolume(
-              Number(event.target.value)
+              Number(
+                event.target
+                  .value
+              )
             )
           }
+          aria-label="Громкость"
         />
       </div>
     </footer>
   );
 }
 
-/* =========================
+/* ============================================================
    QUEUE
-========================= */
+============================================================ */
 
 function QueuePanel({
   queue,
@@ -3285,52 +5525,82 @@ function QueuePanel({
   return (
     <div className="queue-panel">
       <div className="queue-heading">
-        <h2>Очередь</h2>
+        <h2>
+          Очередь
+        </h2>
 
-        <button onClick={close}>
+        <button
+          onClick={close}
+        >
           <Icon name="close" />
         </button>
       </div>
 
       <div className="queue-list">
-        {queue.map((track) => (
-          <button
-            className={`queue-item ${
-              String(track.id) ===
-              String(currentTrack.id)
-                ? "active"
-                : ""
-            }`}
-            key={track.id}
-            onClick={() => {
-              playTrack(track, queue);
-              close();
-            }}
-          >
-            <img
-              src={
-                track.cover_url ||
-                DEFAULT_COVER
-              }
-              alt=""
-            />
+        {queue.map(
+          (
+            track,
+            index
+          ) => (
+            <button
+              className={`queue-item ${
+                String(
+                  track.id
+                ) ===
+                String(
+                  currentTrack.id
+                )
+                  ? "active"
+                  : ""
+              }`}
+              key={`${track.id}-${index}`}
+              onClick={() => {
+                playTrack(
+                  track,
+                  queue
+                );
 
-            <span>
-              <b>{track.title}</b>
-              <small>
-                {track.artist_name}
-              </small>
-            </span>
-          </button>
-        ))}
+                close();
+              }}
+            >
+              <img
+                src={
+                  track.cover_url ||
+                  DEFAULT_COVER
+                }
+                alt=""
+              />
+
+              <span>
+                <b>
+                  {track.title}
+                </b>
+
+                <small>
+                  {
+                    track.artist_name
+                  }
+                </small>
+              </span>
+
+              <Icon name="play" />
+            </button>
+          )
+        )}
       </div>
+
+      {!queue.length && (
+        <div className="empty-state small">
+          Очередь пуста.
+        </div>
+      )}
     </div>
   );
 }
 
-/* =========================
+/* ============================================================
    FULL PLAYER
-========================= */
+============================================================ */
 
 function FullPlayer({
   track,
@@ -3346,10 +5616,19 @@ function FullPlayer({
   previousTrack,
   seek,
   close,
+  favorite,
+  onFavorite,
 }) {
   const progress =
     duration > 0
-      ? position / duration
+      ? Math.max(
+          0,
+          Math.min(
+            1,
+            position /
+              duration
+          )
+        )
       : 0;
 
   return (
@@ -3357,6 +5636,7 @@ function FullPlayer({
       <button
         className="full-player-close"
         onClick={close}
+        aria-label="Закрыть"
       >
         <Icon name="close" />
       </button>
@@ -3376,12 +5656,33 @@ function FullPlayer({
           {track.artist_name}
         </span>
 
-        <h1>{track.title}</h1>
+        <h1>
+          {track.title}
+        </h1>
 
         <p>
           {track.album_name}
         </p>
       </div>
+
+      <button
+        className={`full-favorite ${
+          favorite
+            ? "liked"
+            : ""
+        }`}
+        onClick={
+          onFavorite
+        }
+      >
+        <Icon
+          name={
+            favorite
+              ? "heartFill"
+              : "heart"
+          }
+        />
+      </button>
 
       <div className="full-progress">
         <input
@@ -3389,17 +5690,25 @@ function FullPlayer({
           min="0"
           max="1"
           step="0.001"
-          value={progress}
-          onChange={seek}
+          value={
+            progress
+          }
+          onChange={
+            seek
+          }
         />
 
         <div>
           <span>
-            {formatTime(position)}
+            {formatTime(
+              position
+            )}
           </span>
 
           <span>
-            {formatTime(duration)}
+            {formatTime(
+              duration
+            )}
           </span>
         </div>
       </div>
@@ -3407,22 +5716,33 @@ function FullPlayer({
       <div className="full-player-controls">
         <button
           className={
-            shuffle ? "control-active" : ""
+            shuffle
+              ? "control-active"
+              : ""
           }
           onClick={() =>
-            setShuffle(!shuffle)
+            setShuffle(
+              value =>
+                !value
+            )
           }
         >
           <Icon name="shuffle" />
         </button>
 
-        <button onClick={previousTrack}>
+        <button
+          onClick={
+            previousTrack
+          }
+        >
           <Icon name="previous" />
         </button>
 
         <button
           className="full-play-button"
-          onClick={togglePlaying}
+          onClick={
+            togglePlaying
+          }
         >
           <Icon
             name={
@@ -3433,21 +5753,28 @@ function FullPlayer({
           />
         </button>
 
-        <button onClick={nextTrack}>
+        <button
+          onClick={
+            nextTrack
+          }
+        >
           <Icon name="next" />
         </button>
 
         <button
           className={
-            repeat !== "off"
+            repeat !==
+            "off"
               ? "control-active"
               : ""
           }
           onClick={() =>
             setRepeat(
-              repeat === "off"
+              repeat ===
+                "off"
                 ? "all"
-                : repeat === "all"
+                : repeat ===
+                  "all"
                 ? "one"
                 : "off"
             )
@@ -3459,4 +5786,37 @@ function FullPlayer({
     </div>
   );
 }
-```
+
+/* ============================================================
+   TOAST
+============================================================ */
+
+function Toast({
+  toast,
+}) {
+  if (!toast) {
+    return null;
+  }
+
+  return (
+    <div
+      className={`fenix-toast ${
+        toast.type || "info"
+      }`}
+    >
+      <span>
+        {toast.type ===
+        "success"
+          ? "✓"
+          : toast.type ===
+            "error"
+          ? "!"
+          : "i"}
+      </span>
+
+      <strong>
+        {toast.message}
+      </strong>
+    </div>
+  );
+}
