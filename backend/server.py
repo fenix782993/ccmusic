@@ -15,9 +15,11 @@ from fastapi import (
     Query,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
 from pydantic import BaseModel, EmailStr
+
 from sqlalchemy import (
     create_engine,
     Column,
@@ -30,16 +32,22 @@ from sqlalchemy import (
     UniqueConstraint,
     or_,
     func,
+    inspect,
     text,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
+
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 
 # ============================================================
-# PATHS
+# FENIX MUSIC
+# Backend API + PostgreSQL migration + React frontend serving
 # ============================================================
+
+APP_NAME = "FENIX MUSIC"
+APP_VERSION = "4.0.0"
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
@@ -50,7 +58,7 @@ FRONTEND_DIST = FRONTEND_DIR / "dist"
 MEDIA_DIR = Path(
     os.getenv(
         "MEDIA_DIR",
-        str(BASE_DIR / "media"),
+        str(BASE_DIR / "media")
     )
 )
 
@@ -67,7 +75,7 @@ COVER_DIR.mkdir(parents=True, exist_ok=True)
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite:///./fenix_music.db",
+    f"sqlite:///{BASE_DIR / 'fenix_music.db'}"
 )
 
 if DATABASE_URL.startswith("postgres://"):
@@ -78,11 +86,13 @@ if DATABASE_URL.startswith("postgres://"):
     )
 
 if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = DATABASE_URL.replace(
-        "postgresql://",
-        "postgresql+psycopg2://",
-        1,
-    )
+    # psycopg2 compatibility
+    if "+psycopg2" not in DATABASE_URL:
+        DATABASE_URL = DATABASE_URL.replace(
+            "postgresql://",
+            "postgresql+psycopg2://",
+            1,
+        )
 
 connect_args = {}
 
@@ -112,7 +122,7 @@ Base = declarative_base()
 
 SECRET_KEY = os.getenv(
     "JWT_SECRET",
-    "change-this-secret-in-production",
+    "CHANGE_THIS_SECRET_IN_PRODUCTION",
 )
 
 ALGORITHM = "HS256"
@@ -194,11 +204,13 @@ class User(Base):
     likes = relationship(
         "Like",
         cascade="all, delete-orphan",
+        backref="user",
     )
 
     playlists = relationship(
         "Playlist",
         cascade="all, delete-orphan",
+        backref="user",
     )
 
 
@@ -417,10 +429,264 @@ class PlaylistTrack(Base):
 
 
 # ============================================================
-# CREATE TABLES
+# DATABASE MIGRATION
 # ============================================================
 
-Base.metadata.create_all(engine)
+def get_table_columns(table_name: str):
+    """
+    Returns existing columns for a table.
+    """
+
+    inspector = inspect(engine)
+
+    try:
+        columns = inspector.get_columns(table_name)
+        return {
+            column["name"]
+            for column in columns
+        }
+    except Exception:
+        return set()
+
+
+def table_exists(table_name: str):
+    inspector = inspect(engine)
+
+    try:
+        return inspector.has_table(table_name)
+    except Exception:
+        return False
+
+
+def migrate_postgres():
+    """
+    Automatically upgrades old FENIX MUSIC databases.
+
+    Important:
+    SQLAlchemy create_all() does NOT modify existing tables.
+    Therefore this function adds missing columns manually.
+    """
+
+    print("=" * 60)
+    print("FENIX MUSIC DATABASE MIGRATION")
+    print("=" * 60)
+
+    is_postgres = DATABASE_URL.startswith(
+        "postgresql"
+    )
+
+    try:
+        # ----------------------------------------------------
+        # First create missing tables
+        # ----------------------------------------------------
+
+        Base.metadata.create_all(engine)
+
+        print("Base tables checked.")
+
+        # ----------------------------------------------------
+        # PostgreSQL column migrations
+        # ----------------------------------------------------
+
+        if is_postgres:
+
+            migrations = {
+
+                "users": {
+                    "avatar_url": """
+                        ALTER TABLE users
+                        ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)
+                    """,
+
+                    "is_admin": """
+                        ALTER TABLE users
+                        ADD COLUMN IF NOT EXISTS is_admin BOOLEAN
+                        NOT NULL DEFAULT FALSE
+                    """,
+
+                    "created_at": """
+                        ALTER TABLE users
+                        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP
+                    """,
+                },
+
+                "tracks": {
+                    "genre": """
+                        ALTER TABLE tracks
+                        ADD COLUMN IF NOT EXISTS genre VARCHAR(100)
+                        DEFAULT 'Pop'
+                    """,
+
+                    "duration": """
+                        ALTER TABLE tracks
+                        ADD COLUMN IF NOT EXISTS duration INTEGER
+                        DEFAULT 0
+                    """,
+
+                    "cover_url": """
+                        ALTER TABLE tracks
+                        ADD COLUMN IF NOT EXISTS cover_url VARCHAR(500)
+                    """,
+
+                    "audio_path": """
+                        ALTER TABLE tracks
+                        ADD COLUMN IF NOT EXISTS audio_path VARCHAR(500)
+                    """,
+
+                    "plays": """
+                        ALTER TABLE tracks
+                        ADD COLUMN IF NOT EXISTS plays INTEGER
+                        NOT NULL DEFAULT 0
+                    """,
+
+                    "created_at": """
+                        ALTER TABLE tracks
+                        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP
+                    """,
+                },
+
+                "likes": {
+                    "created_at": """
+                        ALTER TABLE likes
+                        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP
+                    """,
+                },
+
+                "history": {
+                    "played_at": """
+                        ALTER TABLE history
+                        ADD COLUMN IF NOT EXISTS played_at TIMESTAMP
+                    """,
+                },
+
+                "playlists": {
+                    "description": """
+                        ALTER TABLE playlists
+                        ADD COLUMN IF NOT EXISTS description TEXT
+                    """,
+
+                    "cover_url": """
+                        ALTER TABLE playlists
+                        ADD COLUMN IF NOT EXISTS cover_url VARCHAR(500)
+                    """,
+
+                    "is_public": """
+                        ALTER TABLE playlists
+                        ADD COLUMN IF NOT EXISTS is_public BOOLEAN
+                        DEFAULT TRUE
+                    """,
+
+                    "created_at": """
+                        ALTER TABLE playlists
+                        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP
+                    """,
+                },
+
+                "playlist_tracks": {
+                    "position": """
+                        ALTER TABLE playlist_tracks
+                        ADD COLUMN IF NOT EXISTS position INTEGER
+                        DEFAULT 0
+                    """,
+                },
+            }
+
+            for table_name, columns in migrations.items():
+
+                if not table_exists(table_name):
+                    continue
+
+                existing = get_table_columns(
+                    table_name
+                )
+
+                for column_name, sql in columns.items():
+
+                    if column_name in existing:
+                        continue
+
+                    try:
+                        with engine.begin() as conn:
+                            conn.execute(text(sql))
+
+                        print(
+                            f"MIGRATED: {table_name}.{column_name}"
+                        )
+
+                    except Exception as exc:
+                        print(
+                            f"MIGRATION WARNING: "
+                            f"{table_name}.{column_name}: "
+                            f"{exc}"
+                        )
+
+        # ----------------------------------------------------
+        # Normalize nullable old fields
+        # ----------------------------------------------------
+
+        if is_postgres:
+
+            fixes = [
+                """
+                UPDATE tracks
+                SET genre = 'Pop'
+                WHERE genre IS NULL
+                """,
+
+                """
+                UPDATE tracks
+                SET duration = 0
+                WHERE duration IS NULL
+                """,
+
+                """
+                UPDATE tracks
+                SET plays = 0
+                WHERE plays IS NULL
+                """,
+
+                """
+                UPDATE users
+                SET is_admin = FALSE
+                WHERE is_admin IS NULL
+                """,
+
+                """
+                UPDATE playlists
+                SET is_public = TRUE
+                WHERE is_public IS NULL
+                """,
+
+                """
+                UPDATE playlist_tracks
+                SET position = 0
+                WHERE position IS NULL
+                """,
+            ]
+
+            for sql in fixes:
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text(sql))
+                except Exception as exc:
+                    print(
+                        f"Migration update warning: {exc}"
+                    )
+
+        print("DATABASE MIGRATION COMPLETE")
+        print("=" * 60)
+
+    except Exception as exc:
+        print("=" * 60)
+        print("DATABASE MIGRATION FAILED")
+        print(exc)
+        print("=" * 60)
+
+        raise
+
+
+# Run migration before application startup
+migrate_postgres()
 
 
 # ============================================================
@@ -428,18 +694,24 @@ Base.metadata.create_all(engine)
 # ============================================================
 
 app = FastAPI(
-    title="FENIX MUSIC",
-    version="4.0.0",
-    description="FENIX MUSIC full music platform",
+    title=APP_NAME,
+    version=APP_VERSION,
+    description="FENIX MUSIC full music platform API",
 )
 
 
+# ============================================================
+# CORS
+# ============================================================
+
+cors_origins = os.getenv(
+    "CORS_ORIGINS",
+    "*",
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv(
-        "CORS_ORIGINS",
-        "*",
-    ).split(","),
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -447,228 +719,10 @@ app.add_middleware(
 
 
 # ============================================================
-# DATABASE MIGRATION
-# ============================================================
-
-def migrate_database():
-    """
-    Adds missing columns to existing PostgreSQL installations.
-
-    SQLAlchemy create_all() does not modify existing tables,
-    therefore old databases need these ALTER TABLE statements.
-    """
-
-    if not DATABASE_URL.startswith("postgresql"):
-        return
-
-    statements = [
-        """
-        ALTER TABLE users
-        ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)
-        """,
-
-        """
-        ALTER TABLE users
-        ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE
-        """,
-
-        """
-        ALTER TABLE tracks
-        ADD COLUMN IF NOT EXISTS genre VARCHAR(100) DEFAULT 'Pop'
-        """,
-
-        """
-        ALTER TABLE tracks
-        ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0
-        """,
-
-        """
-        ALTER TABLE tracks
-        ADD COLUMN IF NOT EXISTS cover_url VARCHAR(500)
-        """,
-
-        """
-        ALTER TABLE tracks
-        ADD COLUMN IF NOT EXISTS audio_path VARCHAR(500)
-        """,
-
-        """
-        ALTER TABLE tracks
-        ADD COLUMN IF NOT EXISTS plays INTEGER NOT NULL DEFAULT 0
-        """,
-
-        """
-        ALTER TABLE playlists
-        ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''
-        """,
-
-        """
-        ALTER TABLE playlists
-        ADD COLUMN IF NOT EXISTS cover_url VARCHAR(500)
-        """,
-
-        """
-        ALTER TABLE playlists
-        ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT TRUE
-        """,
-
-        """
-        ALTER TABLE playlist_tracks
-        ADD COLUMN IF NOT EXISTS position INTEGER DEFAULT 0
-        """,
-    ]
-
-    with engine.begin() as connection:
-        for statement in statements:
-            try:
-                connection.execute(text(statement))
-            except Exception as exc:
-                print(
-                    "Migration warning:",
-                    exc,
-                )
-
-
-# ============================================================
-# STARTUP
-# ============================================================
-
-@app.on_event("startup")
-def startup():
-
-    print("======================================")
-    print("        FENIX MUSIC STARTING")
-    print("======================================")
-
-    migrate_database()
-
-    seed()
-
-    print("FENIX MUSIC is ready")
-
-
-# ============================================================
-# SEED
-# ============================================================
-
-def seed():
-
-    db = SessionLocal()
-
-    try:
-
-        admin = (
-            db.query(User)
-            .filter(
-                User.email == ADMIN_EMAIL
-            )
-            .first()
-        )
-
-        if not admin:
-
-            admin = User(
-                email=ADMIN_EMAIL,
-                username="FenixAdmin",
-                password_hash=pwd.hash(
-                    ADMIN_PASSWORD
-                ),
-                is_admin=True,
-            )
-
-            db.add(admin)
-
-        else:
-
-            if not admin.is_admin:
-                admin.is_admin = True
-
-        if db.query(Track).count() == 0:
-
-            demo = [
-
-                (
-                    "Blinding Lights",
-                    "The Weeknd",
-                    "After Hours",
-                    "Pop",
-                    200,
-                    "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=900&q=85",
-                ),
-
-                (
-                    "Save Your Tears",
-                    "The Weeknd",
-                    "After Hours",
-                    "Pop",
-                    215,
-                    "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=900&q=85",
-                ),
-
-                (
-                    "Starboy",
-                    "The Weeknd, Daft Punk",
-                    "Starboy",
-                    "Pop",
-                    230,
-                    "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=85",
-                ),
-
-                (
-                    "Die For You",
-                    "The Weeknd",
-                    "Starboy",
-                    "R&B",
-                    260,
-                    "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=900&q=85",
-                ),
-
-                (
-                    "I Feel It Coming",
-                    "The Weeknd, Daft Punk",
-                    "Starboy",
-                    "Pop",
-                    269,
-                    "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=900&q=85",
-                ),
-
-                (
-                    "After Hours",
-                    "The Weeknd",
-                    "After Hours",
-                    "R&B",
-                    361,
-                    "https://images.unsplash.com/photo-1521337581100-8ca9a73a5f79?auto=format&fit=crop&w=900&q=85",
-                ),
-
-            ]
-
-            for item in demo:
-
-                db.add(
-                    Track(
-                        title=item[0],
-                        artist=item[1],
-                        album=item[2],
-                        genre=item[3],
-                        duration=item[4],
-                        cover_url=item[5],
-                    )
-                )
-
-        db.commit()
-
-    finally:
-
-        db.close()
-
-
-# ============================================================
 # DATABASE DEPENDENCY
 # ============================================================
 
 def db_dep():
-
     db = SessionLocal()
 
     try:
@@ -682,19 +736,20 @@ def db_dep():
 # AUTH
 # ============================================================
 
-def make_token(user):
+def make_token(user: User):
 
     now = datetime.now(timezone.utc)
 
+    payload = {
+        "sub": str(user.id),
+        "iat": now,
+        "exp": now + timedelta(
+            minutes=ACCESS_MINUTES
+        ),
+    }
+
     return jwt.encode(
-        {
-            "sub": str(user.id),
-            "iat": now,
-            "exp": now
-            + timedelta(
-                minutes=ACCESS_MINUTES
-            ),
-        },
+        payload,
         SECRET_KEY,
         algorithm=ALGORITHM,
     )
@@ -714,21 +769,19 @@ def current_user(
         )
 
     try:
-
         payload = jwt.decode(
             creds.credentials,
             SECRET_KEY,
             algorithms=[ALGORITHM],
         )
 
-        uid = int(
-            payload["sub"]
-        )
+        uid = int(payload["sub"])
 
     except (
         JWTError,
         ValueError,
         KeyError,
+        TypeError,
     ):
 
         raise HTTPException(
@@ -769,7 +822,7 @@ def admin_user(
 # JSON SERIALIZERS
 # ============================================================
 
-def track_json(t):
+def track_json(t: Track):
 
     if not t:
         return None
@@ -779,7 +832,7 @@ def track_json(t):
         "title": t.title,
         "artist": t.artist,
         "album": t.album,
-        "genre": t.genre,
+        "genre": t.genre or "Pop",
         "duration": t.duration or 0,
         "duration_label": (
             f"{(t.duration or 0) // 60}:"
@@ -795,7 +848,7 @@ def track_json(t):
     }
 
 
-def user_json(u):
+def user_json(u: User):
 
     return {
         "id": u.id,
@@ -808,7 +861,7 @@ def user_json(u):
 
 
 # ============================================================
-# PYDANTIC
+# REQUEST MODELS
 # ============================================================
 
 class Register(BaseModel):
@@ -842,24 +895,22 @@ class ProfileBody(BaseModel):
 
 
 # ============================================================
-# API ROOT
+# HEALTH / ROOT
 # ============================================================
 
-@app.get("/api/health")
-def health():
+@app.get("/")
+def root():
 
     return {
-        "status": "ok",
-        "name": "FENIX MUSIC",
-        "version": "4.0.0",
+        "name": APP_NAME,
+        "version": APP_VERSION,
+        "status": "online",
+        "frontend": FRONTEND_DIST.exists(),
         "database": (
             "postgresql"
             if DATABASE_URL.startswith("postgresql")
             else "sqlite"
         ),
-        "time": datetime.now(
-            timezone.utc
-        ).isoformat(),
     }
 
 
@@ -868,13 +919,30 @@ def api_root():
 
     return {
         "name": "FENIX MUSIC API",
-        "version": "4.0.0",
+        "version": APP_VERSION,
         "status": "online",
     }
 
 
+@app.get("/api/health")
+def health():
+
+    return {
+        "status": "ok",
+        "database": (
+            "postgresql"
+            if DATABASE_URL.startswith("postgresql")
+            else "sqlite"
+        ),
+        "frontend": FRONTEND_DIST.exists(),
+        "time": datetime.now(
+            timezone.utc
+        ).isoformat(),
+    }
+
+
 # ============================================================
-# AUTH API
+# AUTH ROUTES
 # ============================================================
 
 @app.post("/api/auth/register")
@@ -898,19 +966,14 @@ def register(
             "Password must be at least 6 characters",
         )
 
-    exists = (
-        db.query(User)
-        .filter(
-            or_(
-                User.email == email,
-                User.username == username,
-            )
+    exists = db.query(User).filter(
+        or_(
+            User.email == email,
+            User.username == username,
         )
-        .first()
-    )
+    ).first()
 
     if exists:
-
         raise HTTPException(
             409,
             "Email or username already exists",
@@ -941,21 +1004,28 @@ def login(
     db: Session = Depends(db_dep),
 ):
 
-    user = (
-        db.query(User)
-        .filter(
-            User.email == body.email.lower()
-        )
-        .first()
-    )
+    email = body.email.lower().strip()
 
-    if (
-        not user
-        or not pwd.verify(
+    user = db.query(User).filter(
+        User.email == email
+    ).first()
+
+    if not user:
+
+        raise HTTPException(
+            401,
+            "Invalid email or password",
+        )
+
+    try:
+        valid = pwd.verify(
             body.password,
             user.password_hash,
         )
-    ):
+    except Exception:
+        valid = False
+
+    if not valid:
 
         raise HTTPException(
             401,
@@ -987,17 +1057,12 @@ def update_me(
 
         username = body.username.strip()
 
-        exists = (
-            db.query(User)
-            .filter(
-                User.username == username,
-                User.id != user.id,
-            )
-            .first()
-        )
+        exists = db.query(User).filter(
+            User.username == username,
+            User.id != user.id,
+        ).first()
 
         if exists:
-
             raise HTTPException(
                 409,
                 "Username already exists",
@@ -1006,7 +1071,6 @@ def update_me(
         user.username = username
 
     if body.avatar_url is not None:
-
         user.avatar_url = body.avatar_url
 
     db.commit()
@@ -1028,6 +1092,16 @@ def tracks(
     db: Session = Depends(db_dep),
 ):
 
+    limit = max(
+        1,
+        min(limit, 100),
+    )
+
+    offset = max(
+        0,
+        offset,
+    )
+
     query = db.query(Track)
 
     if q:
@@ -1045,7 +1119,9 @@ def tracks(
     if genre:
 
         query = query.filter(
-            Track.genre.ilike(genre)
+            Track.genre.ilike(
+                genre
+            )
         )
 
     results = (
@@ -1054,9 +1130,7 @@ def tracks(
             Track.created_at.desc()
         )
         .offset(offset)
-        .limit(
-            min(limit, 100)
-        )
+        .limit(limit)
         .all()
     )
 
@@ -1087,6 +1161,10 @@ def track(
     return track_json(t)
 
 
+# ============================================================
+# AUDIO STREAM
+# ============================================================
+
 @app.get("/api/tracks/{track_id}/stream")
 def stream(
     track_id: int,
@@ -1105,9 +1183,10 @@ def stream(
             "Audio file not found",
         )
 
-    path = Path(
-        t.audio_path
-    )
+    path = Path(t.audio_path)
+
+    if not path.is_absolute():
+        path = BASE_DIR / path
 
     if not path.exists():
 
@@ -1124,6 +1203,10 @@ def stream(
         path,
         media_type="audio/mpeg",
         filename=path.name,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+        },
     )
 
 
@@ -1150,18 +1233,21 @@ def search(
                 Track.album.ilike(pattern),
             )
         )
+        .order_by(
+            Track.plays.desc()
+        )
         .limit(50)
         .all()
     )
 
-    artists_found = sorted(
+    artists = sorted(
         {
             t.artist
             for t in tracks_found
         }
     )
 
-    albums_found = sorted(
+    albums = sorted(
         {
             t.album
             for t in tracks_found
@@ -1173,8 +1259,8 @@ def search(
             track_json(t)
             for t in tracks_found
         ],
-        "artists": artists_found,
-        "albums": albums_found,
+        "artists": artists,
+        "albums": albums,
         "playlists": [],
     }
 
@@ -1189,15 +1275,18 @@ def recommendations(
     db: Session = Depends(db_dep),
 ):
 
+    limit = max(
+        1,
+        min(limit, 50),
+    )
+
     results = (
         db.query(Track)
         .order_by(
             Track.plays.desc(),
             Track.created_at.desc(),
         )
-        .limit(
-            min(limit, 50)
-        )
+        .limit(limit)
         .all()
     )
 
@@ -1208,7 +1297,7 @@ def recommendations(
 
 
 # ============================================================
-# LIKES
+# LIBRARY / LIKES
 # ============================================================
 
 @app.get("/api/library/likes")
@@ -1218,8 +1307,8 @@ def likes(
 ):
 
     ids = [
-        x.track_id
-        for x in (
+        item.track_id
+        for item in (
             db.query(Like)
             .filter_by(
                 user_id=user.id
@@ -1255,10 +1344,12 @@ def set_like(
     db: Session = Depends(db_dep),
 ):
 
-    if not db.get(
+    track_obj = db.get(
         Track,
         track_id,
-    ):
+    )
+
+    if not track_obj:
 
         raise HTTPException(
             404,
@@ -1306,10 +1397,12 @@ def add_history(
     db: Session = Depends(db_dep),
 ):
 
-    if not db.get(
+    track_obj = db.get(
         Track,
         track_id,
-    ):
+    )
+
+    if not track_obj:
 
         raise HTTPException(
             404,
@@ -1352,19 +1445,22 @@ def history(
 
     for row in rows:
 
-        t = db.get(
+        track_obj = db.get(
             Track,
             row.track_id,
         )
 
-        if t:
+        if not track_obj:
+            continue
 
-            result.append(
-                {
-                    "played_at": row.played_at,
-                    "track": track_json(t),
-                }
-            )
+        result.append(
+            {
+                "played_at": row.played_at,
+                "track": track_json(
+                    track_obj
+                ),
+            }
+        )
 
     return result
 
@@ -1379,7 +1475,7 @@ def playlists(
     db: Session = Depends(db_dep),
 ):
 
-    playlist_list = (
+    playlist_rows = (
         db.query(Playlist)
         .filter_by(
             user_id=user.id
@@ -1392,7 +1488,7 @@ def playlists(
 
     result = []
 
-    for playlist in playlist_list:
+    for playlist in playlist_rows:
 
         playlist_tracks = (
             db.query(PlaylistTrack)
@@ -1405,6 +1501,20 @@ def playlists(
             .all()
         )
 
+        tracks_result = []
+
+        for item in playlist_tracks:
+
+            track_obj = db.get(
+                Track,
+                item.track_id,
+            )
+
+            if track_obj:
+                tracks_result.append(
+                    track_json(track_obj)
+                )
+
         result.append(
             {
                 "id": playlist.id,
@@ -1412,19 +1522,7 @@ def playlists(
                 "description": playlist.description,
                 "cover_url": playlist.cover_url,
                 "is_public": playlist.is_public,
-                "tracks": [
-                    track_json(
-                        db.get(
-                            Track,
-                            item.track_id,
-                        )
-                    )
-                    for item in playlist_tracks
-                    if db.get(
-                        Track,
-                        item.track_id,
-                    )
-                ],
+                "tracks": tracks_result,
             }
         )
 
@@ -1593,7 +1691,7 @@ def playlist_add(
             PlaylistTrack(
                 playlist_id=pid,
                 track_id=track_obj.id,
-                position=position,
+                position=int(position),
             )
         )
 
@@ -1648,7 +1746,7 @@ def playlist_remove(
 
 
 # ============================================================
-# ARTISTS / ALBUMS
+# ARTISTS
 # ============================================================
 
 @app.get("/api/artists")
@@ -1687,6 +1785,10 @@ def artists(
     ]
 
 
+# ============================================================
+# ALBUMS
+# ============================================================
+
 @app.get("/api/albums")
 def albums(
     db: Session = Depends(db_dep),
@@ -1703,6 +1805,11 @@ def albums(
         .group_by(
             Track.album,
             Track.artist,
+        )
+        .order_by(
+            func.count(
+                Track.id
+            ).desc()
         )
         .all()
     )
@@ -1798,10 +1905,26 @@ async def admin_upload_track(
     db: Session = Depends(db_dep),
 ):
 
+    title = title.strip()
+    artist = artist.strip()
+    album = album.strip()
+
+    if not title or not artist or not album:
+
+        raise HTTPException(
+            400,
+            "Title, artist and album are required",
+        )
+
+    original_name = (
+        audio.filename
+        or "audio.mp3"
+    )
+
     safe_name = re.sub(
         r"[^a-zA-Z0-9._-]",
         "_",
-        audio.filename or "audio.mp3",
+        original_name,
     )
 
     filename = (
@@ -1809,13 +1932,11 @@ async def admin_upload_track(
         f"{safe_name}"
     )
 
-    audio_path = (
-        AUDIO_DIR / filename
-    )
+    audio_path = AUDIO_DIR / filename
 
     with audio_path.open(
         "wb"
-    ) as output:
+    ) as file:
 
         while True:
 
@@ -1826,16 +1947,21 @@ async def admin_upload_track(
             if not chunk:
                 break
 
-            output.write(chunk)
+            file.write(chunk)
 
     cover_url = None
 
     if cover:
 
+        original_cover = (
+            cover.filename
+            or "cover.jpg"
+        )
+
         safe_cover = re.sub(
             r"[^a-zA-Z0-9._-]",
             "_",
-            cover.filename or "cover.jpg",
+            original_cover,
         )
 
         cover_filename = (
@@ -1844,13 +1970,12 @@ async def admin_upload_track(
         )
 
         cover_path = (
-            COVER_DIR
-            / cover_filename
+            COVER_DIR / cover_filename
         )
 
         with cover_path.open(
             "wb"
-        ) as output:
+        ) as file:
 
             while True:
 
@@ -1861,7 +1986,7 @@ async def admin_upload_track(
                 if not chunk:
                     break
 
-                output.write(chunk)
+                file.write(chunk)
 
         cover_url = (
             f"/api/media/covers/"
@@ -1869,13 +1994,13 @@ async def admin_upload_track(
         )
 
     track_obj = Track(
-        title=title.strip(),
-        artist=artist.strip(),
-        album=album.strip(),
-        genre=genre.strip(),
+        title=title,
+        artist=artist,
+        album=album,
+        genre=genre,
         duration=max(
-            duration,
             0,
+            duration,
         ),
         audio_path=str(
             audio_path
@@ -1887,9 +2012,7 @@ async def admin_upload_track(
     db.commit()
     db.refresh(track_obj)
 
-    return track_json(
-        track_obj
-    )
+    return track_json(track_obj)
 
 
 @app.get("/api/admin/users")
@@ -1921,11 +2044,7 @@ def admin_stats(
 
     return {
         "users": db.query(User).count(),
-
-        "tracks": db.query(
-            Track
-        ).count(),
-
+        "tracks": db.query(Track).count(),
         "plays": int(
             db.query(
                 func.coalesce(
@@ -1937,20 +2056,14 @@ def admin_stats(
             ).scalar()
             or 0
         ),
-
-        "likes": db.query(
-            Like
-        ).count(),
-
+        "likes": db.query(Like).count(),
         "playlists": db.query(
             Playlist
         ).count(),
     }
 
 
-@app.delete(
-    "/api/admin/tracks/{track_id}"
-)
+@app.delete("/api/admin/tracks/{track_id}")
 def admin_delete_track(
     track_id: int,
     user=Depends(admin_user),
@@ -1969,27 +2082,36 @@ def admin_delete_track(
             "Track not found",
         )
 
+    # Delete audio file
     if track_obj.audio_path:
 
-        Path(
-            track_obj.audio_path
-        ).unlink(
-            missing_ok=True
-        )
+        try:
+            Path(
+                track_obj.audio_path
+            ).unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
 
+    # Delete likes
     db.query(Like).filter_by(
         track_id=track_id
     ).delete(
         synchronize_session=False
     )
 
+    # Delete history
     db.query(History).filter_by(
         track_id=track_id
     ).delete(
         synchronize_session=False
     )
 
-    db.query(PlaylistTrack).filter_by(
+    # Delete playlist references
+    db.query(
+        PlaylistTrack
+    ).filter_by(
         track_id=track_id
     ).delete(
         synchronize_session=False
@@ -2019,8 +2141,8 @@ def media_cover(
     ).name
 
     path = (
-        COVER_DIR
-        / safe_filename
+        COVER_DIR /
+        safe_filename
     )
 
     if not path.exists():
@@ -2039,56 +2161,104 @@ def media_cover(
 # FRONTEND
 # ============================================================
 
-@app.get("/")
-def frontend_root():
+def frontend_index():
 
-    index_file = (
-        FRONTEND_DIST
-        / "index.html"
+    return (
+        FRONTEND_DIST /
+        "index.html"
     )
 
-    if index_file.exists():
 
-        return FileResponse(
-            index_file
+@app.get(
+    "/assets/{file_path:path}"
+)
+def frontend_assets(
+    file_path: str,
+):
+
+    path = (
+        FRONTEND_DIST /
+        "assets" /
+        file_path
+    )
+
+    if not path.exists() or not path.is_file():
+
+        raise HTTPException(
+            404,
+            "Asset not found",
         )
 
-    return {
-        "name": "FENIX MUSIC",
-        "version": "4.0.0",
-        "status": "online",
-        "message": "Frontend build not found",
-    }
+    return FileResponse(
+        path
+    )
 
 
-@app.get("/{full_path:path}")
-def frontend_spa(
+@app.get(
+    "/favicon.ico"
+)
+def favicon():
+
+    favicon_path = (
+        FRONTEND_DIST /
+        "favicon.ico"
+    )
+
+    if favicon_path.exists():
+
+        return FileResponse(
+            favicon_path
+        )
+
+    raise HTTPException(
+        404,
+        "Favicon not found",
+    )
+
+
+# ============================================================
+# SPA FALLBACK
+# ============================================================
+
+@app.get(
+    "/{full_path:path}"
+)
+def frontend_fallback(
     full_path: str,
 ):
 
     # Never intercept API routes
-    if (
-        full_path == "api"
-        or full_path.startswith("api/")
+    if full_path.startswith(
+        "api/"
     ):
 
         raise HTTPException(
             404,
-            "API endpoint not found",
+            "API route not found",
         )
 
+    # If frontend isn't built
+    if not FRONTEND_DIST.exists():
+
+        return {
+            "name": APP_NAME,
+            "status": "online",
+            "message": (
+                "Frontend build not found. "
+                "Run npm run build."
+            ),
+        }
+
     requested = (
-        FRONTEND_DIST
-        / full_path
+        FRONTEND_DIST /
+        full_path
     )
 
-    # Security: prevent path traversal
+    # Prevent path traversal
     try:
-
         requested.resolve().relative_to(
             FRONTEND_DIST.resolve()
         )
-
     except ValueError:
 
         raise HTTPException(
@@ -2096,27 +2266,101 @@ def frontend_spa(
             "Not found",
         )
 
-    if (
-        requested.is_file()
-        and requested.exists()
-    ):
+    # Serve an actual static file
+    if requested.exists() and requested.is_file():
 
         return FileResponse(
             requested
         )
 
-    index_file = (
-        FRONTEND_DIST
-        / "index.html"
-    )
+    # React/Vite SPA fallback
+    index = frontend_index()
 
-    if index_file.exists():
+    if index.exists():
 
         return FileResponse(
-            index_file
+            index
         )
 
     raise HTTPException(
         404,
-        "Frontend not found",
+        "Frontend index.html not found",
+    )
+
+
+# ============================================================
+# STARTUP
+# ============================================================
+
+@app.on_event("startup")
+def startup_event():
+
+    print("")
+    print("=" * 60)
+    print("FENIX MUSIC STARTING")
+    print("=" * 60)
+
+    print(
+        f"Version: {APP_VERSION}"
+    )
+
+    print(
+        "Database:",
+        (
+            "PostgreSQL"
+            if DATABASE_URL.startswith(
+                "postgresql"
+            )
+            else "SQLite"
+        ),
+    )
+
+    print(
+        "Frontend:",
+        (
+            "FOUND"
+            if FRONTEND_DIST.exists()
+            else "NOT FOUND"
+        ),
+    )
+
+    print(
+        "Media:",
+        MEDIA_DIR,
+    )
+
+    print(
+        "Audio:",
+        AUDIO_DIR,
+    )
+
+    print(
+        "Covers:",
+        COVER_DIR,
+    )
+
+    print("=" * 60)
+    print("FENIX MUSIC ONLINE")
+    print("=" * 60)
+    print("")
+
+
+# ============================================================
+# OPTIONAL LOCAL RUN
+# ============================================================
+
+if __name__ == "__main__":
+
+    import uvicorn
+
+    uvicorn.run(
+        "backend.server:app",
+        host="0.0.0.0",
+        port=int(
+            os.getenv(
+                "PORT",
+                "8000",
+            )
+        ),
+        reload=False,
     )
