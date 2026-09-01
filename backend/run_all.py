@@ -4,62 +4,33 @@ import sys
 
 import uvicorn
 
-
-# Корень проекта
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Добавляем backend в Python PATH
+PROJECT_DIR = os.path.dirname(BASE_DIR)
+if PROJECT_DIR not in sys.path:
+    sys.path.insert(0, PROJECT_DIR)
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 
-async def run_bot():
-    """
-    Запускает Telegram-бота.
-    Импортируем bot напрямую из backend/telegram_bot/.
-    """
-    from telegram_bot.bot import main as bot_main
+async def run_api():
+    config = uvicorn.Config(
+        "backend.server:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "10000")),
+        log_level="info",
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
 
+
+async def run_bot():
+    from telegram_bot.bot import main as bot_main
     await bot_main()
 
 
-def run_api():
-    """
-    Запускает FastAPI.
-    """
-    uvicorn.run(
-        "server:app",
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", "10000")),
-        reload=False,
-    )
-
-
 async def main():
-    """
-    Одновременно запускает API и Telegram-бота.
-    """
-
-    api_task = asyncio.create_task(
-        asyncio.to_thread(run_api)
-    )
-
-    bot_task = asyncio.create_task(
-        run_bot()
-    )
-
-    await asyncio.gather(
-        api_task,
-        bot_task,
-    )
-
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
-
+    print("[RUN_ALL] Starting FENIX MUSIC API + Telegram Bot")
+    await asyncio.gather(run_api(), run_bot())
 
 
 if __name__ == "__main__":
