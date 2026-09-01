@@ -1,4 +1,3 @@
-```jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const API = "/api";
@@ -1879,4 +1878,3 @@ function LoginPrompt({ onLogin }) {
     </div>
   );
 }
-```
