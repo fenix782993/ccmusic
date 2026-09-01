@@ -17,73 +17,71 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 
+BOT_MODULE = "backend.telegram_bot.bot"
+BOT_RESTART_DELAY = int(os.getenv("BOT_RESTART_DELAY", "5"))
+
+
 async def run_api():
     """
-    Запуск FastAPI.
+    Постоянный запуск FastAPI.
     API является основным процессом FENIX MUSIC.
     """
+
+    port = int(os.getenv("PORT", "10000"))
+
     config = uvicorn.Config(
         "backend.server:app",
         host="0.0.0.0",
-        port=int(os.getenv("PORT", "10000")),
+        port=port,
         log_level="info",
+        access_log=True,
     )
 
     server = uvicorn.Server(config)
 
-    print("[RUN_ALL] Starting FastAPI...", flush=True)
+    print(
+        f"[RUN_ALL] Starting FastAPI on port {port}...",
+        flush=True,
+    )
 
     await server.serve()
 
 
-async def run_bot():
+async def run_bot_once():
     """
-    Запуск Telegram-бота.
+    Один запуск Telegram-бота.
+    """
 
-    Если Telegram Bot ещё не загружен в репозиторий,
-    API продолжит работать.
-    """
+    print(
+        "[BOT] Loading Telegram Bot module...",
+        flush=True,
+    )
 
     try:
-        bot_module = importlib.import_module(
-            "backend.telegram_bot.bot"
-        )
+        bot_module = importlib.import_module(BOT_MODULE)
 
-        bot_main = getattr(
-            bot_module,
-            "main",
-            None
-        )
-
-        if bot_main is None:
-            print(
-                "[BOT] ERROR: function main() "
-                "was not found in backend.telegram_bot.bot",
-                flush=True,
-            )
-            return
-
+    except ModuleNotFoundError as exc:
         print(
-            "[BOT] Telegram Bot module loaded",
+            f"[BOT] ModuleNotFoundError: {exc}",
             flush=True,
         )
 
-        await bot_main()
-
-    except ModuleNotFoundError as exc:
         if (
             exc.name == "backend.telegram_bot"
-            or exc.name.startswith(
-                "backend.telegram_bot."
-            )
+            or exc.name.startswith("backend.telegram_bot.")
         ):
             print(
-                "[BOT] Telegram Bot files are missing.",
+                "[BOT] ERROR: Telegram bot files are missing.",
                 flush=True,
             )
 
             print(
-                "[BOT] Expected:",
+                "[BOT] Required structure:",
+                flush=True,
+            )
+
+            print(
+                "       backend/telegram_bot/__init__.py",
                 flush=True,
             )
 
@@ -93,72 +91,220 @@ async def run_bot():
             )
 
             print(
-                "[BOT] API will continue running.",
+                "       backend/telegram_bot/keyboards.py",
                 flush=True,
             )
 
-            return
-
-        print(
-            "[BOT] Module error:",
-            str(exc),
-            flush=True,
-        )
+            return False
 
         traceback.print_exc()
+        return False
 
     except Exception as exc:
         print(
-            "[BOT] Telegram Bot crashed:",
-            str(exc),
+            f"[BOT] Import error: {exc}",
+            flush=True,
+        )
+
+        traceback.print_exc()
+        return False
+
+    bot_main = getattr(bot_module, "main", None)
+
+    if bot_main is None:
+        print(
+            "[BOT] ERROR: main() was not found in "
+            "backend.telegram_bot.bot",
+            flush=True,
+        )
+
+        return False
+
+    print(
+        "[BOT] Telegram Bot module loaded successfully.",
+        flush=True,
+    )
+
+    try:
+        await bot_main()
+
+        print(
+            "[BOT] Bot main() finished.",
+            flush=True,
+        )
+
+        return True
+
+    except asyncio.CancelledError:
+        print(
+            "[BOT] Bot task cancelled.",
+            flush=True,
+        )
+
+        raise
+
+    except Exception as exc:
+        print(
+            f"[BOT] Telegram Bot crashed: {exc}",
             flush=True,
         )
 
         traceback.print_exc()
 
+        return False
+
+
+async def run_bot():
+    """
+    Постоянный watchdog Telegram-бота.
+
+    Если бот падает из-за временной ошибки Telegram/API/сети,
+    он автоматически запускается снова.
+    """
+
+    print(
+        "[BOT] Telegram Bot watchdog started.",
+        flush=True,
+    )
+
+    while True:
+        try:
+            result = await run_bot_once()
+
+            if result:
+                print(
+                    "[BOT] Bot stopped normally.",
+                    flush=True,
+                )
+            else:
+                print(
+                    "[BOT] Bot did not start or stopped with an error.",
+                    flush=True,
+                )
+
+        except asyncio.CancelledError:
+            print(
+                "[BOT] Watchdog cancelled.",
+                flush=True,
+            )
+
+            raise
+
+        except Exception as exc:
+            print(
+                f"[BOT] Watchdog error: {exc}",
+                flush=True,
+            )
+
+            traceback.print_exc()
+
         print(
-            "[BOT] API will continue running.",
+            f"[BOT] Restarting in {BOT_RESTART_DELAY} seconds...",
             flush=True,
         )
+
+        await asyncio.sleep(BOT_RESTART_DELAY)
 
 
 async def main():
     print(
-        "[RUN_ALL] Starting FENIX MUSIC API + Telegram Bot",
+        "========================================",
+        flush=True,
+    )
+
+    print(
+        "[RUN_ALL] FENIX MUSIC",
+        flush=True,
+    )
+
+    print(
+        "[RUN_ALL] API + Telegram Bot",
+        flush=True,
+    )
+
+    print(
+        f"[RUN_ALL] BASE_DIR: {BASE_DIR}",
+        flush=True,
+    )
+
+    print(
+        f"[RUN_ALL] PROJECT_DIR: {PROJECT_DIR}",
+        flush=True,
+    )
+
+    print(
+        "========================================",
         flush=True,
     )
 
     api_task = asyncio.create_task(
-        run_api()
+        run_api(),
+        name="fenix-api",
     )
 
     bot_task = asyncio.create_task(
-        run_bot()
+        run_bot(),
+        name="fenix-telegram-bot",
     )
 
-    # Бот больше не может положить весь Render-сервис.
-    bot_task.add_done_callback(
-        lambda task: (
-            print(
-                "[BOT] Bot task finished.",
-                flush=True,
-            )
-            if not task.cancelled()
-            else print(
-                "[BOT] Bot task cancelled.",
-                flush=True,
-            )
+    try:
+        await asyncio.gather(
+            api_task,
+            bot_task,
         )
-    )
 
-    await api_task
+    except asyncio.CancelledError:
+        print(
+            "[RUN_ALL] Shutdown requested.",
+            flush=True,
+        )
+
+        api_task.cancel()
+        bot_task.cancel()
+
+        await asyncio.gather(
+            api_task,
+            bot_task,
+            return_exceptions=True,
+        )
+
+        raise
+
+    except Exception as exc:
+        print(
+            f"[RUN_ALL] Fatal error: {exc}",
+            flush=True,
+        )
+
+        traceback.print_exc()
+
+        api_task.cancel()
+        bot_task.cancel()
+
+        await asyncio.gather(
+            api_task,
+            bot_task,
+            return_exceptions=True,
+        )
+
+        raise
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
+
     except KeyboardInterrupt:
         print(
-            "[RUN_ALL] Stopped",
+            "[RUN_ALL] Stopped by user.",
             flush=True,
         )
+
+    except Exception as exc:
+        print(
+            f"[RUN_ALL] Process stopped: {exc}",
+            flush=True,
+        )
+
+        traceback.print_exc()
+        raise
