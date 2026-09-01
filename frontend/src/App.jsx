@@ -2,2083 +2,1524 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE = "";
 
-function apiUrl(path) {
-return `${API_BASE}${path}`;
+function apiUrl(endpoint) {
+  return `${API_BASE}${endpoint}`;
 }
 
-async function api(path, options = {}) {
-const response = await fetch(apiUrl(path), {
-credentials: "include",
-headers: {
-"Content-Type": "application/json",
-...(options.headers || {}),
-},
-...options,
-});
+async function api(endpoint, options = {}) {
+  const response = await fetch(apiUrl(endpoint), {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
 
-let data = {};
+  const contentType = response.headers.get("content-type") || "";
+  const data = contentType.includes("application/json")
+    ? await response.json()
+    : await response.text();
 
-try {
-data = await response.json();
-} catch {
-data = {};
-}
+  if (!response.ok) {
+    const message =
+      typeof data === "object" && data?.error
+        ? data.error
+        : "Ошибка запроса";
 
-if (!response.ok) {
-throw new Error(data.error || `Ошибка HTTP ${response.status}`);
-}
+    throw new Error(message);
+  }
 
-return data;
+  return data;
 }
 
 function formatTime(seconds) {
-const value = Number(seconds) || 0;
+  const value = Number(seconds) || 0;
+  const minutes = Math.floor(value / 60);
+  const secs = Math.floor(value % 60);
 
-const minutes = Math.floor(value / 60);
-const secs = Math.floor(value % 60);
-
-return `${minutes}:${String(secs).padStart(2, "0")}`;
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
 }
 
-function getTrackCover(track) {
-return (
-track?.cover_url ||
-"/music-cover.svg"
-);
-}
-
-function App() {
-const audioRef = useRef(null);
-
-const [tracks, setTracks] = useState([]);
-const [favorites, setFavorites] = useState([]);
-const [history, setHistory] = useState([]);
-
-const [user, setUser] = useState(null);
-
-const [currentTrack, setCurrentTrack] = useState(null);
-
-const [playing, setPlaying] = useState(false);
-const [loading, setLoading] = useState(true);
-
-const [currentTime, setCurrentTime] = useState(0);
-const [duration, setDuration] = useState(0);
-const [volume, setVolume] = useState(1);
-
-const [repeat, setRepeat] = useState(false);
-const [shuffle, setShuffle] = useState(false);
-
-const [search, setSearch] = useState("");
-const [page, setPage] = useState("home");
-
-const [authOpen, setAuthOpen] = useState(false);
-const [authMode, setAuthMode] = useState("login");
-
-const [username, setUsername] = useState("");
-const [email, setEmail] = useState("");
-const [password, setPassword] = useState("");
-
-const [captchaId, setCaptchaId] = useState("");
-const [captchaText, setCaptchaText] = useState("");
-const [captchaAnswer, setCaptchaAnswer] = useState("");
-
-const [toast, setToast] = useState("");
-
-const [mobileMenu, setMobileMenu] = useState(false);
-
-const [fullscreenPlayer, setFullscreenPlayer] = useState(false);
-
-const [queue, setQueue] = useState([]);
-
-const filteredTracks = useMemo(() => {
-const value = search.trim().toLowerCase();
-
-```
-if (!value) {
-  return tracks;
-}
-
-return tracks.filter((track) => {
-  return (
-    String(track.title || "")
-      .toLowerCase()
-      .includes(value) ||
-    String(track.artist_name || "")
-      .toLowerCase()
-      .includes(value) ||
-    String(track.album_name || "")
-      .toLowerCase()
-      .includes(value)
-  );
-});
-```
-
-}, [tracks, search]);
-
-const favoriteIds = useMemo(() => {
-return new Set(
-favorites.map((track) => String(track.id))
-);
-}, [favorites]);
-
-useEffect(() => {
-loadEverything();
-}, []);
-
-useEffect(() => {
-if (!toast) return;
-
-```
-const timer = setTimeout(() => {
-  setToast("");
-}, 3000);
-
-return () => clearTimeout(timer);
-```
-
-}, [toast]);
-
-useEffect(() => {
-if (audioRef.current) {
-audioRef.current.volume = volume;
-}
-}, [volume]);
-
-async function loadEverything() {
-setLoading(true);
-
-```
-try {
-  const music = await api("/api/music");
-
-  setTracks(
-    Array.isArray(music.tracks)
-      ? music.tracks
-      : []
-  );
-} catch {
-  try {
-    const data = await api("/api/tracks");
-
-    setTracks(
-      Array.isArray(data.tracks)
-        ? data.tracks
-        : []
-    );
-  } catch {
-    setTracks([]);
-  }
-}
-
-try {
-  const me = await api("/api/auth/me");
-  setUser(me.user || null);
-} catch {
-  setUser(null);
-}
-
-try {
-  if (user) {
-    const fav = await api("/api/favorites");
-    setFavorites(fav.tracks || []);
-
-    const hist = await api("/api/history");
-    setHistory(hist.tracks || []);
-  }
-} catch {}
-
-setLoading(false);
-```
-
-}
-
-async function loadUserData() {
-if (!user) {
-setFavorites([]);
-setHistory([]);
-return;
-}
-
-```
-try {
-  const fav = await api("/api/favorites");
-  setFavorites(fav.tracks || []);
-} catch {}
-
-try {
-  const hist = await api("/api/history");
-  setHistory(hist.tracks || []);
-} catch {}
-```
-
-}
-
-useEffect(() => {
-loadUserData();
-}, [user]);
-
-async function loadCaptcha() {
-try {
-const data = await api("/api/auth/captcha");
-
-```
-  setCaptchaId(data.id || "");
-  setCaptchaText(data.text || "");
-  setCaptchaAnswer("");
-} catch {
-  setCaptchaId("");
-  setCaptchaText("");
-}
-```
-
-}
-
-function openLogin() {
-setAuthMode("login");
-setAuthOpen(true);
-setPassword("");
-}
-
-function openRegister() {
-setAuthMode("register");
-setAuthOpen(true);
-setPassword("");
-loadCaptcha();
-}
-
-async function submitAuth(event) {
-event.preventDefault();
-
-```
-try {
-  if (authMode === "register") {
-    const data = await api("/api/auth/register", {
-      method: "POST",
-      body: JSON.stringify({
-        username,
-        email,
-        password,
-        captcha: captchaAnswer,
-        captcha_id: captchaId,
-      }),
-    });
-
-    setUser(data.user || null);
-    setAuthOpen(false);
-    setToast("Аккаунт успешно создан");
-  } else {
-    const data = await api("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({
-        login: email || username,
-        email,
-        username,
-        password,
-      }),
-    });
-
-    setUser(data.user || null);
-    setAuthOpen(false);
-    setToast("Добро пожаловать в Fenix Music");
-  }
-
-  setPassword("");
-  await loadUserData();
-} catch (error) {
-  setToast(error.message);
-
-  if (authMode === "register") {
-    loadCaptcha();
-  }
-}
-```
-
-}
-
-async function logout() {
-try {
-await api("/api/auth/logout", {
-method: "POST",
-});
-} catch {}
-
-```
-setUser(null);
-setFavorites([]);
-setHistory([]);
-setToast("Вы вышли из аккаунта");
-```
-
+function getTrackId(track) {
+  return String(track?.id ?? track?.file_name ?? track?.title ?? "");
 }
 
 function getAudioUrl(track) {
-if (!track) return "";
-
-```
-if (track.audio_url) {
-  return track.audio_url;
-}
-
-if (track.file_name) {
-  return `/api/music/audio/${encodeURIComponent(
-    track.file_name
-  )}`;
-}
-
-return `/api/tracks/${track.id}/audio`;
-```
-
-}
-
-async function playTrack(track) {
-if (!track) return;
-
-```
-try {
-  if (!audioRef.current) {
-    audioRef.current = new Audio();
-    audioRef.current.volume = volume;
-
-    audioRef.current.addEventListener(
-      "timeupdate",
-      () => {
-        setCurrentTime(
-          audioRef.current?.currentTime || 0
-        );
-      }
-    );
-
-    audioRef.current.addEventListener(
-      "loadedmetadata",
-      () => {
-        setDuration(
-          audioRef.current?.duration || 0
-        );
-      }
-    );
-
-    audioRef.current.addEventListener(
-      "ended",
-      () => {
-        handleNext();
-      }
-    );
-
-    audioRef.current.addEventListener(
-      "play",
-      () => setPlaying(true)
-    );
-
-    audioRef.current.addEventListener(
-      "pause",
-      () => setPlaying(false)
-    );
+  if (!track) {
+    return "";
   }
 
-  const audio = audioRef.current;
-
-  const sameTrack =
-    currentTrack &&
-    String(currentTrack.id) ===
-      String(track.id);
-
-  if (sameTrack) {
-    if (audio.paused) {
-      await audio.play();
-    } else {
-      audio.pause();
+  if (track.audio_url) {
+    if (
+      track.audio_url.startsWith("http://") ||
+      track.audio_url.startsWith("https://") ||
+      track.audio_url.startsWith("/")
+    ) {
+      return track.audio_url;
     }
 
-    return;
+    return apiUrl(track.audio_url);
   }
 
-  audio.pause();
-
-  const source = getAudioUrl(track);
-
-  if (!source) {
-    throw new Error(
-      "У этого трека нет аудиофайла"
+  if (track.file_name) {
+    return apiUrl(
+      `/api/music/audio/${encodeURIComponent(track.file_name)}`
     );
   }
 
-  audio.src = source;
-  audio.currentTime = 0;
+  return "";
+}
 
-  setCurrentTrack(track);
-  setCurrentTime(0);
-  setDuration(
-    Number(track.duration) || 0
-  );
-
-  await audio.play();
-
-  try {
-    await api(
-      `/api/tracks/${track.id}/play`,
-      {
-        method: "POST",
-      }
-    );
-  } catch {}
-
-  if (user) {
-    try {
-      await api("/api/history", {
-        method: "POST",
-        body: JSON.stringify({
-          track_id: track.id,
-        }),
-      });
-
-      const hist = await api("/api/history");
-      setHistory(hist.tracks || []);
-    } catch {}
-  }
-
-  setQueue((old) => {
-    const exists = old.some(
-      (item) =>
-        String(item.id) ===
-        String(track.id)
-    );
-
-    if (exists) return old;
-
-    return [...old, track];
-  });
-} catch (error) {
-  setPlaying(false);
-  setToast(
-    `Не удалось воспроизвести: ${error.message}`
+function getCover(track) {
+  return (
+    track?.cover_url ||
+    "/music-cover.svg"
   );
 }
-```
 
-}
-
-function pauseTrack() {
-if (!audioRef.current) return;
-
-```
-audioRef.current.pause();
-```
-
-}
-
-function togglePlay() {
-if (!currentTrack) {
-if (tracks.length) {
-playTrack(tracks[0]);
-}
-
-```
-  return;
-}
-
-if (!audioRef.current) {
-  playTrack(currentTrack);
-  return;
-}
-
-if (audioRef.current.paused) {
-  audioRef.current.play().catch(() => {});
-} else {
-  audioRef.current.pause();
-}
-```
-
-}
-
-function getCurrentIndex() {
-const source =
-page === "favorites"
-? favorites
-: filteredTracks;
-
-```
-return source.findIndex(
-  (track) =>
-    String(track.id) ===
-    String(currentTrack?.id)
-);
-```
-
-}
-
-function handleNext() {
-const source =
-page === "favorites"
-? favorites
-: filteredTracks.length
-? filteredTracks
-: tracks;
-
-```
-if (!source.length) return;
-
-let nextIndex;
-
-if (shuffle) {
-  nextIndex = Math.floor(
-    Math.random() * source.length
-  );
-} else {
-  const currentIndex = getCurrentIndex();
-
-  nextIndex =
-    currentIndex < 0
-      ? 0
-      : currentIndex + 1;
-}
-
-if (nextIndex >= source.length) {
-  if (!repeat) {
-    setPlaying(false);
-    return;
+function normalizeTracks(data) {
+  if (Array.isArray(data)) {
+    return data;
   }
 
-  nextIndex = 0;
-}
-
-playTrack(source[nextIndex]);
-```
-
-}
-
-function handlePrevious() {
-const source =
-page === "favorites"
-? favorites
-: filteredTracks.length
-? filteredTracks
-: tracks;
-
-```
-if (!source.length) return;
-
-const currentIndex = getCurrentIndex();
-
-let previousIndex =
-  currentIndex <= 0
-    ? source.length - 1
-    : currentIndex - 1;
-
-playTrack(source[previousIndex]);
-```
-
-}
-
-function seek(event) {
-const value = Number(event.target.value);
-
-```
-if (!audioRef.current) return;
-
-audioRef.current.currentTime = value;
-setCurrentTime(value);
-```
-
-}
-
-async function toggleFavorite(track) {
-if (!user) {
-setToast(
-"Войдите в аккаунт, чтобы добавлять музыку в избранное"
-);
-openLogin();
-return;
-}
-
-```
-const id = String(track.id);
-const exists = favoriteIds.has(id);
-
-try {
-  if (exists) {
-    await api(
-      `/api/favorites/${track.id}`,
-      {
-        method: "DELETE",
-      }
-    );
-
-    setFavorites((old) =>
-      old.filter(
-        (item) =>
-          String(item.id) !== id
-      )
-    );
-  } else {
-    await api("/api/favorites", {
-      method: "POST",
-      body: JSON.stringify({
-        track_id: track.id,
-      }),
-    });
-
-    setFavorites((old) => [
-      track,
-      ...old.filter(
-        (item) =>
-          String(item.id) !== id
-      ),
-    ]);
+  if (Array.isArray(data?.tracks)) {
+    return data.tracks;
   }
-} catch (error) {
-  setToast(error.message);
-}
-```
 
+  return [];
 }
 
-function go(pageName) {
-setPage(pageName);
-setMobileMenu(false);
-window.scrollTo({
-top: 0,
-behavior: "smooth",
-});
-}
+function TrackCard({ track, active, liked, onPlay, onLike }) {
+  return (
+    <div className={`track-card ${active ? "active" : ""}`}>
+      <button
+        className="track-cover-button"
+        onClick={() => onPlay(track)}
+        type="button"
+      >
+        <img
+          className="track-cover"
+          src={getCover(track)}
+          alt={track?.title || "Track"}
+          onError={(event) => {
+            event.currentTarget.src = "/music-cover.svg";
+          }}
+        />
 
-const displayedTracks =
-page === "favorites"
-? favorites
-: page === "history"
-? history
-: filteredTracks;
+        <span className="track-play">
+          {active ? "❚❚" : "▶"}
+        </span>
+      </button>
 
-return ( <div className="fenix-app"> <header className="topbar">
-<div
-className="brand"
-onClick={() => go("home")}
-> <div className="brand-logo">
-FX </div>
-
-```
-      <div className="brand-text">
-        <strong>FENIX</strong>
-        <span>MUSIC</span>
+      <div className="track-info">
+        <strong>{track?.title || "Без названия"}</strong>
+        <span>
+          {track?.artist_name || "Fenix Music"}
+        </span>
       </div>
-    </div>
-
-    <div className="search-box">
-      <span>⌕</span>
-
-      <input
-        value={search}
-        onChange={(event) =>
-          setSearch(event.target.value)
-        }
-        placeholder="Найти трек, артиста или альбом..."
-      />
-    </div>
-
-    <div className="top-actions">
-      {user ? (
-        <button
-          className="profile-button"
-          onClick={() => go("profile")}
-        >
-          <span className="avatar">
-            {String(
-              user.username || "U"
-            )
-              .charAt(0)
-              .toUpperCase()}
-          </span>
-
-          <span>
-            {user.username}
-          </span>
-        </button>
-      ) : (
-        <>
-          <button
-            className="login-button"
-            onClick={openLogin}
-          >
-            Войти
-          </button>
-
-          <button
-            className="register-button"
-            onClick={openRegister}
-          >
-            Регистрация
-          </button>
-        </>
-      )}
 
       <button
-        className="mobile-button"
-        onClick={() =>
-          setMobileMenu(!mobileMenu)
-        }
+        className={`like-button ${liked ? "liked" : ""}`}
+        onClick={() => onLike(track)}
+        type="button"
+        aria-label="Избранное"
       >
-        ☰
+        {liked ? "♥" : "♡"}
       </button>
     </div>
-  </header>
+  );
+}
 
-  <div className="layout">
-    <aside
-      className={
-        mobileMenu
-          ? "sidebar mobile-open"
-          : "sidebar"
-      }
-    >
-      <nav>
-        <button
-          className={
-            page === "home"
-              ? "nav-item active"
-              : "nav-item"
-          }
-          onClick={() => go("home")}
-        >
-          <span>⌂</span>
-          Главная
-        </button>
+function Sidebar({ page, setPage, user, onLogin }) {
+  const items = [
+    ["home", "⌂", "Главная"],
+    ["discover", "◉", "Рекомендации"],
+    ["library", "♫", "Моя музыка"],
+    ["favorites", "♥", "Избранное"],
+    ["history", "◷", "История"],
+  ];
 
-        <button
-          className={
-            page === "search"
-              ? "nav-item active"
-              : "nav-item"
-          }
-          onClick={() => go("search")}
-        >
-          <span>⌕</span>
-          Поиск
-        </button>
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <div className="brand-icon">F</div>
 
-        <button
-          className={
-            page === "favorites"
-              ? "nav-item active"
-              : "nav-item"
-          }
-          onClick={() => go("favorites")}
-        >
-          <span>♥</span>
-          Избранное
-        </button>
-
-        <button
-          className={
-            page === "history"
-              ? "nav-item active"
-              : "nav-item"
-          }
-          onClick={() => go("history")}
-        >
-          <span>◷</span>
-          История
-        </button>
-
-        <button
-          className={
-            page === "library"
-              ? "nav-item active"
-              : "nav-item"
-          }
-          onClick={() => go("library")}
-        >
-          <span>▣</span>
-          Библиотека
-        </button>
-      </nav>
-
-      <div className="sidebar-title">
-        FENIX MUSIC
+        <div>
+          <div className="brand-name">
+            FENIX
+          </div>
+          <div className="brand-subtitle">
+            MUSIC
+          </div>
+        </div>
       </div>
 
-      <nav>
-        <button
-          className="nav-item"
-          onClick={() => {
-            setPage("artists");
-            setMobileMenu(false);
-          }}
-        >
-          <span>♬</span>
-          Артисты
-        </button>
-
-        <button
-          className="nav-item"
-          onClick={() => {
-            setPage("albums");
-            setMobileMenu(false);
-          }}
-        >
-          <span>▤</span>
-          Альбомы
-        </button>
-
-        <button
-          className="nav-item"
-          onClick={() => {
-            setPage("playlists");
-            setMobileMenu(false);
-          }}
-        >
-          <span>☷</span>
-          Плейлисты
-        </button>
+      <nav className="side-nav">
+        {items.map(([id, icon, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={page === id ? "nav-item selected" : "nav-item"}
+            onClick={() => setPage(id)}
+          >
+            <span>{icon}</span>
+            {label}
+          </button>
+        ))}
       </nav>
 
       <div className="sidebar-bottom">
-        <div className="online-status">
-          <span></span>
-          Fenix Music Online
-        </div>
+        {user ? (
+          <button
+            type="button"
+            className="profile-mini"
+            onClick={() => setPage("profile")}
+          >
+            <div className="avatar">
+              {(user.username || "U")
+                .slice(0, 1)
+                .toUpperCase()}
+            </div>
 
-        <div className="version">
-          v4.0
-        </div>
+            <div>
+              <strong>{user.username}</strong>
+              <span>Профиль</span>
+            </div>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="login-sidebar"
+            onClick={onLogin}
+          >
+            Войти в аккаунт
+          </button>
+        )}
       </div>
     </aside>
-
-    <main className="content">
-      {loading ? (
-        <div className="loading-screen">
-          <div className="loading-logo">
-            FX
-          </div>
-
-          <h2>FENIX MUSIC</h2>
-
-          <p>
-            Загружаем музыкальную вселенную...
-          </p>
-
-          <div className="loader"></div>
-        </div>
-      ) : (
-        <>
-          {page === "home" && (
-            <Home
-              tracks={tracks}
-              favorites={favoriteIds}
-              currentTrack={currentTrack}
-              playing={playing}
-              onPlay={playTrack}
-              onFavorite={toggleFavorite}
-              onOpenAll={() =>
-                go("library")
-              }
-            />
-          )}
-
-          {page === "search" && (
-            <section className="page-section">
-              <PageHeader
-                title="Поиск"
-                subtitle={
-                  search
-                    ? `Результаты для «${search}»`
-                    : "Найди свою музыку"
-                }
-              />
-
-              <TrackGrid
-                tracks={filteredTracks}
-                currentTrack={currentTrack}
-                playing={playing}
-                favorites={favoriteIds}
-                onPlay={playTrack}
-                onFavorite={toggleFavorite}
-              />
-            </section>
-          )}
-
-          {page === "favorites" && (
-            <section className="page-section">
-              <PageHeader
-                title="Избранное"
-                subtitle={
-                  user
-                    ? "Твои любимые треки"
-                    : "Войди, чтобы сохранять музыку"
-                }
-              />
-
-              {user ? (
-                <TrackGrid
-                  tracks={favorites}
-                  currentTrack={currentTrack}
-                  playing={playing}
-                  favorites={favoriteIds}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                />
-              ) : (
-                <EmptyState
-                  icon="♥"
-                  title="Избранное пусто"
-                  text="Авторизуйся и сохраняй любимые треки."
-                  button="Войти"
-                  onClick={openLogin}
-                />
-              )}
-            </section>
-          )}
-
-          {page === "history" && (
-            <section className="page-section">
-              <PageHeader
-                title="История"
-                subtitle="Недавно прослушанные треки"
-              />
-
-              {user ? (
-                <TrackList
-                  tracks={history}
-                  currentTrack={currentTrack}
-                  playing={playing}
-                  favorites={favoriteIds}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                />
-              ) : (
-                <EmptyState
-                  icon="◷"
-                  title="История недоступна"
-                  text="Войди в аккаунт, чтобы сохранять историю прослушиваний."
-                  button="Войти"
-                  onClick={openLogin}
-                />
-              )}
-            </section>
-          )}
-
-          {page === "library" && (
-            <section className="page-section">
-              <PageHeader
-                title="Библиотека"
-                subtitle={`${tracks.length} треков в Fenix Music`}
-              />
-
-              <div className="library-tabs">
-                <button className="library-tab active">
-                  Все треки
-                </button>
-
-                <button
-                  className="library-tab"
-                  onClick={() =>
-                    go("favorites")
-                  }
-                >
-                  Избранное
-                </button>
-
-                <button
-                  className="library-tab"
-                  onClick={() =>
-                    go("history")
-                  }
-                >
-                  История
-                </button>
-              </div>
-
-              <TrackGrid
-                tracks={filteredTracks}
-                currentTrack={currentTrack}
-                playing={playing}
-                favorites={favoriteIds}
-                onPlay={playTrack}
-                onFavorite={toggleFavorite}
-              />
-            </section>
-          )}
-
-          {page === "profile" && (
-            <Profile
-              user={user}
-              onLogout={logout}
-              favorites={favorites}
-              history={history}
-              onOpenFavorites={() =>
-                go("favorites")
-              }
-              onOpenHistory={() =>
-                go("history")
-              }
-            />
-          )}
-
-          {(page === "artists" ||
-            page === "albums" ||
-            page === "playlists") && (
-            <ComingSoon
-              page={page}
-              tracks={tracks}
-              onPlay={playTrack}
-            />
-          )}
-        </>
-      )}
-    </main>
-  </div>
-
-  {currentTrack && (
-    <Player
-      track={currentTrack}
-      playing={playing}
-      currentTime={currentTime}
-      duration={duration}
-      volume={volume}
-      repeat={repeat}
-      shuffle={shuffle}
-      fullscreen={fullscreenPlayer}
-      onPlay={togglePlay}
-      onNext={handleNext}
-      onPrevious={handlePrevious}
-      onSeek={seek}
-      onVolume={setVolume}
-      onRepeat={() =>
-        setRepeat(!repeat)
-      }
-      onShuffle={() =>
-        setShuffle(!shuffle)
-      }
-      onFullscreen={() =>
-        setFullscreenPlayer(
-          !fullscreenPlayer
-        )
-      }
-      onFavorite={toggleFavorite}
-      favorite={favoriteIds.has(
-        String(currentTrack.id)
-      )}
-    />
-  )}
-
-  {authOpen && (
-    <AuthModal
-      mode={authMode}
-      username={username}
-      email={email}
-      password={password}
-      captchaText={captchaText}
-      captchaAnswer={captchaAnswer}
-      onUsername={setUsername}
-      onEmail={setEmail}
-      onPassword={setPassword}
-      onCaptcha={setCaptchaAnswer}
-      onSubmit={submitAuth}
-      onClose={() =>
-        setAuthOpen(false)
-      }
-      onChangeMode={() => {
-        if (authMode === "login") {
-          setAuthMode("register");
-          loadCaptcha();
-        } else {
-          setAuthMode("login");
-        }
-      }}
-      onRefreshCaptcha={loadCaptcha}
-    />
-  )}
-
-  {toast && (
-    <div className="toast">
-      {toast}
-    </div>
-  )}
-</div>
-```
-
-);
+  );
 }
 
-function Home({
-tracks,
-favorites,
-currentTrack,
-playing,
-onPlay,
-onFavorite,
-onOpenAll,
-}) {
-const popular = [...tracks]
-.sort(
-(a, b) =>
-Number(b.plays_count || 0) -
-Number(a.plays_count || 0)
-)
-.slice(0, 8);
-
-const newest = tracks.slice(0, 8);
-
-return ( <div className="home"> <section className="hero"> <div className="hero-glow"></div>
-
-```
-    <div className="hero-content">
-      <div className="hero-badge">
-        ✦ FENIX MUSIC
-      </div>
-
-      <h1>
-        Твоя музыка.
-        <br />
-        <span>Твой мир.</span>
-      </h1>
-
-      <p>
-        Слушай любимые треки,
-        открывай новых артистов
-        и создавай свою музыкальную
-        вселенную.
-      </p>
-
+function BottomNav({ page, setPage }) {
+  return (
+    <nav className="bottom-nav">
       <button
-        className="hero-button"
-        onClick={onOpenAll}
+        type="button"
+        className={page === "home" ? "active" : ""}
+        onClick={() => setPage("home")}
       >
-        Открыть библиотеку
-        <span>→</span>
-      </button>
-    </div>
-
-    <div className="hero-art">
-      <div className="disc disc-one"></div>
-      <div className="disc disc-two"></div>
-
-      <div className="hero-cover">
-        <span>FX</span>
-      </div>
-    </div>
-  </section>
-
-  <MusicSection
-    title="Для вас"
-    subtitle="Подобрано специально для тебя"
-    tracks={newest}
-    favorites={favorites}
-    currentTrack={currentTrack}
-    playing={playing}
-    onPlay={onPlay}
-    onFavorite={onFavorite}
-  />
-
-  <MusicSection
-    title="Популярное"
-    subtitle="Самые прослушиваемые треки"
-    tracks={popular}
-    favorites={favorites}
-    currentTrack={currentTrack}
-    playing={playing}
-    onPlay={onPlay}
-    onFavorite={onFavorite}
-  />
-
-  <section className="feature-row">
-    <div className="feature-card">
-      <div className="feature-icon">
-        ◉
-      </div>
-
-      <div>
-        <strong>
-          Новая музыка
-        </strong>
-
-        <span>
-          Свежие релизы появляются
-          автоматически
-        </span>
-      </div>
-    </div>
-
-    <div className="feature-card">
-      <div className="feature-icon">
-        ♫
-      </div>
-
-      <div>
-        <strong>
-          Твоя библиотека
-        </strong>
-
-        <span>
-          Избранное и история всегда
-          под рукой
-        </span>
-      </div>
-    </div>
-
-    <div className="feature-card">
-      <div className="feature-icon">
-        ⚡
-      </div>
-
-      <div>
-        <strong>
-          Быстрый плеер
-        </strong>
-
-        <span>
-          Музыка играет без остановки
-        </span>
-      </div>
-    </div>
-  </section>
-</div>
-```
-
-);
-}
-
-function MusicSection({
-title,
-subtitle,
-tracks,
-favorites,
-currentTrack,
-playing,
-onPlay,
-onFavorite,
-}) {
-return ( <section className="music-section"> <div className="section-heading"> <div> <h2>{title}</h2> <p>{subtitle}</p> </div>
-
-```
-    <button>Смотреть все →</button>
-  </div>
-
-  <TrackGrid
-    tracks={tracks}
-    favorites={favorites}
-    currentTrack={currentTrack}
-    playing={playing}
-    onPlay={onPlay}
-    onFavorite={onFavorite}
-  />
-</section>
-```
-
-);
-}
-
-function TrackGrid({
-tracks,
-currentTrack,
-playing,
-favorites,
-onPlay,
-onFavorite,
-}) {
-if (!tracks.length) {
-return ( <EmptyState
-     icon="♫"
-     title="Музыки пока нет"
-     text="Когда новые аудиофайлы появятся в каталоге, они автоматически отобразятся здесь."
-   />
-);
-}
-
-return ( <div className="track-grid">
-{tracks.map((track) => (
-<TrackCard
-key={track.id || track.file_name}
-track={track}
-currentTrack={currentTrack}
-playing={playing}
-favorite={favorites.has(
-String(track.id)
-)}
-onPlay={onPlay}
-onFavorite={onFavorite}
-/>
-))} </div>
-);
-}
-
-function TrackCard({
-track,
-currentTrack,
-playing,
-favorite,
-onPlay,
-onFavorite,
-}) {
-const active =
-currentTrack &&
-String(currentTrack.id) ===
-String(track.id);
-
-return (
-<article
-className={
-active
-? "track-card active"
-: "track-card"
-}
-> <div className="cover-wrap">
-<img
-className="track-cover"
-src={getTrackCover(track)}
-alt=""
-onError={(event) => {
-event.currentTarget.src =
-"/music-cover.svg";
-}}
-/>
-
-```
-    <button
-      className="cover-play"
-      onClick={() => onPlay(track)}
-    >
-      {active && playing ? "Ⅱ" : "▶"}
-    </button>
-
-    <button
-      className={
-        favorite
-          ? "favorite-button active"
-          : "favorite-button"
-      }
-      onClick={(event) => {
-        event.stopPropagation();
-        onFavorite(track);
-      }}
-    >
-      {favorite ? "♥" : "♡"}
-    </button>
-  </div>
-
-  <div className="track-info">
-    <strong title={track.title}>
-      {track.title || "Без названия"}
-    </strong>
-
-    <span>
-      {track.artist_name ||
-        "Fenix Music"}
-    </span>
-
-    {track.album_name && (
-      <small>
-        {track.album_name}
-      </small>
-    )}
-  </div>
-</article>
-```
-
-);
-}
-
-function TrackList({
-tracks,
-currentTrack,
-playing,
-favorites,
-onPlay,
-onFavorite,
-}) {
-if (!tracks.length) {
-return ( <EmptyState
-     icon="♫"
-     title="Здесь пока пусто"
-     text="Начни слушать музыку, и здесь появятся треки."
-   />
-);
-}
-
-return ( <div className="track-list">
-{tracks.map((track, index) => {
-const active =
-currentTrack &&
-String(currentTrack.id) ===
-String(track.id);
-
-```
-    const favorite =
-      favorites.has(
-        String(track.id)
-      );
-
-    return (
-      <div
-        className={
-          active
-            ? "list-track active"
-            : "list-track"
-        }
-        key={`${track.id}-${index}`}
-      >
-        <span className="track-number">
-          {index + 1}
-        </span>
-
-        <img
-          src={getTrackCover(track)}
-          alt=""
-        />
-
-        <div className="list-track-info">
-          <strong>
-            {track.title}
-          </strong>
-
-          <span>
-            {track.artist_name}
-          </span>
-        </div>
-
-        <span className="list-album">
-          {track.album_name}
-        </span>
-
-        <span className="list-duration">
-          {formatTime(track.duration)}
-        </span>
-
-        <button
-          className={
-            favorite
-              ? "list-heart active"
-              : "list-heart"
-          }
-          onClick={() =>
-            onFavorite(track)
-          }
-        >
-          {favorite ? "♥" : "♡"}
-        </button>
-
-        <button
-          className="list-play"
-          onClick={() =>
-            onPlay(track)
-          }
-        >
-          {active && playing
-            ? "Ⅱ"
-            : "▶"}
-        </button>
-      </div>
-    );
-  })}
-</div>
-```
-
-);
-}
-
-function Player({
-track,
-playing,
-currentTime,
-duration,
-volume,
-repeat,
-shuffle,
-fullscreen,
-onPlay,
-onNext,
-onPrevious,
-onSeek,
-onVolume,
-onRepeat,
-onShuffle,
-onFullscreen,
-onFavorite,
-favorite,
-}) {
-if (fullscreen) {
-return ( <div className="fullscreen-player"> <div className="fullscreen-background"></div>
-
-```
-    <button
-      className="close-fullscreen"
-      onClick={onFullscreen}
-    >
-      ×
-    </button>
-
-    <div className="fullscreen-content">
-      <div className="fullscreen-cover">
-        <img
-          src={getTrackCover(track)}
-          alt=""
-        />
-      </div>
-
-      <div className="fullscreen-meta">
-        <span>СЕЙЧАС ИГРАЕТ</span>
-
-        <h2>{track.title}</h2>
-
-        <p>{track.artist_name}</p>
-
-        <div className="fullscreen-progress">
-          <input
-            type="range"
-            min="0"
-            max={duration || 0}
-            value={Math.min(
-              currentTime,
-              duration || currentTime
-            )}
-            onChange={onSeek}
-          />
-
-          <div>
-            <span>
-              {formatTime(currentTime)}
-            </span>
-
-            <span>
-              {formatTime(duration)}
-            </span>
-          </div>
-        </div>
-
-        <div className="fullscreen-controls">
-          <button
-            className={
-              shuffle
-                ? "control active"
-                : "control"
-            }
-            onClick={onShuffle}
-          >
-            ⤨
-          </button>
-
-          <button
-            className="control"
-            onClick={onPrevious}
-          >
-            |◀
-          </button>
-
-          <button
-            className="big-play"
-            onClick={onPlay}
-          >
-            {playing ? "Ⅱ" : "▶"}
-          </button>
-
-          <button
-            className="control"
-            onClick={onNext}
-          >
-            ▶|
-          </button>
-
-          <button
-            className={
-              repeat
-                ? "control active"
-                : "control"
-            }
-            onClick={onRepeat}
-          >
-            ↻
-          </button>
-        </div>
-
-        <button
-          className={
-            favorite
-              ? "fullscreen-favorite active"
-              : "fullscreen-favorite"
-          }
-          onClick={() =>
-            onFavorite(track)
-          }
-        >
-          {favorite
-            ? "♥ В избранном"
-            : "♡ Добавить в избранное"}
-        </button>
-      </div>
-    </div>
-  </div>
-);
-```
-
-}
-
-return ( <div className="player"> <div className="player-track"> <img
-       src={getTrackCover(track)}
-       alt=""
-     />
-
-```
-    <div>
-      <strong>{track.title}</strong>
-      <span>{track.artist_name}</span>
-    </div>
-  </div>
-
-  <div className="player-main">
-    <div className="player-controls">
-      <button
-        className={
-          shuffle
-            ? "player-small active"
-            : "player-small"
-        }
-        onClick={onShuffle}
-      >
-        ⤨
+        <span>⌂</span>
+        <small>Главная</small>
       </button>
 
       <button
-        className="player-small"
-        onClick={onPrevious}
+        type="button"
+        className={page === "discover" ? "active" : ""}
+        onClick={() => setPage("discover")}
       >
-        |◀
+        <span>◉</span>
+        <small>Для вас</small>
       </button>
 
       <button
-        className="player-play"
-        onClick={onPlay}
+        type="button"
+        className={page === "library" ? "active" : ""}
+        onClick={() => setPage("library")}
       >
-        {playing ? "Ⅱ" : "▶"}
+        <span>♫</span>
+        <small>Библиотека</small>
       </button>
 
       <button
-        className="player-small"
-        onClick={onNext}
+        type="button"
+        className={page === "profile" ? "active" : ""}
+        onClick={() => setPage("profile")}
       >
-        ▶|
+        <span>●</span>
+        <small>Профиль</small>
       </button>
-
-      <button
-        className={
-          repeat
-            ? "player-small active"
-            : "player-small"
-        }
-        onClick={onRepeat}
-      >
-        ↻
-      </button>
-    </div>
-
-    <div className="progress-row">
-      <span>
-        {formatTime(currentTime)}
-      </span>
-
-      <input
-        type="range"
-        min="0"
-        max={duration || 0}
-        value={Math.min(
-          currentTime,
-          duration || currentTime
-        )}
-        onChange={onSeek}
-      />
-
-      <span>
-        {formatTime(duration)}
-      </span>
-    </div>
-  </div>
-
-  <div className="player-actions">
-    <button
-      className={
-        favorite
-          ? "player-icon active"
-          : "player-icon"
-      }
-      onClick={() =>
-        onFavorite(track)
-      }
-    >
-      {favorite ? "♥" : "♡"}
-    </button>
-
-    <span className="volume-icon">
-      🔊
-    </span>
-
-    <input
-      className="volume-range"
-      type="range"
-      min="0"
-      max="1"
-      step="0.01"
-      value={volume}
-      onChange={(event) =>
-        onVolume(
-          Number(event.target.value)
-        )
-      }
-    />
-
-    <button
-      className="player-icon"
-      onClick={onFullscreen}
-    >
-      ⛶
-    </button>
-  </div>
-</div>
-```
-
-);
-}
-
-function PageHeader({
-title,
-subtitle,
-}) {
-return ( <div className="page-header"> <div> <span className="page-kicker">
-FENIX MUSIC </span>
-
-```
-    <h1>{title}</h1>
-
-    <p>{subtitle}</p>
-  </div>
-</div>
-```
-
-);
-}
-
-function Profile({
-user,
-onLogout,
-favorites,
-history,
-onOpenFavorites,
-onOpenHistory,
-}) {
-if (!user) {
-return ( <EmptyState
-     icon="◎"
-     title="Профиль"
-     text="Войди в аккаунт, чтобы открыть профиль."
-   />
-);
-}
-
-return ( <section className="profile-page"> <PageHeader
-     title="Профиль"
-     subtitle="Твоя учетная запись Fenix Music"
-   />
-
-```
-  <div className="profile-card">
-    <div className="profile-avatar">
-      {String(user.username || "U")
-        .charAt(0)
-        .toUpperCase()}
-    </div>
-
-    <div className="profile-info">
-      <span>ПОЛЬЗОВАТЕЛЬ</span>
-
-      <h2>{user.username}</h2>
-
-      <p>{user.email}</p>
-
-      {user.bio && (
-        <div className="profile-bio">
-          {user.bio}
-        </div>
-      )}
-    </div>
-
-    <button
-      className="logout-button"
-      onClick={onLogout}
-    >
-      Выйти
-    </button>
-  </div>
-
-  <div className="profile-stats">
-    <button
-      onClick={onOpenFavorites}
-    >
-      <strong>
-        {favorites.length}
-      </strong>
-      <span>Избранных треков</span>
-    </button>
-
-    <button
-      onClick={onOpenHistory}
-    >
-      <strong>
-        {history.length}
-      </strong>
-      <span>Прослушиваний</span>
-    </button>
-  </div>
-</section>
-```
-
-);
+    </nav>
+  );
 }
 
 function AuthModal({
-mode,
-username,
-email,
-password,
-captchaText,
-captchaAnswer,
-onUsername,
-onEmail,
-onPassword,
-onCaptcha,
-onSubmit,
-onClose,
-onChangeMode,
-onRefreshCaptcha,
+  open,
+  mode,
+  setMode,
+  onClose,
+  onSuccess,
 }) {
-const register =
-mode === "register";
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [login, setLogin] = useState("");
+  const [captchaId, setCaptchaId] = useState("");
+  const [captchaText, setCaptchaText] = useState("");
+  const [captchaAnswer, setCaptchaAnswer] = useState("");
+  const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-return ( <div
-   className="modal-backdrop"
-   onMouseDown={onClose}
- >
-<div
-className="auth-modal"
-onMouseDown={(event) =>
-event.stopPropagation()
-}
-> <button
-       className="modal-close"
-       onClick={onClose}
-     >
-× </button>
+  async function loadCaptcha() {
+    setCaptchaLoading(true);
+    setError("");
 
-```
-    <div className="auth-logo">
-      FX
+    try {
+      const data = await api("/api/auth/captcha");
+
+      setCaptchaId(data.id || "");
+      setCaptchaText(data.text || "");
+      setCaptchaAnswer("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCaptchaLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (open && mode === "register") {
+      loadCaptcha();
+    }
+  }, [open, mode]);
+
+  useEffect(() => {
+    if (!open) {
+      setError("");
+      setPassword("");
+      setCaptchaAnswer("");
+    }
+  }, [open]);
+
+  if (!open) {
+    return null;
+  }
+
+  async function submit(event) {
+    event.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      if (mode === "register") {
+        const data = await api("/api/auth/register", {
+          method: "POST",
+          body: JSON.stringify({
+            username,
+            email,
+            password,
+            captcha: captchaAnswer,
+            captcha_id: captchaId,
+          }),
+        });
+
+        onSuccess(data.user);
+      } else {
+        const data = await api("/api/auth/login", {
+          method: "POST",
+          body: JSON.stringify({
+            login,
+            password,
+          }),
+        });
+
+        onSuccess(data.user);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div
+        className="auth-modal"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="modal-close"
+          onClick={onClose}
+        >
+          ×
+        </button>
+
+        <div className="auth-logo">F</div>
+
+        <h2>
+          {mode === "login"
+            ? "С возвращением"
+            : "Создать аккаунт"}
+        </h2>
+
+        <p className="modal-description">
+          {mode === "login"
+            ? "Войдите в Fenix Music"
+            : "Создайте свой музыкальный профиль"}
+        </p>
+
+        {error && (
+          <div className="form-error">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={submit}>
+          {mode === "register" && (
+            <>
+              <label>
+                Username
+                <input
+                  value={username}
+                  onChange={(event) =>
+                    setUsername(event.target.value)
+                  }
+                  placeholder="Ваш username"
+                  autoComplete="username"
+                  required
+                />
+              </label>
+
+              <label>
+                Email
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(event) =>
+                    setEmail(event.target.value)
+                  }
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  required
+                />
+              </label>
+            </>
+          )}
+
+          {mode === "login" && (
+            <label>
+              Логин или email
+              <input
+                value={login}
+                onChange={(event) =>
+                  setLogin(event.target.value)
+                }
+                placeholder="Username или email"
+                autoComplete="username"
+                required
+              />
+            </label>
+          )}
+
+          <label>
+            Пароль
+            <input
+              type="password"
+              value={password}
+              onChange={(event) =>
+                setPassword(event.target.value)
+              }
+              placeholder="Минимум 6 символов"
+              autoComplete={
+                mode === "login"
+                  ? "current-password"
+                  : "new-password"
+              }
+              required
+            />
+          </label>
+
+          {mode === "register" && (
+            <div className="captcha-block">
+              <div className="captcha-header">
+                <span>CAPTCHA</span>
+
+                <button
+                  type="button"
+                  onClick={loadCaptcha}
+                  disabled={captchaLoading}
+                >
+                  ↻
+                </button>
+              </div>
+
+              <div className="captcha-code">
+                {captchaLoading
+                  ? "..."
+                  : captchaText || "ERROR"}
+              </div>
+
+              <input
+                value={captchaAnswer}
+                onChange={(event) =>
+                  setCaptchaAnswer(event.target.value)
+                }
+                placeholder="Введите код"
+                required
+              />
+            </div>
+          )}
+
+          <button
+            className="primary-button auth-submit"
+            type="submit"
+            disabled={loading}
+          >
+            {loading
+              ? "Загрузка..."
+              : mode === "login"
+              ? "Войти"
+              : "Создать аккаунт"}
+          </button>
+        </form>
+
+        <div className="auth-switch">
+          {mode === "login" ? (
+            <>
+              Нет аккаунта?{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("register");
+                  setError("");
+                }}
+              >
+                Регистрация
+              </button>
+            </>
+          ) : (
+            <>
+              Уже есть аккаунт?{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode("login");
+                  setError("");
+                }}
+              >
+                Войти
+              </button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
+  );
+}
 
-    <span className="auth-kicker">
-      FENIX MUSIC
-    </span>
+function Player({
+  track,
+  playing,
+  setPlaying,
+  onNext,
+  onPrevious,
+  onLike,
+  liked,
+}) {
+  const audioRef = useRef(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(
+    Number(track?.duration) || 0
+  );
+  const [volume, setVolume] = useState(1);
 
-    <h2>
-      {register
-        ? "Создать аккаунт"
-        : "С возвращением"}
-    </h2>
+  useEffect(() => {
+    if (!track) {
+      return;
+    }
 
-    <p>
-      {register
-        ? "Создай свой профиль и сохраняй музыку."
-        : "Войди в свою музыкальную вселенную."}
-    </p>
+    setCurrentTime(0);
+    setDuration(Number(track.duration) || 0);
 
-    <form onSubmit={onSubmit}>
-      {register && (
-        <label>
-          <span>Username</span>
+    const audio = audioRef.current;
 
-          <input
-            value={username}
-            onChange={(event) =>
-              onUsername(
-                event.target.value
-              )
-            }
-            placeholder="Твой никнейм"
-            required
-          />
-        </label>
-      )}
+    if (!audio) {
+      return;
+    }
 
-      <label>
+    audio.src = getAudioUrl(track);
+    audio.load();
+
+    if (playing) {
+      audio
+        .play()
+        .catch(() => {
+          setPlaying(false);
+        });
+    }
+  }, [track]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    if (playing) {
+      audio.play().catch(() => {
+        setPlaying(false);
+      });
+    } else {
+      audio.pause();
+    }
+  }, [playing]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  if (!track) {
+    return (
+      <div className="player empty-player">
+        <div className="empty-player-text">
+          Выберите трек для воспроизведения
+        </div>
+      </div>
+    );
+  }
+
+  function handleTimeUpdate() {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    setCurrentTime(audio.currentTime);
+  }
+
+  function handleLoadedMetadata() {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    if (Number.isFinite(audio.duration)) {
+      setDuration(audio.duration);
+    }
+  }
+
+  function seek(event) {
+    const value = Number(event.target.value);
+    setCurrentTime(value);
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = value;
+    }
+  }
+
+  function ended() {
+    setPlaying(false);
+    onNext();
+  }
+
+  return (
+    <div className="player">
+      <audio
+        ref={audioRef}
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={ended}
+        onError={() => setPlaying(false)}
+        preload="metadata"
+      />
+
+      <img
+        className="player-cover"
+        src={getCover(track)}
+        alt={track.title || "Track"}
+        onError={(event) => {
+          event.currentTarget.src = "/music-cover.svg";
+        }}
+      />
+
+      <div className="player-track">
+        <strong>{track.title}</strong>
         <span>
-          {register
-            ? "Email"
-            : "Email или username"}
+          {track.artist_name || "Fenix Music"}
         </span>
+      </div>
+
+      <button
+        type="button"
+        className={`player-like ${liked ? "liked" : ""}`}
+        onClick={() => onLike(track)}
+      >
+        {liked ? "♥" : "♡"}
+      </button>
+
+      <div className="player-controls">
+        <button type="button" onClick={onPrevious}>
+          |◀
+        </button>
+
+        <button
+          type="button"
+          className="play-button"
+          onClick={() => setPlaying(!playing)}
+        >
+          {playing ? "❚❚" : "▶"}
+        </button>
+
+        <button type="button" onClick={onNext}>
+          ▶|
+        </button>
+      </div>
+
+      <div className="progress-area">
+        <span>{formatTime(currentTime)}</span>
 
         <input
-          type={
-            register
-              ? "email"
-              : "text"
-          }
-          value={email}
-          onChange={(event) =>
-            onEmail(event.target.value)
-          }
-          placeholder={
-            register
-              ? "you@example.com"
-              : "username или email"
-          }
-          required
+          className="progress"
+          type="range"
+          min="0"
+          max={duration || 1}
+          step="0.1"
+          value={Math.min(currentTime, duration || 1)}
+          onChange={seek}
         />
-      </label>
 
-      <label>
-        <span>Пароль</span>
+        <span>{formatTime(duration)}</span>
+      </div>
+
+      <div className="volume">
+        <span>🔊</span>
 
         <input
-          type="password"
-          value={password}
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={volume}
           onChange={(event) =>
-            onPassword(
-              event.target.value
-            )
+            setVolume(Number(event.target.value))
           }
-          placeholder="Минимум 6 символов"
-          required
         />
-      </label>
+      </div>
+    </div>
+  );
+}
 
-      {register && (
-        <div className="captcha-box">
-          <div className="captcha-top">
-            <span>
-              CAPTCHA
+export default function App() {
+  const [page, setPage] = useState("home");
+  const [tracks, setTracks] = useState([]);
+  const [favorites, setFavorites] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [user, setUser] = useState(null);
+  const [currentTrack, setCurrentTrack] = useState(null);
+  const [playing, setPlaying] = useState(false);
+  const [search, setSearch] = useState("");
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  async function loadTracks() {
+    try {
+      const data = await api("/api/music");
+      setTracks(normalizeTracks(data));
+    } catch (err) {
+      try {
+        const data = await api("/api/tracks");
+        setTracks(normalizeTracks(data));
+      } catch (secondError) {
+        setError(secondError.message);
+      }
+    }
+  }
+
+  async function loadUser() {
+    try {
+      const data = await api("/api/auth/me");
+      setUser(data.user || null);
+    } catch {
+      setUser(null);
+    }
+  }
+
+  async function loadFavorites() {
+    if (!user) {
+      setFavorites([]);
+      return;
+    }
+
+    try {
+      const data = await api("/api/favorites");
+      setFavorites(normalizeTracks(data));
+    } catch {
+      setFavorites([]);
+    }
+  }
+
+  async function loadHistory() {
+    if (!user) {
+      setHistory([]);
+      return;
+    }
+
+    try {
+      const data = await api("/api/history");
+      setHistory(normalizeTracks(data));
+    } catch {
+      setHistory([]);
+    }
+  }
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      await Promise.all([
+        loadTracks(),
+        loadUser(),
+      ]);
+      setLoading(false);
+    }
+
+    load();
+  }, []);
+
+  useEffect(() => {
+    loadFavorites();
+    loadHistory();
+  }, [user]);
+
+  const favoriteIds = useMemo(
+    () =>
+      new Set(
+        favorites.map((track) =>
+          getTrackId(track)
+        )
+      ),
+    [favorites]
+  );
+
+  const filteredTracks = useMemo(() => {
+    const value = search.trim().toLowerCase();
+
+    if (!value) {
+      return tracks;
+    }
+
+    return tracks.filter((track) => {
+      const title = String(
+        track?.title || ""
+      ).toLowerCase();
+
+      const artist = String(
+        track?.artist_name || ""
+      ).toLowerCase();
+
+      const album = String(
+        track?.album_name || ""
+      ).toLowerCase();
+
+      return (
+        title.includes(value) ||
+        artist.includes(value) ||
+        album.includes(value)
+      );
+    });
+  }, [tracks, search]);
+
+  const popularTracks = useMemo(
+    () =>
+      [...tracks].sort(
+        (a, b) =>
+          Number(b.plays_count || 0) -
+          Number(a.plays_count || 0)
+      ),
+    [tracks]
+  );
+
+  const recentTracks = history.length
+    ? history
+    : tracks.slice(0, 8);
+
+  async function playTrack(track) {
+    setCurrentTrack(track);
+    setPlaying(true);
+
+    try {
+      await api(
+        `/api/tracks/${encodeURIComponent(
+          track.id
+        )}/play`,
+        {
+          method: "POST",
+          body: JSON.stringify({}),
+        }
+      );
+    } catch {
+      // Игнорируем ошибку счётчика.
+    }
+
+    if (user) {
+      try {
+        await api("/api/history", {
+          method: "POST",
+          body: JSON.stringify({
+            track_id: track.id,
+          }),
+        });
+
+        loadHistory();
+      } catch {
+        // История необязательна для запуска плеера.
+      }
+    }
+  }
+
+  function nextTrack() {
+    if (!currentTrack || !tracks.length) {
+      return;
+    }
+
+    const index = tracks.findIndex(
+      (track) =>
+        getTrackId(track) ===
+        getTrackId(currentTrack)
+    );
+
+    const next =
+      tracks[(index + 1) % tracks.length];
+
+    if (next) {
+      playTrack(next);
+    }
+  }
+
+  function previousTrack() {
+    if (!currentTrack || !tracks.length) {
+      return;
+    }
+
+    const index = tracks.findIndex(
+      (track) =>
+        getTrackId(track) ===
+        getTrackId(currentTrack)
+    );
+
+    const previous =
+      tracks[
+        (index - 1 + tracks.length) %
+          tracks.length
+      ];
+
+    if (previous) {
+      playTrack(previous);
+    }
+  }
+
+  async function toggleFavorite(track) {
+    if (!user) {
+      setAuthMode("login");
+      setAuthOpen(true);
+      return;
+    }
+
+    const id = getTrackId(track);
+    const isLiked = favoriteIds.has(id);
+
+    try {
+      if (isLiked) {
+        await api(
+          `/api/favorites/${encodeURIComponent(
+            track.id
+          )}`,
+          {
+            method: "DELETE",
+          }
+        );
+      } else {
+        await api("/api/favorites", {
+          method: "POST",
+          body: JSON.stringify({
+            track_id: track.id,
+          }),
+        });
+      }
+
+      await loadFavorites();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function logout() {
+    try {
+      await api("/api/auth/logout", {
+        method: "POST",
+      });
+    } finally {
+      setUser(null);
+      setFavorites([]);
+      setHistory([]);
+      setPage("home");
+    }
+  }
+
+  function openLogin() {
+    setAuthMode("login");
+    setAuthOpen(true);
+  }
+
+  function openRegister() {
+    setAuthMode("register");
+    setAuthOpen(true);
+  }
+
+  function authSuccess(nextUser) {
+    setUser(nextUser);
+    setAuthOpen(false);
+    setPage("profile");
+  }
+
+  function renderTrackGrid(list, emptyText) {
+    if (!list.length) {
+      return (
+        <div className="empty-state">
+          <div className="empty-icon">♫</div>
+          <h3>{emptyText}</h3>
+          <p>
+            Когда музыка появится, она будет
+            отображаться здесь.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="track-grid">
+        {list.map((track, index) => (
+          <TrackCard
+            key={`${getTrackId(track)}-${index}`}
+            track={track}
+            active={
+              getTrackId(currentTrack) ===
+                getTrackId(track) &&
+              playing
+            }
+            liked={favoriteIds.has(
+              getTrackId(track)
+            )}
+            onPlay={playTrack}
+            onLike={toggleFavorite}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  function renderHome() {
+    return (
+      <>
+        <section className="hero">
+          <div className="hero-content">
+            <span className="hero-label">
+              FENIX MUSIC
             </span>
+
+            <h1>
+              Твоя музыка.
+              <br />
+              Твоя вселенная.
+            </h1>
+
+            <p>
+              Слушай любимые треки, открывай
+              новых исполнителей и создавай
+              собственную коллекцию.
+            </p>
+
+            <div className="hero-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  if (tracks[0]) {
+                    playTrack(tracks[0]);
+                  } else {
+                    setPage("discover");
+                  }
+                }}
+              >
+                ▶ Начать слушать
+              </button>
+
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() =>
+                  setPage("discover")
+                }
+              >
+                Найти музыку
+              </button>
+            </div>
+          </div>
+
+          <div className="hero-glow" />
+        </section>
+
+        <section className="content-section">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">
+                ПЕРСОНАЛЬНО
+              </span>
+              <h2>Для вас</h2>
+            </div>
 
             <button
               type="button"
-              onClick={onRefreshCaptcha}
+              onClick={() =>
+                setPage("discover")
+              }
             >
-              Обновить
+              Все →
             </button>
           </div>
 
-          <div className="captcha-code">
-            {captchaText || "------"}
+          {renderTrackGrid(
+            filteredTracks.slice(0, 8),
+            "Пока нет музыки"
+          )}
+        </section>
+
+        <section className="content-section">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">
+                СЕЙЧАС СЛУШАЮТ
+              </span>
+              <h2>Популярное</h2>
+            </div>
           </div>
 
-          <input
-            value={captchaAnswer}
-            onChange={(event) =>
-              onCaptcha(
-                event.target.value
-              )
-            }
-            placeholder="Введите код"
-            required
-          />
+          {renderTrackGrid(
+            popularTracks.slice(0, 8),
+            "Популярных треков пока нет"
+          )}
+        </section>
+
+        <section className="content-section">
+          <div className="section-heading">
+            <div>
+              <span className="section-kicker">
+                ИСТОРИЯ
+              </span>
+              <h2>Продолжить слушать</h2>
+            </div>
+          </div>
+
+          {renderTrackGrid(
+            recentTracks.slice(0, 8),
+            "История прослушиваний пуста"
+          )}
+        </section>
+      </>
+    );
+  }
+
+  function renderDiscover() {
+    return (
+      <>
+        <div className="page-title">
+          <span className="section-kicker">
+            FENIX MUSIC
+          </span>
+          <h1>Рекомендации</h1>
+          <p>
+            Найди что-нибудь новое для себя.
+          </p>
         </div>
-      )}
 
-      <button
-        className="auth-submit"
-        type="submit"
-      >
-        {register
-          ? "Создать аккаунт"
-          : "Войти"}
-      </button>
-    </form>
+        <div className="search-large">
+          <span>⌕</span>
 
-    <button
-      className="auth-switch"
-      onClick={onChangeMode}
-    >
-      {register
-        ? "Уже есть аккаунт? Войти"
-        : "Нет аккаунта? Зарегистрироваться"}
-    </button>
-  </div>
-</div>
-```
+          <input
+            value={search}
+            onChange={(event) =>
+              setSearch(event.target.value)
+            }
+            placeholder="Поиск треков, артистов и альбомов..."
+          />
 
-);
-}
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch("")}
+            >
+              ×
+            </button>
+          )}
+        </div>
 
-function EmptyState({
-icon,
-title,
-text,
-button,
-onClick,
-}) {
-return ( <div className="empty-state"> <div className="empty-icon">
-{icon} </div>
+        {renderTrackGrid(
+          filteredTracks,
+          search
+            ? "Ничего не найдено"
+            : "Музыка ещё не загружена"
+        )}
+      </>
+    );
+  }
 
-```
-  <h2>{title}</h2>
+  function renderLibrary() {
+    return (
+      <>
+        <div className="page-title">
+          <span className="section-kicker">
+            БИБЛИОТЕКА
+          </span>
+          <h1>Моя музыка</h1>
+          <p>
+            Все доступные треки Fenix Music.
+          </p>
+        </div>
 
-  <p>{text}</p>
+        {renderTrackGrid(
+          tracks,
+          "В библиотеке пока нет треков"
+        )}
+      </>
+    );
+  }
 
-  {button && (
-    <button
-      className="hero-button"
-      onClick={onClick}
-    >
-      {button}
-    </button>
-  )}
-</div>
-```
+  function renderFavorites() {
+    return (
+      <>
+        <div className="page-title">
+          <span className="section-kicker">
+            КОЛЛЕКЦИЯ
+          </span>
+          <h1>Избранное</h1>
+          <p>
+            Треки, которые ты сохранил.
+          </p>
+        </div>
 
-);
-}
+        {!user ? (
+          <div className="login-card">
+            <div className="login-card-icon">
+              ♥
+            </div>
 
-function ComingSoon({
-page,
-tracks,
-onPlay,
-}) {
-const names = {
-artists: "Артисты",
-albums: "Альбомы",
-playlists: "Плейлисты",
-};
+            <h2>Войди в аккаунт</h2>
 
-return ( <section className="page-section"> <PageHeader
-     title={names[page]}
-     subtitle="Музыкальный раздел Fenix Music"
-   />
+            <p>
+              Авторизуйся, чтобы сохранять
+              любимую музыку.
+            </p>
 
-```
-  <div className="coming-card">
-    <div className="coming-logo">
-      FX
-    </div>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={openLogin}
+            >
+              Войти
+            </button>
+          </div>
+        ) : (
+          renderTrackGrid(
+            favorites,
+            "Избранное пока пусто"
+          )
+        )}
+      </>
+    );
+  }
 
-    <h2>
-      {names[page]}
-    </h2>
+  function renderHistory() {
+    return (
+      <>
+        <div className="page-title">
+          <span className="section-kicker">
+            НЕДАВНО
+          </span>
+          <h1>История</h1>
+          <p>
+            Треки, которые ты недавно слушал.
+          </p>
+        </div>
 
-    <p>
-      Раздел подключен к музыкальной
-      системе. Здесь появятся полноценные
-      каталоги после добавления соответствующих
-      данных.
-    </p>
+        {!user ? (
+          <div className="login-card">
+            <div className="login-card-icon">
+              ◷
+            </div>
 
-    {tracks.length > 0 && (
-      <button
-        className="hero-button"
-        onClick={() =>
-          onPlay(tracks[0])
+            <h2>Войди в аккаунт</h2>
+
+            <p>
+              История будет сохраняться после
+              авторизации.
+            </p>
+
+            <button
+              type="button"
+              className="primary-button"
+              onClick={openLogin}
+            >
+              Войти
+            </button>
+          </div>
+        ) : (
+          renderTrackGrid(
+            history,
+            "История пока пуста"
+          )
+        )}
+      </>
+    );
+  }
+
+  function renderProfile() {
+    if (!user) {
+      return (
+        <div className="profile-login">
+          <div className="profile-big-avatar">
+            F
+          </div>
+
+          <h1>Профиль Fenix Music</h1>
+
+          <p>
+            Войди или зарегистрируйся, чтобы
+            получить доступ к профилю.
+          </p>
+
+          <div className="profile-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={openLogin}
+            >
+              Войти
+            </button>
+
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={openRegister}
+            >
+              Регистрация
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="profile-page">
+        <div className="profile-header">
+          <div className="profile-big-avatar">
+            {(user.username || "U")
+              .slice(0, 1)
+              .toUpperCase()}
+          </div>
+
+          <div>
+            <span className="section-kicker">
+              ПРОФИЛЬ
+            </span>
+
+            <h1>{user.username}</h1>
+
+            <p>
+              {user.bio ||
+                "Добро пожаловать в Fenix Music"}
+            </p>
+
+            <span className="profile-email">
+              {user.email}
+            </span>
+          </div>
+        </div>
+
+        <div className="profile-stats">
+          <div>
+            <strong>{tracks.length}</strong>
+            <span>Треков</span>
+          </div>
+
+          <div>
+            <strong>{favorites.length}</strong>
+            <span>Избранных</span>
+          </div>
+
+          <div>
+            <strong>{history.length}</strong>
+            <span>Прослушано</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="logout-button"
+          onClick={logout}
+        >
+          Выйти из аккаунта
+        </button>
+      </div>
+    );
+  }
+
+  function renderPage() {
+    switch (page) {
+      case "discover":
+        return renderDiscover();
+
+      case "library":
+        return renderLibrary();
+
+      case "favorites":
+        return renderFavorites();
+
+      case "history":
+        return renderHistory();
+
+      case "profile":
+        return renderProfile();
+
+      case "home":
+      default:
+        return renderHome();
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="app-loading">
+        <div className="loading-logo">F</div>
+        <div className="loading-name">
+          FENIX MUSIC
+        </div>
+        <div className="loading-line" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <Sidebar
+        page={page}
+        setPage={setPage}
+        user={user}
+        onLogin={openLogin}
+      />
+
+      <main className="main">
+        <header className="topbar">
+          <button
+            type="button"
+            className="mobile-brand"
+            onClick={() => setPage("home")}
+          >
+            <span>F</span>
+            FENIX MUSIC
+          </button>
+
+          <div className="top-search">
+            <span>⌕</span>
+
+            <input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+
+                if (
+                  event.target.value &&
+                  page !== "discover"
+                ) {
+                  setPage("discover");
+                }
+              }}
+              placeholder="Поиск..."
+            />
+          </div>
+
+          <div className="top-actions">
+            {user ? (
+              <button
+                type="button"
+                className="top-profile"
+                onClick={() =>
+                  setPage("profile")
+                }
+              >
+                <div className="avatar">
+                  {(user.username || "U")
+                    .slice(0, 1)
+                    .toUpperCase()}
+                </div>
+                <span>{user.username}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="top-login"
+                onClick={openLogin}
+              >
+                Войти
+              </button>
+            )}
+          </div>
+        </header>
+
+        {error && (
+          <div className="global-error">
+            <span>{error}</span>
+
+            <button
+              type="button"
+              onClick={() => setError("")}
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        <div className="page-content">
+          {renderPage()}
+        </div>
+      </main>
+
+      <Player
+        track={currentTrack}
+        playing={playing}
+        setPlaying={setPlaying}
+        onNext={nextTrack}
+        onPrevious={previousTrack}
+        onLike={toggleFavorite}
+        liked={
+          currentTrack
+            ? favoriteIds.has(
+                getTrackId(currentTrack)
+              )
+            : false
         }
-      >
-        ▶ Слушать музыку
-      </button>
-    )}
-  </div>
-</section>
-```
+      />
 
-);
+      <BottomNav
+        page={page}
+        setPage={setPage}
+      />
+
+      <AuthModal
+        open={authOpen}
+        mode={authMode}
+        setMode={setAuthMode}
+        onClose={() => setAuthOpen(false)}
+        onSuccess={authSuccess}
+      />
+    </div>
+  );
 }
-
-export default App;
