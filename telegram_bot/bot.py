@@ -19,10 +19,18 @@ from .keyboards import main_menu, admin_menu, cancel_menu, after_upload_menu, tr
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 log = logging.getLogger("fenix_music_bot")
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-ADMIN_IDS = {int(x.strip()) for x in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if x.strip().isdigit()}
-bot = Bot(BOT_TOKEN) if BOT_TOKEN else None
+BOT_TOKEN = ""
+ADMIN_IDS = set()
+bot = None
 dp = Dispatcher()
+
+def load_config():
+    global BOT_TOKEN, ADMIN_IDS, bot
+    BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    ADMIN_IDS = {int(x.strip()) for x in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if x.strip().isdigit()}
+    if not BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
+    bot = Bot(BOT_TOKEN)
 
 
 class States(StatesGroup):
@@ -188,6 +196,22 @@ async def save_telegram_audio(message: Message, original_name: str, tg_file, sta
         await state.clear()
 
 
+@dp.message(F.audio)
+async def audio_without_upload_mode(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    await message.answer("🎵 Файл получен. Сначала открой /admin → ➕ Добавить песню, затем отправь MP3 ещё раз.")
+
+
+@dp.message(F.document)
+async def document_without_upload_mode(message: Message):
+    if not is_admin(message.from_user.id):
+        return
+    name = message.document.file_name or ""
+    if Path(name).suffix.lower() in {".mp3", ".m4a", ".aac", ".ogg", ".wav", ".flac", ".opus"}:
+        await message.answer("🎵 Файл получен. Открой /admin → ➕ Добавить песню и отправь этот файл ещё раз.")
+
+
 @dp.callback_query(F.data.startswith("cover:"))
 async def cover_start(c: CallbackQuery, state: FSMContext):
     if not is_admin(c.from_user.id): await c.answer("⛔ Доступ запрещён", show_alert=True); return
@@ -285,11 +309,17 @@ async def cancel(c: CallbackQuery, state: FSMContext):
 
 
 async def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
-    log.info("[BOT] Starting FENIX MUSIC Telegram Bot")
+    global bot
+    load_config()
+    me = await bot.get_me()
+    log.info("[BOT] Starting FENIX MUSIC Telegram Bot: @%s (id=%s)", me.username, me.id)
     log.info("[BOT] Admin IDs: %s", sorted(ADMIN_IDS))
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    # Polling cannot start while an old webhook is active.
+    await bot.delete_webhook(drop_pending_updates=False)
+    try:
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    finally:
+        await bot.session.close()
 
 
 if __name__ == "__main__":
