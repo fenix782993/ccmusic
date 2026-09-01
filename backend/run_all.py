@@ -24,12 +24,12 @@ async def run_api():
 
 
 async def run_bot():
-    from telegram_bot.bot import main as bot_main
+    from backend.telegram_bot.bot import main as bot_main
     await bot_main()
 
 
 async def main():
-    print("[RUN_ALL] Starting FENIX MUSIC API + Telegram Bot")
+    print("[RUN_ALL] Starting FENIX MUSIC API + Telegram Bot", flush=True)
     await asyncio.gather(run_api(), run_bot())
 
 
