@@ -1,3 +1,4 @@
+```js
 "use strict";
 
 const fs = require("fs");
@@ -5,587 +6,879 @@ const path = require("path");
 const crypto = require("crypto");
 const { pipeline } = require("stream/promises");
 
-const MUSIC_DIR = path.join(__dirname, "..", "storage", "music");
-const COVERS_DIR = path.join(__dirname, "..", "storage", "covers");
+/*
+=========================================================
+FENIX MUSIC — MUSIC STORAGE
+=========================================================
+
+Этот модуль отвечает только за физические аудиофайлы.
+
+Хранилище:
+
+    backend/
+    └── storage/
+        └── music/
+
+Файлы НЕ хранятся в PostgreSQL.
+
+PostgreSQL хранит:
+    audio_url
+
+Например:
+
+    /api/tracks/15/audio
+
+При запросе backend отдаёт настоящий MP3-файл.
+
+Поддерживается:
+    - MP3
+    - WAV
+    - OGG
+    - M4A
+    - AAC
+    - FLAC
+    - WEBM
+
+Поддерживается HTTP Range:
+    bytes=0-1024
+
+Это важно для:
+    - перемотки
+    - продолжения воспроизведения
+    - мобильного Safari
+    - Chrome
+    - Firefox
+    - HTML5 Audio
+=========================================================
+*/
+
+
+// =======================================================
+// PATHS
+// =======================================================
+
+const STORAGE_ROOT =
+  process.env.MUSIC_STORAGE_PATH ||
+  path.join(
+    __dirname,
+    "..",
+    "storage",
+    "music"
+  );
+
+
+// =======================================================
+// SUPPORTED FORMATS
+// =======================================================
+
+const MIME_TYPES = {
+  ".mp3": "audio/mpeg",
+  ".mpeg": "audio/mpeg",
+  ".mp4": "audio/mp4",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".opus": "audio/ogg",
+  ".webm": "audio/webm",
+  ".flac": "audio/flac",
+};
+
+
+// =======================================================
+// INIT STORAGE
+// =======================================================
 
 function ensureStorage() {
-  fs.mkdirSync(MUSIC_DIR, { recursive: true });
-  fs.mkdirSync(COVERS_DIR, { recursive: true });
+  fs.mkdirSync(
+    STORAGE_ROOT,
+    {
+      recursive: true,
+    }
+  );
+
+  return STORAGE_ROOT;
 }
 
-ensureStorage();
 
-const AUDIO_EXTENSIONS = new Set([
-  ".mp3",
-  ".wav",
-  ".ogg",
-  ".oga",
-  ".m4a",
-  ".aac",
-  ".flac",
-  ".webm"
-]);
+// =======================================================
+// SAFE EXTENSION
+// =======================================================
 
-const IMAGE_EXTENSIONS = new Set([
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".webp"
-]);
+function getExtension(filename = "") {
+  const ext = path
+    .extname(filename)
+    .toLowerCase();
 
-function cleanName(value, fallback = "file") {
-  return String(value || fallback)
-    .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "")
-    .replace(/\s+/g, "_")
-    .slice(0, 120) || fallback;
-}
-
-function extensionFromName(name, fallback = ".bin") {
-  const ext = path.extname(String(name || "")).toLowerCase();
-
-  if (!ext) {
-    return fallback;
+  if (!MIME_TYPES[ext]) {
+    return ".mp3";
   }
 
   return ext;
 }
 
-function isAudioFile(filename) {
-  return AUDIO_EXTENSIONS.has(
-    extensionFromName(filename)
+
+// =======================================================
+// MIME
+// =======================================================
+
+function getMimeType(filename = "") {
+  const ext =
+    path.extname(filename)
+      .toLowerCase();
+
+  return (
+    MIME_TYPES[ext] ||
+    "application/octet-stream"
   );
 }
 
-function isImageFile(filename) {
-  return IMAGE_EXTENSIONS.has(
-    extensionFromName(filename)
+
+// =======================================================
+// SAFE FILE NAME
+// =======================================================
+
+function safeFilename(filename = "") {
+  const ext =
+    getExtension(filename);
+
+  return (
+    crypto
+      .randomBytes(24)
+      .toString("hex") +
+    ext
   );
 }
 
-function makeId() {
-  return crypto.randomBytes(16).toString("hex");
-}
 
-function audioFilePath(filename) {
-  return path.join(MUSIC_DIR, filename);
-}
+// =======================================================
+// FILE PATH
+// =======================================================
 
-function coverFilePath(filename) {
-  return path.join(COVERS_DIR, filename);
-}
-
-function audioUrl(filename) {
-  return `/media/music/${encodeURIComponent(filename)}`;
-}
-
-function coverUrl(filename) {
-  return `/media/covers/${encodeURIComponent(filename)}`;
-}
-
-/*
- * Сохраняет Buffer с аудиофайлом.
- */
-async function saveAudioBuffer(buffer, originalName) {
-  if (!Buffer.isBuffer(buffer)) {
-    throw new Error("Audio buffer is required");
-  }
-
-  const ext = extensionFromName(
-    originalName,
-    ".mp3"
-  );
-
-  if (!AUDIO_EXTENSIONS.has(ext)) {
-    throw new Error(
-      `Неподдерживаемый формат аудио: ${ext}`
-    );
-  }
-
-  const filename =
-    `${Date.now()}_${makeId()}` +
-    ext;
-
-  const destination =
-    audioFilePath(filename);
-
-  await fs.promises.writeFile(
-    destination,
-    buffer
-  );
-
-  return {
-    filename,
-    path: destination,
-    url: audioUrl(filename),
-    size: buffer.length
-  };
-}
-
-/*
- * Сохраняет аудио из обычного Readable stream.
- */
-async function saveAudioStream(
-  stream,
-  originalName
-) {
-  if (!stream) {
-    throw new Error("Audio stream is required");
-  }
-
-  const ext = extensionFromName(
-    originalName,
-    ".mp3"
-  );
-
-  if (!AUDIO_EXTENSIONS.has(ext)) {
-    throw new Error(
-      `Неподдерживаемый формат аудио: ${ext}`
-    );
-  }
-
-  const filename =
-    `${Date.now()}_${makeId()}` +
-    ext;
-
-  const destination =
-    audioFilePath(filename);
-
-  await pipeline(
-    stream,
-    fs.createWriteStream(destination)
-  );
-
-  const stat =
-    await fs.promises.stat(destination);
-
-  return {
-    filename,
-    path: destination,
-    url: audioUrl(filename),
-    size: stat.size
-  };
-}
-
-/*
- * Сохраняет обложку.
- */
-async function saveCoverBuffer(
-  buffer,
-  originalName
-) {
-  if (!Buffer.isBuffer(buffer)) {
-    throw new Error("Cover buffer is required");
-  }
-
-  const ext = extensionFromName(
-    originalName,
-    ".jpg"
-  );
-
-  if (!IMAGE_EXTENSIONS.has(ext)) {
-    throw new Error(
-      `Неподдерживаемый формат изображения: ${ext}`
-    );
-  }
-
-  const filename =
-    `${Date.now()}_${makeId()}` +
-    ext;
-
-  const destination =
-    coverFilePath(filename);
-
-  await fs.promises.writeFile(
-    destination,
-    buffer
-  );
-
-  return {
-    filename,
-    path: destination,
-    url: coverUrl(filename),
-    size: buffer.length
-  };
-}
-
-/*
- * Удаление аудио.
- */
-async function deleteAudio(filename) {
-  if (!filename) {
-    return false;
-  }
-
-  const safeFilename =
-    path.basename(filename);
-
-  const file =
-    audioFilePath(safeFilename);
-
-  try {
-    await fs.promises.unlink(file);
-    return true;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return false;
-    }
-
-    throw error;
-  }
-}
-
-/*
- * Удаление обложки.
- */
-async function deleteCover(filename) {
-  if (!filename) {
-    return false;
-  }
-
-  const safeFilename =
-    path.basename(filename);
-
-  const file =
-    coverFilePath(safeFilename);
-
-  try {
-    await fs.promises.unlink(file);
-    return true;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return false;
-    }
-
-    throw error;
-  }
-}
-
-/*
- * Проверяет существование файла.
- */
-async function audioExists(filename) {
-  if (!filename) {
-    return false;
-  }
-
-  try {
-    await fs.promises.access(
-      audioFilePath(path.basename(filename)),
-      fs.constants.F_OK
-    );
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function coverExists(filename) {
-  if (!filename) {
-    return false;
-  }
-
-  try {
-    await fs.promises.access(
-      coverFilePath(path.basename(filename)),
-      fs.constants.F_OK
-    );
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/*
- * Возвращает абсолютный путь к аудио,
- * только если файл реально существует.
- */
-async function resolveAudioPath(filename) {
-  if (!filename) {
-    return null;
-  }
-
-  const safeFilename =
-    path.basename(filename);
-
-  if (!(await audioExists(safeFilename))) {
-    return null;
-  }
-
-  return audioFilePath(safeFilename);
-}
-
-/*
- * Возвращает абсолютный путь к обложке.
- */
-async function resolveCoverPath(filename) {
-  if (!filename) {
-    return null;
-  }
-
-  const safeFilename =
-    path.basename(filename);
-
-  if (!(await coverExists(safeFilename))) {
-    return null;
-  }
-
-  return coverFilePath(safeFilename);
-}
-
-/*
- * Информация о хранилище.
- */
-async function storageInfo() {
+function getFilePath(filename) {
   ensureStorage();
 
-  const musicFiles =
-    await fs.promises.readdir(MUSIC_DIR);
+  const clean =
+    path.basename(filename);
 
-  const coverFiles =
-    await fs.promises.readdir(COVERS_DIR);
+  const full =
+    path.resolve(
+      STORAGE_ROOT,
+      clean
+    );
 
-  let musicSize = 0;
-  let coverSize = 0;
+  const root =
+    path.resolve(
+      STORAGE_ROOT
+    );
 
-  for (const filename of musicFiles) {
+  if (
+    full !== root &&
+    !full.startsWith(
+      root + path.sep
+    )
+  ) {
+    throw new Error(
+      "Invalid music file path"
+    );
+  }
+
+  return full;
+}
+
+
+// =======================================================
+// SAVE BUFFER
+// =======================================================
+
+async function saveBuffer(
+  buffer,
+  originalName = "audio.mp3"
+) {
+  if (
+    !buffer ||
+    !Buffer.isBuffer(buffer)
+  ) {
+    throw new TypeError(
+      "saveBuffer expects Buffer"
+    );
+  }
+
+  ensureStorage();
+
+  const filename =
+    safeFilename(
+      originalName
+    );
+
+  const filepath =
+    getFilePath(
+      filename
+    );
+
+  await fs.promises.writeFile(
+    filepath,
+    buffer
+  );
+
+  return {
+    filename,
+    filepath,
+    size: buffer.length,
+    mime: getMimeType(
+      filename
+    ),
+  };
+}
+
+
+// =======================================================
+// SAVE STREAM
+// =======================================================
+
+async function saveStream(
+  stream,
+  originalName = "audio.mp3"
+) {
+  ensureStorage();
+
+  const filename =
+    safeFilename(
+      originalName
+    );
+
+  const filepath =
+    getFilePath(
+      filename
+    );
+
+  const output =
+    fs.createWriteStream(
+      filepath
+    );
+
+  try {
+    await pipeline(
+      stream,
+      output
+    );
+  } catch (error) {
+
     try {
-      const stat =
-        await fs.promises.stat(
-          audioFilePath(filename)
+      await fs.promises.unlink(
+        filepath
+      );
+    } catch {}
+
+    throw error;
+  }
+
+  const stat =
+    await fs.promises.stat(
+      filepath
+    );
+
+  return {
+    filename,
+    filepath,
+    size: stat.size,
+    mime: getMimeType(
+      filename
+    ),
+  };
+}
+
+
+// =======================================================
+// SAVE TELEGRAM FILE
+// =======================================================
+
+async function saveFromUrl(
+  url,
+  originalName = "audio.mp3"
+) {
+  if (!url) {
+    throw new Error(
+      "Audio URL is required"
+    );
+  }
+
+  const response =
+    await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      `Audio download failed: ${response.status}`
+    );
+  }
+
+  if (!response.body) {
+    throw new Error(
+      "Audio response has no body"
+    );
+  }
+
+  return saveStream(
+    response.body,
+    originalName
+  );
+}
+
+
+// =======================================================
+// CHECK FILE
+// =======================================================
+
+async function fileExists(
+  filename
+) {
+  try {
+
+    const filepath =
+      getFilePath(
+        filename
+      );
+
+    await fs.promises.access(
+      filepath,
+      fs.constants.F_OK
+    );
+
+    return true;
+
+  } catch {
+    return false;
+  }
+}
+
+
+// =======================================================
+// FILE INFO
+// =======================================================
+
+async function getFileInfo(
+  filename
+) {
+  const filepath =
+    getFilePath(
+      filename
+    );
+
+  const stat =
+    await fs.promises.stat(
+      filepath
+    );
+
+  return {
+    filename,
+    filepath,
+    size: stat.size,
+    mime: getMimeType(
+      filename
+    ),
+    createdAt:
+      stat.birthtime,
+    modifiedAt:
+      stat.mtime,
+  };
+}
+
+
+// =======================================================
+// DELETE
+// =======================================================
+
+async function deleteFile(
+  filename
+) {
+  const filepath =
+    getFilePath(
+      filename
+    );
+
+  try {
+
+    await fs.promises.unlink(
+      filepath
+    );
+
+    return true;
+
+  } catch (error) {
+
+    if (
+      error.code ===
+      "ENOENT"
+    ) {
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+
+// =======================================================
+// STREAM AUDIO
+// =======================================================
+
+async function streamAudio(
+  req,
+  res,
+  filename
+) {
+  try {
+
+    const filepath =
+      getFilePath(
+        filename
+      );
+
+    const stat =
+      await fs.promises.stat(
+        filepath
+      );
+
+    const size =
+      stat.size;
+
+    const mime =
+      getMimeType(
+        filename
+      );
+
+    res.setHeader(
+      "Content-Type",
+      mime
+    );
+
+    res.setHeader(
+      "Accept-Ranges",
+      "bytes"
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=31536000, immutable"
+    );
+
+    /*
+    =====================================================
+    NO RANGE
+    =====================================================
+    */
+
+    if (!req.headers.range) {
+
+      res.setHeader(
+        "Content-Length",
+        size
+      );
+
+      res.status(200);
+
+      const stream =
+        fs.createReadStream(
+          filepath
         );
 
-      if (stat.isFile()) {
-        musicSize += stat.size;
-      }
-    } catch {}
-  }
+      stream.on(
+        "error",
+        (error) => {
+          console.error(
+            "Audio stream error:",
+            error
+          );
 
-  for (const filename of coverFiles) {
-    try {
-      const stat =
-        await fs.promises.stat(
-          coverFilePath(filename)
+          if (!res.headersSent) {
+            res.status(500);
+          }
+
+          res.end();
+        }
+      );
+
+      stream.pipe(res);
+
+      return;
+    }
+
+
+    /*
+    =====================================================
+    RANGE
+    =====================================================
+    */
+
+    const range =
+      req.headers.range;
+
+    const match =
+      range.match(
+        /bytes=(\d*)-(\d*)/
+      );
+
+    if (!match) {
+
+      res.status(416);
+
+      res.setHeader(
+        "Content-Range",
+        `bytes */${size}`
+      );
+
+      res.end();
+
+      return;
+    }
+
+    let start =
+      match[1] === ""
+        ? null
+        : Number(match[1]);
+
+    let end =
+      match[2] === ""
+        ? null
+        : Number(match[2]);
+
+
+    /*
+    bytes=-500
+    */
+
+    if (
+      start === null &&
+      end !== null
+    ) {
+      const length =
+        Math.min(
+          end,
+          size
         );
 
-      if (stat.isFile()) {
-        coverSize += stat.size;
+      start =
+        size - length;
+
+      end =
+        size - 1;
+    }
+
+
+    /*
+    bytes=500-
+    */
+
+    if (
+      start !== null &&
+      end === null
+    ) {
+      end =
+        size - 1;
+    }
+
+
+    /*
+    Validate
+    */
+
+    if (
+      start === null ||
+      end === null ||
+      start < 0 ||
+      end < start ||
+      start >= size
+    ) {
+
+      res.status(416);
+
+      res.setHeader(
+        "Content-Range",
+        `bytes */${size}`
+      );
+
+      res.end();
+
+      return;
+    }
+
+
+    /*
+    Clamp end
+    */
+
+    end =
+      Math.min(
+        end,
+        size - 1
+      );
+
+    const chunkSize =
+      end - start + 1;
+
+
+    /*
+    Headers
+    */
+
+    res.status(206);
+
+    res.setHeader(
+      "Content-Length",
+      chunkSize
+    );
+
+    res.setHeader(
+      "Content-Range",
+      `bytes ${start}-${end}/${size}`
+    );
+
+
+    /*
+    Stream
+    */
+
+    const stream =
+      fs.createReadStream(
+        filepath,
+        {
+          start,
+          end,
+        }
+      );
+
+    stream.on(
+      "error",
+      (error) => {
+        console.error(
+          "Audio range stream error:",
+          error
+        );
+
+        if (!res.headersSent) {
+          res.status(500);
+        }
+
+        res.end();
       }
-    } catch {}
+    );
+
+    stream.pipe(res);
+
+  } catch (error) {
+
+    if (
+      error.code ===
+      "ENOENT"
+    ) {
+
+      if (!res.headersSent) {
+        res.status(404).json({
+          ok: false,
+          error:
+            "Аудиофайл не найден",
+        });
+      }
+
+      return;
+    }
+
+    console.error(
+      "streamAudio error:",
+      error
+    );
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка чтения аудиофайла",
+      });
+    }
   }
-
-  return {
-    musicFiles: musicFiles.length,
-    coverFiles: coverFiles.length,
-    musicBytes: musicSize,
-    coverBytes: coverSize,
-    totalBytes: musicSize + coverSize
-  };
 }
 
-/*
- * Нормализует данные трека перед записью в БД.
- *
- * audioFile и coverFile приходят из saveAudioBuffer/
- * saveAudioStream/saveCoverBuffer.
- */
-function buildTrackData({
-  title,
-  artistName,
-  albumName,
-  duration,
-  audioFile,
-  coverFile
-}) {
-  return {
-    title:
-      String(title || "Без названия")
-        .trim()
-        .slice(0, 255),
 
-    artist_name:
-      String(artistName || "Unknown")
-        .trim()
-        .slice(0, 255),
+// =======================================================
+// LIST FILES
+// =======================================================
 
-    album_name:
-      String(albumName || "")
-        .trim()
-        .slice(0, 255),
+async function listFiles() {
+  ensureStorage();
 
-    duration:
-      Math.max(
-        0,
-        Number.parseInt(duration, 10) || 0
-      ),
+  const entries =
+    await fs.promises.readdir(
+      STORAGE_ROOT,
+      {
+        withFileTypes: true,
+      }
+    );
 
-    audio_filename:
-      audioFile?.filename || null,
+  const result = [];
 
-    audio_url:
-      audioFile?.url || "",
+  for (
+    const entry of entries
+  ) {
 
-    cover_filename:
-      coverFile?.filename || null,
+    if (!entry.isFile()) {
+      continue;
+    }
 
-    cover_url:
-      coverFile?.url || ""
-  };
-}
+    const ext =
+      path.extname(
+        entry.name
+      ).toLowerCase();
 
-/*
- * Приводит строку из PostgreSQL к данным,
- * которые ожидает frontend.
- */
-function normalizeTrack(track) {
-  if (!track) {
-    return null;
-  }
+    if (
+      !MIME_TYPES[ext]
+    ) {
+      continue;
+    }
 
-  return {
-    ...track,
+    const filepath =
+      path.join(
+        STORAGE_ROOT,
+        entry.name
+      );
 
-    id: track.id != null
-      ? String(track.id)
-      : track.id,
+    const stat =
+      await fs.promises.stat(
+        filepath
+      );
 
-    title:
-      track.title || "Без названия",
+    result.push({
+      filename:
+        entry.name,
 
-    artist_name:
-      track.artist_name || "Unknown",
+      size:
+        stat.size,
 
-    album_name:
-      track.album_name || "",
+      mime:
+        getMimeType(
+          entry.name
+        ),
 
-    cover_url:
-      track.cover_url || "",
-
-    audio_url:
-      track.audio_url || "",
-
-    duration:
-      Number(track.duration || 0),
-
-    plays_count:
-      Number(track.plays_count || 0)
-  };
-}
-
-/*
- * Добавляет middleware для статических
- * музыкальных файлов.
- *
- * Использование в index.js:
- *
- * const {
- *   createMusicMiddleware
- * } = require("./music");
- *
- * app.use(
- *   "/media/music",
- *   createMusicMiddleware()
- * );
- */
-function createMusicMiddleware() {
-  const express = require("express");
-
-  return express.static(MUSIC_DIR, {
-    fallthrough: false,
-    index: false,
-    maxAge: "1h"
-  });
-}
-
-/*
- * Middleware для обложек.
- */
-function createCoverMiddleware() {
-  const express = require("express");
-
-  return express.static(COVERS_DIR, {
-    fallthrough: false,
-    index: false,
-    maxAge: "1h"
-  });
-}
-
-/*
- * Удобная функция для удаления
- * файлов, если создание трека
- * в PostgreSQL завершилось ошибкой.
- */
-async function cleanupFiles({
-  audioFilename,
-  coverFilename
-} = {}) {
-  const result = {
-    audioDeleted: false,
-    coverDeleted: false
-  };
-
-  if (audioFilename) {
-    result.audioDeleted =
-      await deleteAudio(audioFilename);
-  }
-
-  if (coverFilename) {
-    result.coverDeleted =
-      await deleteCover(coverFilename);
+      modifiedAt:
+        stat.mtime,
+    });
   }
 
   return result;
 }
 
-/*
- * Экспортируем всё, что понадобится
- * src/index.js и боту.
- */
-module.exports = {
-  MUSIC_DIR,
-  COVERS_DIR,
 
-  AUDIO_EXTENSIONS,
-  IMAGE_EXTENSIONS,
+// =======================================================
+// STORAGE STATS
+// =======================================================
+
+async function storageStats() {
+  const files =
+    await listFiles();
+
+  let total =
+    0;
+
+  for (
+    const file of files
+  ) {
+    total +=
+      Number(
+        file.size || 0
+      );
+  }
+
+  return {
+    files:
+      files.length,
+
+    bytes:
+      total,
+
+    megabytes:
+      Number(
+        (
+          total /
+          1024 /
+          1024
+        ).toFixed(2)
+      ),
+  };
+}
+
+
+// =======================================================
+// PUBLIC URL
+// =======================================================
+
+function audioUrl(
+  filename,
+  baseUrl = ""
+) {
+  if (!filename) {
+    return "";
+  }
+
+  const clean =
+    path.basename(
+      filename
+    );
+
+  const prefix =
+    String(
+      baseUrl || ""
+    ).replace(
+      /\/$/,
+      ""
+    );
+
+  return (
+    prefix +
+    "/api/music/" +
+    encodeURIComponent(
+      clean
+    )
+  );
+}
+
+
+// =======================================================
+// EXPORT
+// =======================================================
+
+module.exports = {
+  STORAGE_ROOT,
+
+  MIME_TYPES,
 
   ensureStorage,
 
-  cleanName,
-  extensionFromName,
+  getExtension,
 
-  isAudioFile,
-  isImageFile,
+  getMimeType,
 
-  makeId,
+  safeFilename,
 
-  audioFilePath,
-  coverFilePath,
+  getFilePath,
+
+  saveBuffer,
+
+  saveStream,
+
+  saveFromUrl,
+
+  fileExists,
+
+  getFileInfo,
+
+  deleteFile,
+
+  streamAudio,
+
+  listFiles,
+
+  storageStats,
 
   audioUrl,
-  coverUrl,
-
-  saveAudioBuffer,
-  saveAudioStream,
-  saveCoverBuffer,
-
-  deleteAudio,
-  deleteCover,
-
-  audioExists,
-  coverExists,
-
-  resolveAudioPath,
-  resolveCoverPath,
-
-  storageInfo,
-
-  buildTrackData,
-  normalizeTrack,
-
-  createMusicMiddleware,
-  createCoverMiddleware,
-
-  cleanupFiles
 };
+```
