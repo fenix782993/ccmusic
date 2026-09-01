@@ -1,4 +1,3 @@
-```python
 import os
 import re
 import uuid
@@ -2074,4 +2073,3 @@ def frontend_fallback(
         status_code=404,
         detail="Frontend not found",
     )
-```
