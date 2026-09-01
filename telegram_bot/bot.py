@@ -10,525 +10,286 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, FSInputFile, Message
-from sqlalchemy import func
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from sqlalchemy import func, or_
 
-from backend.server import (
-    SessionLocal,
-    Track,
-    User,
-    scan_music,
-    MUSIC_DIR,
-    COVER_DIR,
-)
-from backend.telegram_bot.keyboards import (
-    main_menu,
-    admin_menu,
-    cancel_menu,
-    after_upload_menu,
-    track_menu,
-)
+from backend.server import SessionLocal, Track, User, scan_music, MUSIC_DIR, COVER_DIR, normalize_saved_path, metadata_from_file
+from .keyboards import main_menu, admin_menu, cancel_menu, after_upload_menu, track_menu
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 log = logging.getLogger("fenix_music_bot")
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-
-# Comma-separated Telegram numeric IDs:
-# TELEGRAM_ADMIN_IDS=123456789,987654321
-ADMIN_IDS = {
-    int(x.strip())
-    for x in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",")
-    if x.strip().isdigit()
-}
-
-if not BOT_TOKEN:
-    log.warning("TELEGRAM_BOT_TOKEN is not set. Bot cannot start.")
-
+ADMIN_IDS = {int(x.strip()) for x in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if x.strip().isdigit()}
 bot = Bot(BOT_TOKEN) if BOT_TOKEN else None
 dp = Dispatcher()
 
 
-class UploadStates(StatesGroup):
+class States(StatesGroup):
     waiting_audio = State()
     waiting_cover = State()
-    waiting_title = State()
-    waiting_artist = State()
-    waiting_album = State()
-    waiting_genre = State()
+    waiting_search = State()
+    waiting_edit = State()
 
 
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
+def is_admin(uid: int) -> bool:
+    return uid in ADMIN_IDS
 
 
-def get_db():
+def db():
     return SessionLocal()
 
 
-def clean_text(value: Optional[str], fallback: str) -> str:
-    value = (value or "").strip()
-    return value or fallback
-
-
-def parse_filename(filename: str):
-    stem = Path(filename).stem
-    if " - " in stem:
-        artist, title = stem.split(" - ", 1)
-        return clean_text(artist, "Unknown Artist"), clean_text(title, "Unknown Track")
-    return "Unknown Artist", clean_text(stem, "Unknown Track")
-
-
-def metadata_from_file(path: Path):
-    artist, title = parse_filename(path.name)
-    album = "Unknown Album"
-    genre = ""
-    duration = 0
-    try:
-        from mutagen import File as MutagenFile
-        audio = MutagenFile(str(path), easy=False)
-        if audio:
-            duration = int(float(getattr(audio.info, "length", 0) or 0))
-            tags = audio.tags
-            if tags:
-                def tag(*names):
-                    for name in names:
-                        if name in tags:
-                            v = tags[name]
-                            return str(v[0] if isinstance(v, list) else v)
-                    return None
-                artist = clean_text(tag("artist", "ARTIST", "\xa9ART"), artist)
-                title = clean_text(tag("title", "TITLE", "\xa9nam"), title)
-                album = clean_text(tag("album", "ALBUM", "\xa9alb"), album)
-                genre = clean_text(tag("genre", "GENRE", "\xa9gen"), "")
-    except Exception as exc:
-        log.warning("Metadata read failed: %s", exc)
-    return title, artist, album, genre, duration
-
-
-def find_track(db, track_id: int):
-    return db.query(Track).filter(Track.id == track_id).first()
-
-
-def format_duration(seconds: int) -> str:
+def fmt(seconds: int) -> str:
     seconds = int(seconds or 0)
     return f"{seconds // 60}:{seconds % 60:02d}"
 
 
-def track_text(track: Track) -> str:
-    return (
-        f"🎵 <b>{track.title}</b>\n"
-        f"👤 {track.artist or 'Unknown Artist'}\n"
-        f"💿 {track.album or 'Unknown Album'}\n"
-        f"🎼 {track.genre or '—'}\n"
-        f"⏱ {format_duration(track.duration)}\n"
-        f"▶️ Прослушиваний: {track.plays or 0}"
-    )
+def track_text(t: Track) -> str:
+    return (f"🎵 <b>{t.title}</b>\n"
+            f"👤 {t.artist}\n"
+            f"💿 {t.album}\n"
+            f"🎼 {t.genre or 'Pop'}\n"
+            f"⏱ {fmt(t.duration)}\n"
+            f"▶️ Прослушиваний: {t.plays or 0}")
+
+
+def list_keyboard(rows):
+    buttons = [[InlineKeyboardButton(text=f"🎵 {t.title[:35]} — {t.artist[:25]}", callback_data=f"track:{t.id}")] for t in rows]
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 @dp.message(CommandStart())
 async def start(message: Message):
-    text = (
-        "🔥 <b>FENIX MUSIC</b>\n\n"
-        "Музыкальный бот проекта.\n"
-        "Здесь можно управлять музыкой и добавлять новые треки.\n\n"
+    await message.answer(
+        "🔥 <b>FENIX MUSIC</b>\n\n🎧 Управление музыкальной библиотекой.",
+        reply_markup=main_menu(is_admin(message.from_user.id)),
     )
-    if is_admin(message.from_user.id):
-        text += "🔐 У тебя есть доступ администратора."
-    else:
-        text += "🎧 Добро пожаловать!"
-    await message.answer(text, reply_markup=main_menu())
 
 
 @dp.message(Command("admin"))
-async def admin_command(message: Message):
+async def admin_cmd(message: Message):
     if not is_admin(message.from_user.id):
         await message.answer("⛔ Доступ запрещён.")
         return
-    await message.answer(
-        "⚙️ <b>Админ-панель FENIX MUSIC</b>",
-        reply_markup=admin_menu(),
-    )
+    await message.answer("⚙️ <b>Админ-панель FENIX MUSIC</b>", reply_markup=admin_menu())
 
 
 @dp.callback_query(F.data == "home")
-async def home(callback: CallbackQuery, state: FSMContext):
+async def home(c: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(
-        "🔥 <b>FENIX MUSIC</b>\n\nВыбери действие:",
-        reply_markup=main_menu(),
-    )
-    await callback.answer()
+    await c.message.edit_text("🔥 <b>FENIX MUSIC</b>\n\nВыбери действие:", reply_markup=main_menu(is_admin(c.from_user.id)))
+    await c.answer()
 
 
 @dp.callback_query(F.data == "admin")
-async def admin_panel(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    await callback.message.edit_text(
-        "⚙️ <b>Админ-панель</b>\n\n"
-        "Управление музыкой FENIX MUSIC.",
-        reply_markup=admin_menu(),
-    )
-    await callback.answer()
+async def admin(c: CallbackQuery):
+    if not is_admin(c.from_user.id):
+        await c.answer("⛔ Доступ запрещён", show_alert=True); return
+    await c.message.edit_text("⚙️ <b>Админ-панель</b>\n\nУправление музыкой.", reply_markup=admin_menu())
+    await c.answer()
 
 
 @dp.callback_query(F.data == "stats")
-async def stats(callback: CallbackQuery):
-    db = get_db()
+async def stats(c: CallbackQuery):
+    if not is_admin(c.from_user.id):
+        await c.answer("⛔ Доступ запрещён", show_alert=True); return
+    d = db()
     try:
-        users = db.query(func.count(User.id)).scalar() or 0
-        tracks = db.query(func.count(Track.id)).scalar() or 0
-        plays = db.query(func.coalesce(func.sum(Track.plays), 0)).scalar() or 0
-        await callback.message.edit_text(
-            "📊 <b>FENIX MUSIC — статистика</b>\n\n"
-            f"👥 Пользователей: <b>{users}</b>\n"
-            f"🎵 Песен: <b>{tracks}</b>\n"
-            f"▶️ Прослушиваний: <b>{plays}</b>",
-            reply_markup=admin_menu() if is_admin(callback.from_user.id) else main_menu(),
-        )
+        users = d.query(func.count(User.id)).scalar() or 0
+        tracks = d.query(func.count(Track.id)).scalar() or 0
+        plays = d.query(func.coalesce(func.sum(Track.plays), 0)).scalar() or 0
+        await c.message.edit_text(f"📊 <b>Статистика</b>\n\n👥 Пользователей: <b>{users}</b>\n🎵 Песен: <b>{tracks}</b>\n▶️ Прослушиваний: <b>{plays}</b>", reply_markup=admin_menu())
     finally:
-        db.close()
-    await callback.answer()
+        d.close()
+    await c.answer()
 
 
 @dp.callback_query(F.data.in_({"music", "new", "popular"}))
-async def list_tracks(callback: CallbackQuery):
-    db = get_db()
+async def music_list(c: CallbackQuery):
+    d = db()
     try:
-        query = db.query(Track)
-        if callback.data == "popular":
-            query = query.order_by(Track.plays.desc(), Track.id.desc())
-            title = "🔥 <b>Популярные песни</b>"
-        elif callback.data == "new":
-            query = query.order_by(Track.created_at.desc(), Track.id.desc())
-            title = "🆕 <b>Новые песни</b>"
+        q = d.query(Track)
+        if c.data == "popular":
+            q = q.order_by(Track.plays.desc(), Track.id.desc()); title = "🔥 <b>Популярные</b>"
+        elif c.data == "new":
+            q = q.order_by(Track.created_at.desc(), Track.id.desc()); title = "🆕 <b>Новые</b>"
         else:
-            query = query.order_by(Track.id.desc())
-            title = "🎵 <b>Все песни</b>"
-        tracks = query.limit(30).all()
-        if not tracks:
-            text = title + "\n\nПока песен нет."
-            await callback.message.edit_text(
-                text,
-                reply_markup=admin_menu() if is_admin(callback.from_user.id) else main_menu(),
-            )
-            return
-        buttons = []
-        for track in tracks:
-            buttons.append([
-                __import__("aiogram").types.InlineKeyboardButton(
-                    text=f"🎵 {track.title[:35]} — {track.artist[:25]}",
-                    callback_data=f"track:{track.id}",
-                )
-            ])
-        buttons.append([
-            __import__("aiogram").types.InlineKeyboardButton(
-                text="⬅️ Назад",
-                callback_data="admin" if is_admin(callback.from_user.id) else "home",
-            )
-        ])
-        from aiogram.types import InlineKeyboardMarkup
-        await callback.message.edit_text(
-            title + f"\n\nНайдено: {len(tracks)}",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
-        )
+            q = q.order_by(Track.id.desc()); title = "🎵 <b>Все песни</b>"
+        rows = q.limit(30).all()
+        await c.message.edit_text(title + f"\n\nНайдено: {len(rows)}", reply_markup=list_keyboard(rows) if rows else admin_menu())
     finally:
-        db.close()
-    await callback.answer()
+        d.close()
+    await c.answer()
 
 
 @dp.callback_query(F.data.startswith("track:"))
-async def show_track(callback: CallbackQuery):
-    track_id = int(callback.data.split(":", 1)[1])
-    db = get_db()
+async def show_track(c: CallbackQuery):
+    try: tid = int(c.data.split(":", 1)[1])
+    except ValueError: await c.answer("Ошибка", show_alert=True); return
+    d = db()
     try:
-        track = find_track(db, track_id)
-        if not track:
-            await callback.answer("Песня не найдена.", show_alert=True)
-            return
-        await callback.message.edit_text(
-            track_text(track),
-            reply_markup=track_menu(track.id),
-        )
-        if track.audio_path:
-            path = Path(track.audio_path)
-            if not path.is_absolute():
-                path = Path.cwd() / path
-            if path.exists():
-                await callback.message.answer_audio(
-                    FSInputFile(str(path)),
-                    title=track.title,
-                    performer=track.artist,
-                )
-    finally:
-        db.close()
-    await callback.answer()
+        t = d.get(Track, tid)
+        if not t:
+            await c.answer("Песня не найдена", show_alert=True); return
+        await c.message.edit_text(track_text(t), reply_markup=track_menu(t.id))
+    finally: d.close()
+    await c.answer()
 
 
 @dp.callback_query(F.data == "upload")
-async def upload_start(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    await state.set_state(UploadStates.waiting_audio)
-    await callback.message.edit_text(
-        "⬆️ <b>Добавление песни</b>\n\n"
-        "Отправь сюда MP3, M4A, AAC, OGG, WAV, FLAC или OPUS.\n\n"
-        "Можно просто отправить аудиофайл — название, исполнитель и альбом "
-        "будут взяты из тегов.",
-        reply_markup=cancel_menu(),
-    )
-    await callback.answer()
+async def upload_start(c: CallbackQuery, state: FSMContext):
+    if not is_admin(c.from_user.id):
+        await c.answer("⛔ Доступ запрещён", show_alert=True); return
+    await state.set_state(States.waiting_audio)
+    await c.message.edit_text("⬆️ <b>Добавление песни</b>\n\nОтправь MP3 как аудио или документ. Теги ID3 будут прочитаны автоматически.", reply_markup=cancel_menu())
+    await c.answer()
 
 
-@dp.message(UploadStates.waiting_audio, F.audio)
+@dp.message(States.waiting_audio, F.audio)
 async def receive_audio(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
+    await save_telegram_audio(message, message.audio.file_name, message.audio, state)
 
-    audio = message.audio
-    ext = Path(audio.file_name or ".mp3").suffix.lower()
-    allowed = {".mp3", ".m4a", ".aac", ".ogg", ".wav", ".flac", ".opus"}
-    if ext not in allowed:
-        await message.answer("❌ Неподдерживаемый формат.")
-        return
 
-    filename = re.sub(r"[^a-zA-Z0-9а-яА-ЯёЁ._ -]+", "_", audio.file_name or f"{uuid.uuid4().hex}.mp3")
-    filename = f"{uuid.uuid4().hex}_{filename}"
+@dp.message(States.waiting_audio, F.document)
+async def receive_document(message: Message, state: FSMContext):
+    name = message.document.file_name or "audio.mp3"
+    if Path(name).suffix.lower() not in {".mp3", ".m4a", ".aac", ".ogg", ".wav", ".flac", ".opus"}:
+        await message.answer("❌ Нужен аудиофайл: MP3/M4A/AAC/OGG/WAV/FLAC/OPUS."); return
+    await save_telegram_audio(message, name, message.document, state)
+
+
+async def save_telegram_audio(message: Message, original_name: str, tg_file, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    suffix = Path(original_name or ".mp3").suffix.lower() or ".mp3"
+    filename = f"{uuid.uuid4().hex}_{re.sub(r'[^\\w\\-. ()А-Яа-яЁё]+', '_', Path(original_name or 'audio.mp3').name)}"
     target = MUSIC_DIR / filename
-
-    await bot.download(audio, destination=target)
-
-    title, artist, album, genre, duration = metadata_from_file(target)
-
-    db = get_db()
     try:
-        relative = str(target.resolve().relative_to(Path.cwd().resolve())).replace("\\", "/")
-        track = Track(
-            title=title,
-            artist=artist,
-            album=album,
-            genre=genre,
-            duration=duration,
-            audio_path=relative,
-            plays=0,
-        )
-        db.add(track)
-        db.commit()
-        db.refresh(track)
-
-        await state.update_data(track_id=track.id)
-
-        await message.answer(
-            "✅ <b>Песня добавлена</b>\n\n" + track_text(track),
-            reply_markup=after_upload_menu(track.id),
-        )
+        await bot.download(tg_file, destination=target)
+        title, artist, album, genre, duration = metadata_from_file(target)
+        d = db()
+        try:
+            # Same physical file cannot create duplicates.
+            existing = d.query(Track).filter(Track.audio_path == normalize_saved_path(target)).first()
+            if existing:
+                target.unlink(missing_ok=True)
+                await message.answer("⚠️ Этот файл уже есть в библиотеке.", reply_markup=after_upload_menu(existing.id)); return
+            t = Track(title=title, artist=artist, album=album, genre=genre, duration=duration, audio_path=normalize_saved_path(target), plays=0)
+            d.add(t); d.commit(); d.refresh(t)
+            await state.update_data(track_id=t.id)
+            await message.answer("✅ <b>Песня добавлена</b>\n\n" + track_text(t), reply_markup=after_upload_menu(t.id))
+        finally: d.close()
     except Exception as exc:
-        db.rollback()
         target.unlink(missing_ok=True)
-        log.exception("Upload DB error")
-        await message.answer(f"❌ Не удалось сохранить песню:\n<code>{exc}</code>")
+        log.exception("Telegram upload failed")
+        await message.answer(f"❌ Ошибка загрузки:\n<code>{str(exc)[:1500]}</code>")
     finally:
-        db.close()
-
-    await state.clear()
-
-
-@dp.message(UploadStates.waiting_audio)
-async def wrong_audio(message: Message):
-    await message.answer("🎵 Отправь именно аудиофайл.")
+        await state.clear()
 
 
 @dp.callback_query(F.data.startswith("cover:"))
-async def cover_start(callback: CallbackQuery, state: FSMContext):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    track_id = int(callback.data.split(":", 1)[1])
-    db = get_db()
+async def cover_start(c: CallbackQuery, state: FSMContext):
+    if not is_admin(c.from_user.id): await c.answer("⛔ Доступ запрещён", show_alert=True); return
+    tid = int(c.data.split(":",1)[1])
+    d=db()
     try:
-        if not find_track(db, track_id):
-            await callback.answer("Песня не найдена.", show_alert=True)
-            return
-    finally:
-        db.close()
-    await state.set_state(UploadStates.waiting_cover)
-    await state.update_data(track_id=track_id)
-    await callback.message.edit_text(
-        "🖼 <b>Обложка</b>\n\nОтправь фотографию JPG/PNG/WEBP.",
-        reply_markup=cancel_menu(),
-    )
-    await callback.answer()
+        if not d.get(Track, tid): await c.answer("Песня не найдена", show_alert=True); return
+    finally: d.close()
+    await state.set_state(States.waiting_cover); await state.update_data(track_id=tid)
+    await c.message.edit_text("🖼 Отправь изображение JPG/PNG/WEBP.", reply_markup=cancel_menu()); await c.answer()
 
 
-@dp.message(UploadStates.waiting_cover, F.photo)
+@dp.message(States.waiting_cover, F.photo)
 async def receive_cover(message: Message, state: FSMContext):
-    if not is_admin(message.from_user.id):
-        return
-    data = await state.get_data()
-    track_id = data.get("track_id")
-    photo = message.photo[-1]
-    filename = f"{track_id}_{uuid.uuid4().hex}.jpg"
-    target = COVER_DIR / filename
-    await bot.download(photo, destination=target)
-
-    db = get_db()
+    if not is_admin(message.from_user.id): return
+    data=await state.get_data(); tid=data.get("track_id")
+    target=COVER_DIR/f"{tid}_{uuid.uuid4().hex}.jpg"
+    await bot.download(message.photo[-1], destination=target)
+    d=db()
     try:
-        track = find_track(db, track_id)
-        if not track:
-            await message.answer("❌ Песня не найдена.")
-            return
-        track.cover_url = f"/media/covers/{filename}"
-        db.commit()
-        await message.answer(
-            "✅ Обложка сохранена.\n\n" + track_text(track),
-            reply_markup=after_upload_menu(track.id),
-        )
-    finally:
-        db.close()
-    await state.clear()
+        t=d.get(Track,tid)
+        if not t: await message.answer("❌ Песня не найдена."); return
+        if t.cover_url and t.cover_url.startswith("/api/media/covers/"):
+            (COVER_DIR/Path(t.cover_url).name).unlink(missing_ok=True)
+        t.cover_url=f"/api/media/covers/{target.name}"; d.commit()
+        await message.answer("✅ Обложка сохранена.\n\n"+track_text(t), reply_markup=after_upload_menu(t.id))
+    finally: d.close(); await state.clear()
+
+
+@dp.callback_query(F.data.startswith("edit:"))
+async def edit_start(c: CallbackQuery, state: FSMContext):
+    if not is_admin(c.from_user.id): await c.answer("⛔ Доступ запрещён", show_alert=True); return
+    tid=int(c.data.split(":",1)[1]); await state.set_state(States.waiting_edit); await state.update_data(track_id=tid)
+    await c.message.edit_text("✏️ Отправь данные одной строкой:\n\n<b>Название | Исполнитель | Альбом | Жанр</b>\n\nПример: TAKETAKE | Избранный | Single | Pop", reply_markup=cancel_menu()); await c.answer()
+
+
+@dp.message(States.waiting_edit, F.text)
+async def receive_edit(message: Message, state: FSMContext):
+    if not is_admin(message.from_user.id): return
+    data=await state.get_data(); tid=data.get("track_id"); parts=[x.strip() for x in message.text.split("|")]
+    if len(parts)<4: await message.answer("❌ Формат: Название | Исполнитель | Альбом | Жанр"); return
+    d=db()
+    try:
+        t=d.get(Track,tid)
+        if not t: await message.answer("❌ Песня не найдена."); return
+        t.title,t.artist,t.album,t.genre=[x[:255] for x in parts[:3]]+[parts[3][:100]]; d.commit()
+        await message.answer("✅ Данные обновлены.\n\n"+track_text(t), reply_markup=after_upload_menu(t.id))
+    finally: d.close(); await state.clear()
 
 
 @dp.callback_query(F.data.startswith("delete:"))
-async def delete_track(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    track_id = int(callback.data.split(":", 1)[1])
-    db = get_db()
+async def delete(c: CallbackQuery):
+    if not is_admin(c.from_user.id): await c.answer("⛔ Доступ запрещён", show_alert=True); return
+    tid=int(c.data.split(":",1)[1]); d=db()
     try:
-        track = find_track(db, track_id)
-        if not track:
-            await callback.answer("Песня не найдена.", show_alert=True)
-            return
-
-        path = Path(track.audio_path or "")
-        if not path.is_absolute():
-            path = Path.cwd() / path
-
-        db.delete(track)
-        db.commit()
-
-        try:
-            path.unlink(missing_ok=True)
-        except Exception:
-            pass
-
-        await callback.message.edit_text(
-            "🗑 <b>Песня удалена.</b>",
-            reply_markup=admin_menu(),
-        )
-    finally:
-        db.close()
-    await callback.answer()
+        t=d.get(Track,tid)
+        if not t: await c.answer("Песня не найдена", show_alert=True); return
+        path=Path(t.audio_path or "")
+        if not path.is_absolute(): path=Path.cwd()/path
+        path.unlink(missing_ok=True)
+        if t.cover_url and t.cover_url.startswith("/api/media/covers/"): (COVER_DIR/Path(t.cover_url).name).unlink(missing_ok=True)
+        d.delete(t); d.commit(); await c.message.edit_text("🗑 <b>Песня удалена.</b>", reply_markup=admin_menu())
+    finally: d.close()
+    await c.answer()
 
 
 @dp.callback_query(F.data == "scan")
-async def scan_callback(callback: CallbackQuery):
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔ Доступ запрещён.", show_alert=True)
-        return
-    db = get_db()
+async def scan(c: CallbackQuery):
+    if not is_admin(c.from_user.id): await c.answer("⛔ Доступ запрещён", show_alert=True); return
+    d=db()
     try:
-        result = scan_music(db)
-        await callback.message.edit_text(
-            "🔄 <b>Сканирование завершено</b>\n\n"
-            f"🎵 Найдено файлов: {result.get('found', 0)}\n"
-            f"➕ Добавлено: {result.get('added', 0)}\n"
-            f"✏️ Обновлено: {result.get('updated', 0)}",
-            reply_markup=admin_menu(),
-        )
-    finally:
-        db.close()
-    await callback.answer()
+        r=scan_music(d); await c.message.edit_text(f"🔄 <b>Сканирование</b>\n\n🎵 Файлов: {r['found']}\n➕ Добавлено: {r['added']}\n✏️ Обновлено: {r['updated']}", reply_markup=admin_menu())
+    finally: d.close()
+    await c.answer()
 
 
 @dp.callback_query(F.data == "search")
-async def search_start(callback: CallbackQuery, state: FSMContext):
-    await state.set_state("search")
-    await callback.message.edit_text(
-        "🔎 Напиши название песни, исполнителя или альбом.",
-        reply_markup=cancel_menu(),
-    )
-    await callback.answer()
+async def search_start(c: CallbackQuery, state: FSMContext):
+    await state.set_state(States.waiting_search); await c.message.edit_text("🔎 Напиши название, исполнителя или альбом.", reply_markup=cancel_menu()); await c.answer()
 
 
-@dp.message(F.text, lambda message: message.text and message.text.startswith("/"))
-async def ignore_unknown_command(message: Message):
-    pass
-
-
-@dp.message(lambda message: message.text and message.text.strip())
-async def text_search(message: Message, state: FSMContext):
-    current_state = await state.get_state()
-    if current_state != "search":
-        return
-
-    q = message.text.strip()
-    db = get_db()
+@dp.message(States.waiting_search, F.text)
+async def search(message: Message, state: FSMContext):
+    q=message.text.strip(); pattern=f"%{q}%"; d=db()
     try:
-        pattern = f"%{q}%"
-        tracks = (
-            db.query(Track)
-            .filter(
-                (Track.title.ilike(pattern)) |
-                (Track.artist.ilike(pattern)) |
-                (Track.album.ilike(pattern)) |
-                (Track.genre.ilike(pattern))
-            )
-            .order_by(Track.plays.desc())
-            .limit(20)
-            .all()
-        )
-        if not tracks:
-            await message.answer("❌ Ничего не найдено.", reply_markup=main_menu())
-            return
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        buttons = [
-            [InlineKeyboardButton(
-                text=f"🎵 {t.title[:35]} — {t.artist[:25]}",
-                callback_data=f"track:{t.id}"
-            )]
-            for t in tracks
-        ]
-        buttons.append([InlineKeyboardButton(text="🏠 Главное меню", callback_data="home")])
-        await message.answer(
-            f"🔎 Результаты для <b>{q}</b>",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
-        )
-    finally:
-        db.close()
-    await state.clear()
+        rows=d.query(Track).filter(or_(Track.title.ilike(pattern),Track.artist.ilike(pattern),Track.album.ilike(pattern),Track.genre.ilike(pattern))).order_by(Track.plays.desc()).limit(20).all()
+        if not rows: await message.answer("❌ Ничего не найдено.", reply_markup=main_menu(is_admin(message.from_user.id))); return
+        await message.answer(f"🔎 <b>Результаты:</b> {q}", reply_markup=list_keyboard(rows))
+    finally: d.close(); await state.clear()
 
 
 @dp.callback_query(F.data == "cancel")
-async def cancel(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await callback.message.edit_text(
-        "❌ Действие отменено.",
-        reply_markup=admin_menu() if is_admin(callback.from_user.id) else main_menu(),
-    )
-    await callback.answer()
+async def cancel(c: CallbackQuery, state: FSMContext):
+    await state.clear(); await c.message.edit_text("❌ Отменено.", reply_markup=admin_menu() if is_admin(c.from_user.id) else main_menu()); await c.answer()
 
 
 async def main():
     if not BOT_TOKEN:
-        raise RuntimeError(
-            "TELEGRAM_BOT_TOKEN is not configured"
-        )
-
-    log.info("Starting FENIX MUSIC Telegram Bot")
-    log.info("Admin IDs: %s", sorted(ADMIN_IDS))
-
-    await dp.start_polling(
-        bot,
-        allowed_updates=dp.resolve_used_update_types(),
-    )
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
+    log.info("[BOT] Starting FENIX MUSIC Telegram Bot")
+    log.info("[BOT] Admin IDs: %s", sorted(ADMIN_IDS))
+    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
 
 if __name__ == "__main__":
