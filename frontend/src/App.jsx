@@ -1,2287 +1,3274 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  (typeof window !== "undefined" ? window.location.origin : "");
+const API_BASE = "/api";
+const CAPTCHA_ENDPOINT = "/captcha";
+const DEFAULT_COVER = "/music-cover.svg";
 
-function apiUrl(path) {
-  if (!path) return API_BASE;
-  if (path.startsWith("http://") || path.startsWith("https://")) {
-    return path;
-  }
-  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+const apiFetch = async (url, options = {}) => {
+const response = await fetch(${API_BASE}${url}, {
+credentials: "include",
+...options,
+headers: {
+...(options.body ? { "Content-Type": "application/json" } : {}),
+...(options.headers || {}),
+},
+});
+
+const text = await response.text();
+let data = {};
+
+try {
+data = text ? JSON.parse(text) : {};
+} catch {
+data = { raw: text };
 }
 
-async function apiFetch(path, options = {}) {
-  const response = await fetch(apiUrl(path), {
-    credentials: "include",
-    ...options,
-    headers: {
-      Accept: "application/json",
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {}),
-    },
-  });
-
-  const text = await response.text();
-
-  let data = null;
-
-  try {
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    data = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.error ||
-        data?.message ||
-        `Ошибка сервера: ${response.status}`
-    );
-  }
-
-  return data;
+if (!response.ok) {
+throw new Error(
+data?.error ||
+data?.message ||
+Ошибка сервера: ${response.status}
+);
 }
 
-function Icon({ name, size = 22 }) {
-  const common = {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: "1.9",
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
-    "aria-hidden": true,
-  };
+return data;
+};
 
-  const paths = {
-    home: (
-      <>
-        <path d="M3 10.8 12 3l9 7.8" />
-        <path d="M5 9.8V21h14V9.8" />
-        <path d="M9 21v-6h6v6" />
-      </>
-    ),
-    search: (
-      <>
-        <circle cx="10.8" cy="10.8" r="6.8" />
-        <path d="m16 16 5 5" />
-      </>
-    ),
-    heart: (
-      <path d="M20.8 8.7c0 5.1-8.8 11.1-8.8 11.1S3.2 13.8 3.2 8.7A5 5 0 0 1 12 5.5a5 5 0 0 1 8.8 3.2Z" />
-    ),
-    heartFill: (
-      <path
-        d="M20.8 8.7c0 5.1-8.8 11.1-8.8 11.1S3.2 13.8 3.2 8.7A5 5 0 0 1 12 5.5a5 5 0 0 1 8.8 3.2Z"
-        fill="currentColor"
-      />
-    ),
-    play: <path d="m8 5 11 7-11 7V5Z" fill="currentColor" />,
-    pause: (
-      <>
-        <path d="M7 5v14" />
-        <path d="M17 5v14" />
-      </>
-    ),
-    next: (
-      <>
-        <path d="m5 5 9 7-9 7V5Z" />
-        <path d="M19 5v14" />
-      </>
-    ),
-    prev: (
-      <>
-        <path d="m19 5-9 7 9 7V5Z" />
-        <path d="M5 5v14" />
-      </>
-    ),
-    shuffle: (
-      <>
-        <path d="M3 7h3c4 0 5 10 9 10h6" />
-        <path d="m18 14 3 3-3 3" />
-        <path d="M3 17h3c1.4 0 2.4-1.3 3.2-2.8" />
-        <path d="M14.8 9.8C15.6 8.2 16.5 7 18 7h3" />
-        <path d="m18 4 3 3-3 3" />
-      </>
-    ),
-    repeat: (
-      <>
-        <path d="M17 2.8 20.2 6 17 9.2" />
-        <path d="M4 9V7a1 1 0 0 1 1-1h15" />
-        <path d="m7 21.2-3.2-3.2L7 14.8" />
-        <path d="M20 15v2a1 1 0 0 1-1 1H4" />
-      </>
-    ),
-    volume: (
-      <>
-        <path d="M4 9v6h4l5 4V5L8 9H4Z" />
-        <path d="M17 9.2a4 4 0 0 1 0 5.6" />
-        <path d="M19.5 6.5a8 8 0 0 1 0 11" />
-      </>
-    ),
-    volumeMute: (
-      <>
-        <path d="M4 9v6h4l5 4V5L8 9H4Z" />
-        <path d="m18 9 4 6" />
-        <path d="m22 9-4 6" />
-      </>
-    ),
-    music: (
-      <>
-        <path d="M9 18V5l11-2v13" />
-        <circle cx="6" cy="18" r="3" />
-        <circle cx="17" cy="16" r="3" />
-      </>
-    ),
-    library: (
-      <>
-        <path d="M5 4h14v16H5z" />
-        <path d="M8 8h8" />
-        <path d="M8 12h8" />
-        <path d="M8 16h5" />
-      </>
-    ),
-    user: (
-      <>
-        <circle cx="12" cy="8" r="3.5" />
-        <path d="M5 20c.7-3.4 3-5.2 7-5.2s6.3 1.8 7 5.2" />
-      </>
-    ),
-    close: (
-      <>
-        <path d="m6 6 12 12" />
-        <path d="m18 6-12 12" />
-      </>
-    ),
-    menu: (
-      <>
-        <path d="M4 7h16" />
-        <path d="M4 12h16" />
-        <path d="M4 17h16" />
-      </>
-    ),
-    plus: (
-      <>
-        <path d="M12 5v14" />
-        <path d="M5 12h14" />
-      </>
-    ),
-    upload: (
-      <>
-        <path d="M12 16V4" />
-        <path d="m7 9 5-5 5 5" />
-        <path d="M5 14v5h14v-5" />
-      </>
-    ),
-    more: (
-      <>
-        <circle cx="5" cy="12" r="1" fill="currentColor" />
-        <circle cx="12" cy="12" r="1" fill="currentColor" />
-        <circle cx="19" cy="12" r="1" fill="currentColor" />
-      </>
-    ),
-    clock: (
-      <>
-        <circle cx="12" cy="12" r="8.5" />
-        <path d="M12 7v5l3 2" />
-      </>
-    ),
-    fire: (
-      <path d="M12.1 22c4.2 0 7.2-2.7 7.2-6.8 0-3.1-1.6-5.3-3.8-7.5.1 2-1.1 3.4-2.4 4.1.2-3.5-1.4-6.4-4.4-8.8.2 3.8-3.2 5.9-3.2 10.2C5.5 18.5 8.1 22 12.1 22Z" />
-    ),
-    bolt: (
-      <path d="m13 2-8 11h6l-1 9 8-12h-6l1-8Z" />
-    ),
-    lock: (
-      <>
-        <rect x="5" y="10" width="14" height="11" rx="2" />
-        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-      </>
-    ),
-    check: <path d="m5 12 4 4L19 6" />,
-    refresh: (
-      <>
-        <path d="M20 11a8 8 0 0 0-14-5L4 8" />
-        <path d="M4 4v4h4" />
-        <path d="M4 13a8 8 0 0 0 14 5l2-2" />
-        <path d="M20 20v-4h-4" />
-      </>
-    ),
-    fullscreen: (
-      <>
-        <path d="M8 3H3v5" />
-        <path d="M16 3h5v5" />
-        <path d="M21 16v5h-5" />
-        <path d="M3 16v5h5" />
-      </>
-    ),
-  };
+const formatTime = (seconds) => {
+const value = Math.max(0, Math.floor(Number(seconds) || 0));
+const minutes = Math.floor(value / 60);
+const secs = String(value % 60).padStart(2, "0");
+return ${minutes}:${secs};
+};
 
-  return <svg {...common}>{paths[name] || paths.music}</svg>;
-}
+const normalizeTrack = (item, index) => {
+const fileName =
+item?.file_name ||
+item?.file ||
+item?.filename ||
+"";
 
-function formatTime(value) {
-  const seconds = Math.max(0, Math.floor(Number(value) || 0));
-  const minutes = Math.floor(seconds / 60);
-  const rest = String(seconds % 60).padStart(2, "0");
-  return `${minutes}:${rest}`;
-}
+const title =
+item?.title ||
+fileName.replace(/.[^/.]+$/, "") ||
+Трек ${index + 1};
 
-function makeLocalId() {
-  return `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
+return {
+id:
+item?.id ||
+item?.track_id ||
+track-${index}-${fileName},
+title,
+artist:
+item?.artist ||
+item?.artist_name ||
+"Fenix Music",
+album:
+item?.album ||
+item?.album_name ||
+"Fenix Music",
+cover:
+item?.cover_url ||
+item?.cover ||
+DEFAULT_COVER,
+audio:
+item?.audio_url ||
+item?.url ||
+(fileName
+? /api/music/audio/${encodeURIComponent(fileName)}
+: ""),
+fileName,
+duration: Number(item?.duration || 0),
+plays: Number(item?.plays_count || item?.plays || 0),
+raw: item,
+};
+};
 
-function normalizeTrack(item, index = 0) {
-  if (!item) return null;
+function Icon({ name, size = 20 }) {
+const icons = {
+home: "⌂",
+search: "⌕",
+music: "♫",
+heart: "♡",
+heartFill: "♥",
+history: "◷",
+library: "▣",
+user: "●",
+settings: "⚙",
+queue: "☷",
+play: "▶",
+pause: "Ⅱ",
+next: "▶|",
+previous: "|◀",
+shuffle: "⤨",
+repeat: "↻",
+volume: "◖",
+volumeOff: "×",
+close: "×",
+refresh: "↻",
+plus: "+",
+logout: "↪",
+check: "✓",
+star: "★",
+fire: "♨",
+download: "↓",
+more: "•••",
+back: "‹",
+forward: "›",
+lock: "▣",
+shield: "◇",
+};
 
-  const fileName =
-    item.file_name ||
-    item.filename ||
-    item.file ||
-    item.name ||
-    "";
-
-  let audioUrl =
-    item.audio_url ||
-    item.url ||
-    item.src ||
-    "";
-
-  if (!audioUrl && fileName) {
-    audioUrl = `/api/music/audio/${encodeURIComponent(fileName)}`;
-  }
-
-  return {
-    id: String(item.id || fileName || `track-${index}`),
-    title:
-      item.title ||
-      item.name ||
-      fileName.replace(/\.[^/.]+$/, "") ||
-      "Без названия",
-    artist:
-      item.artist_name ||
-      item.artist ||
-      "Fenix Music",
-    album:
-      item.album_name ||
-      item.album ||
-      "Fenix Music",
-    cover:
-      item.cover_url ||
-      item.cover ||
-      "/music-cover.svg",
-    audio_url: audioUrl,
-    duration: Number(item.duration || 0),
-    plays_count: Number(item.plays_count || item.plays || 0),
-    file_name: fileName,
-    mime: item.mime || "",
-    size: Number(item.size || 0),
-  };
+return (
+<span
+className="fm-icon"
+style={{
+fontSize: ${size}px,
+lineHeight: 1,
+}}
+aria-hidden="true"
+>
+{icons[name] || "•"}
+</span>
+);
 }
 
 function TrackCover({ track, large = false }) {
-  const [failed, setFailed] = useState(false);
+const [failed, setFailed] = useState(false);
 
-  const title = track?.title || "Fenix Music";
+const source =
+!failed && track?.cover
+? track.cover
+: DEFAULT_COVER;
 
-  if (!track?.cover || failed) {
-    return (
-      <div className={`track-cover ${large ? "track-cover-large" : ""}`}>
-        <Icon name="music" size={large ? 42 : 26} />
-      </div>
-    );
-  }
-
-  return (
-    <img
-      className={`track-cover-image ${
-        large ? "track-cover-large" : ""
-      }`}
-      src={apiUrl(track.cover)}
-      alt={title}
-      onError={() => setFailed(true)}
-    />
-  );
+return (
+<div className={fm-cover ${large ? "fm-cover-large" : ""}}>
+<img
+src={source}
+alt={track?.title || "Обложка"}
+onError={() => setFailed(true)}
+/>
+</div>
+);
 }
 
-function EmptyState({ icon = "music", title, text }) {
-  return (
-    <div className="empty-state">
-      <div className="empty-state-icon">
-        <Icon name={icon} size={34} />
-      </div>
-      <h3>{title}</h3>
-      <p>{text}</p>
-    </div>
-  );
+function EmptyState({ icon = "music", title, text, action }) {
+return (
+<div className="fm-empty">
+<div className="fm-empty-icon">
+<Icon name={icon} size={34} />
+</div>
+
+  <h3>{title}</h3>
+
+  {text && <p>{text}</p>}
+
+  {action && (
+    <button
+      className="fm-button fm-button-primary"
+      onClick={action.onClick}
+    >
+      {action.label}
+    </button>
+  )}
+</div>
+
+);
+}
+
+function SectionHeader({
+eyebrow,
+title,
+subtitle,
+action,
+}) {
+return (
+<div className="fm-section-header">
+<div>
+{eyebrow && (
+<div className="fm-eyebrow">
+{eyebrow}
+</div>
+)}
+
+    <h2>{title}</h2>
+
+    {subtitle && <p>{subtitle}</p>}
+  </div>
+
+  {action && (
+    <button
+      className="fm-text-button"
+      onClick={action.onClick}
+    >
+      {action.label}
+    </button>
+  )}
+</div>
+
+);
+}
+
+function TrackCard({
+track,
+active,
+playing,
+liked,
+onPlay,
+onLike,
+onMenu,
+}) {
+return (
+<article
+className={fm-track-card ${ active ? "is-active" : "" }}
+>
+<div className="fm-track-cover-wrap">
+<TrackCover track={track} large />
+
+    <button
+      className="fm-card-play"
+      onClick={() => onPlay(track)}
+      aria-label={
+        active && playing
+          ? "Пауза"
+          : "Воспроизвести"
+      }
+    >
+      <Icon
+        name={
+          active && playing
+            ? "pause"
+            : "play"
+        }
+        size={23}
+      />
+    </button>
+
+    <button
+      className={`fm-card-like ${
+        liked ? "is-liked" : ""
+      }`}
+      onClick={() => onLike(track)}
+      aria-label="Избранное"
+    >
+      <Icon
+        name={
+          liked
+            ? "heartFill"
+            : "heart"
+        }
+        size={19}
+      />
+    </button>
+  </div>
+
+  <div className="fm-track-card-info">
+    <strong title={track.title}>
+      {track.title}
+    </strong>
+
+    <span title={track.artist}>
+      {track.artist}
+    </span>
+  </div>
+
+  <button
+    className="fm-more-button"
+    onClick={() => onMenu(track)}
+    aria-label="Дополнительно"
+  >
+    <Icon name="more" size={17} />
+  </button>
+</article>
+
+);
 }
 
 function TrackRow({
-  track,
-  index,
-  active,
-  playing,
-  liked,
-  onPlay,
-  onLike,
-  onMenu,
+track,
+index,
+active,
+playing,
+liked,
+onPlay,
+onLike,
+onMenu,
 }) {
-  return (
-    <div className={`track-row ${active ? "active" : ""}`}>
-      <button className="track-number" onClick={() => onPlay(track)}>
-        {active && playing ? (
-          <span className="equalizer">
-            <i />
-            <i />
-            <i />
-          </span>
-        ) : (
-          String(index + 1).padStart(2, "0")
-        )}
-      </button>
+return (
+<div
+className={fm-track-row ${ active ? "is-active" : "" }}
+>
+<div className="fm-track-number">
+{active && playing ? (
+<span className="fm-equalizer">
+<i />
+<i />
+<i />
+</span>
+) : (
+index + 1
+)}
+</div>
 
-      <button className="track-main" onClick={() => onPlay(track)}>
-        <TrackCover track={track} />
-        <span className="track-info">
-          <strong>{track.title}</strong>
-          <small>{track.artist}</small>
-        </span>
-      </button>
+  <TrackCover track={track} />
 
-      <span className="track-album">{track.album}</span>
+  <button
+    className="fm-row-main"
+    onClick={() => onPlay(track)}
+  >
+    <strong>{track.title}</strong>
+    <span>{track.artist}</span>
+  </button>
 
-      <span className="track-plays">
-        {track.plays_count > 0
-          ? `${track.plays_count.toLocaleString("ru-RU")}`
-          : "—"}
-      </span>
+  <span className="fm-row-album">
+    {track.album}
+  </span>
 
-      <span className="track-duration">
-        {formatTime(track.duration)}
-      </span>
+  <span className="fm-row-plays">
+    {track.plays}
+  </span>
 
-      <button
-        className={`icon-button small ${liked ? "liked" : ""}`}
-        onClick={() => onLike(track)}
-        title="Избранное"
-      >
-        <Icon name={liked ? "heartFill" : "heart"} size={18} />
-      </button>
+  <button
+    className={`fm-row-like ${
+      liked ? "is-liked" : ""
+    }`}
+    onClick={() => onLike(track)}
+  >
+    <Icon
+      name={
+        liked
+          ? "heartFill"
+          : "heart"
+      }
+      size={18}
+    />
+  </button>
 
-      <button
-        className="icon-button small"
-        onClick={() => onMenu(track)}
-        title="Ещё"
-      >
-        <Icon name="more" size={18} />
-      </button>
+  <button
+    className="fm-more-button"
+    onClick={() => onMenu(track)}
+  >
+    <Icon name="more" size={17} />
+  </button>
+</div>
+
+);
+}
+
+function AuthModal({
+mode,
+onModeChange,
+onClose,
+onSuccess,
+}) {
+const [username, setUsername] = useState("");
+const [email, setEmail] = useState("");
+const [password, setPassword] = useState("");
+const [confirmPassword, setConfirmPassword] =
+useState("");
+
+const [captchaId, setCaptchaId] =
+useState("");
+const [captchaCode, setCaptchaCode] =
+useState("");
+const [captchaAnswer, setCaptchaAnswer] =
+useState("");
+
+const [captchaLoading, setCaptchaLoading] =
+useState(false);
+const [loading, setLoading] =
+useState(false);
+const [error, setError] = useState("");
+
+const loadCaptcha = useCallback(
+async () => {
+setCaptchaLoading(true);
+setError("");
+
+  try {
+    const data = await apiFetch(
+      CAPTCHA_ENDPOINT
+    );
+
+    const id = String(
+      data?.captcha_id ||
+        data?.id ||
+        ""
+    );
+
+    const code = String(
+      data?.code ||
+        data?.captcha_code ||
+        data?.captcha ||
+        data?.text ||
+        ""
+    ).replace(/\D/g, "");
+
+    if (!id || !code) {
+      throw new Error(
+        "Сервер не вернул CAPTCHA."
+      );
+    }
+
+    setCaptchaId(id);
+    setCaptchaCode(code);
+    setCaptchaAnswer("");
+  } catch (err) {
+    setCaptchaId("");
+    setCaptchaCode("");
+    setCaptchaAnswer("");
+    setError(
+      err.message ||
+        "Не удалось загрузить CAPTCHA с сервера."
+    );
+  } finally {
+    setCaptchaLoading(false);
+  }
+},
+[]
+
+);
+
+useEffect(() => {
+if (mode === "register") {
+loadCaptcha();
+}
+}, [mode, loadCaptcha]);
+
+const submit = async (event) => {
+event.preventDefault();
+setError("");
+
+if (!username.trim()) {
+  setError("Введите логин.");
+  return;
+}
+
+if (password.length < 6) {
+  setError(
+    "Пароль должен содержать минимум 6 символов."
+  );
+  return;
+}
+
+if (
+  mode === "register" &&
+  password !== confirmPassword
+) {
+  setError("Пароли не совпадают.");
+  return;
+}
+
+if (mode === "register") {
+  if (
+    !captchaId ||
+    !captchaCode
+  ) {
+    setError(
+      "CAPTCHA ещё не загружена."
+    );
+    return;
+  }
+
+  if (
+    captchaAnswer.length !== 4
+  ) {
+    setError(
+      "Введите 4 цифры CAPTCHA."
+    );
+    return;
+  }
+
+  if (
+    captchaAnswer !== captchaCode
+  ) {
+    setError(
+      "Неверная CAPTCHA."
+    );
+    await loadCaptcha();
+    return;
+  }
+}
+
+setLoading(true);
+
+try {
+  const endpoint =
+    mode === "login"
+      ? "/auth/login"
+      : "/auth/register";
+
+  const payload =
+    mode === "login"
+      ? {
+          username:
+            username.trim(),
+          email:
+            email.trim(),
+          password,
+        }
+      : {
+          username:
+            username.trim(),
+          email:
+            email.trim(),
+          password,
+          captcha:
+            captchaAnswer,
+          captcha_code:
+            captchaAnswer,
+          captcha_id:
+            captchaId,
+        };
+
+  const data = await apiFetch(
+    endpoint,
+    {
+      method: "POST",
+      body: JSON.stringify(
+        payload
+      ),
+    }
+  );
+
+  const result =
+    data?.user ||
+    data?.account ||
+    data?.profile ||
+    {
+      username:
+        username.trim(),
+      email:
+        email.trim(),
+    };
+
+  onSuccess(result);
+  onClose();
+} catch (err) {
+  setError(
+    err.message ||
+      "Не удалось выполнить авторизацию."
+  );
+
+  if (mode === "register") {
+    await loadCaptcha();
+  }
+} finally {
+  setLoading(false);
+}
+
+};
+
+return (
+<div className="fm-modal-backdrop" onMouseDown={onClose} >
+<div
+className="fm-auth-modal"
+onMouseDown={(event) =>
+event.stopPropagation()
+}
+>
+<button className="fm-modal-close" type="button" onClick={onClose} >
+<Icon name="close" size={25} />
+</button>
+
+    <div className="fm-auth-logo">
+      F
     </div>
-  );
-}
 
-function Sidebar({ page, setPage, user, onLogin }) {
-  const items = [
-    ["home", "Главная", "home"],
-    ["search", "Поиск", "search"],
-    ["library", "Моя музыка", "library"],
-  ];
+    <div className="fm-eyebrow">
+      FENIX MUSIC
+    </div>
 
-  return (
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="brand-logo">F</div>
-        <div>
-          <strong>FENIX</strong>
-          <span>MUSIC</span>
-        </div>
-      </div>
+    <h2>
+      {mode === "login"
+        ? "С возвращением"
+        : "Создать аккаунт"}
+    </h2>
 
-      <nav className="main-nav">
-        {items.map(([icon, title, value]) => (
-          <button
-            key={value}
-            className={`nav-item ${page === value ? "active" : ""}`}
-            onClick={() => setPage(value)}
-          >
-            <Icon name={icon} size={21} />
-            <span>{title}</span>
-          </button>
-        ))}
-      </nav>
+    <p className="fm-auth-description">
+      {mode === "login"
+        ? "Войди, чтобы сохранить музыку и историю."
+        : "Создай аккаунт и получи свою музыкальную библиотеку."}
+    </p>
 
-      <div className="nav-title">БИБЛИОТЕКА</div>
+    <form onSubmit={submit}>
+      <label className="fm-form-field">
+        <span>Логин</span>
 
-      <nav className="main-nav">
-        <button
-          className={`nav-item ${page === "liked" ? "active" : ""}`}
-          onClick={() => setPage("liked")}
-        >
-          <Icon name="heart" size={21} />
-          <span>Избранное</span>
-        </button>
-
-        <button
-          className={`nav-item ${page === "recent" ? "active" : ""}`}
-          onClick={() => setPage("recent")}
-        >
-          <Icon name="clock" size={21} />
-          <span>История</span>
-        </button>
-      </nav>
-
-      <div className="sidebar-spacer" />
-
-      <div className="sidebar-bottom">
-        {user ? (
-          <button className="profile-mini" onClick={() => setPage("profile")}>
-            <div className="avatar">
-              {(user.username ||
-                user.first_name ||
-                user.name ||
-                "F")[0].toUpperCase()}
-            </div>
-            <div>
-              <strong>
-                {user.username ||
-                  user.first_name ||
-                  user.name ||
-                  "Пользователь"}
-              </strong>
-              <span>Профиль</span>
-            </div>
-          </button>
-        ) : (
-          <button className="login-sidebar" onClick={onLogin}>
-            <Icon name="user" size={20} />
-            <span>Войти в аккаунт</span>
-          </button>
-        )}
-      </div>
-    </aside>
-  );
-}
-
-function TopBar({ onSearch, onLogin, user, onProfile }) {
-  return (
-    <header className="topbar">
-      <div className="topbar-search">
-        <Icon name="search" size={20} />
         <input
-          type="search"
-          placeholder="Найти музыку, исполнителя или альбом..."
-          onChange={(event) => onSearch(event.target.value)}
+          value={username}
+          onChange={(event) =>
+            setUsername(
+              event.target.value
+            )
+          }
+          placeholder="Введите логин"
+          autoComplete="username"
+          required
         />
-      </div>
+      </label>
 
-      <div className="topbar-actions">
-        <button className="header-button">
-          <Icon name="bolt" size={18} />
-          <span>Premium</span>
-        </button>
+      {mode === "register" && (
+        <label className="fm-form-field">
+          <span>Email</span>
 
-        {user ? (
-          <button className="header-profile" onClick={onProfile}>
-            <div className="avatar">
-              {(user.username ||
-                user.first_name ||
-                user.name ||
-                "F")[0].toUpperCase()}
-            </div>
-          </button>
-        ) : (
-          <button className="login-button" onClick={onLogin}>
-            Войти
-          </button>
-        )}
-      </div>
-    </header>
-  );
-}
-
-function Hero({ onPlay, track }) {
-  return (
-    <section className="hero">
-      <div className="hero-glow" />
-      <div className="hero-content">
-        <div className="hero-label">
-          <span className="live-dot" />
-          FENIX MUSIC
-        </div>
-
-        <h1>
-          Музыка, которая
-          <br />
-          <span>движет тобой.</span>
-        </h1>
-
-        <p>
-          Открывай новые треки, создавай свою коллекцию
-          и слушай любимую музыку без границ.
-        </p>
-
-        <div className="hero-actions">
-          <button
-            className="primary-button"
-            onClick={() => track && onPlay(track)}
-            disabled={!track}
-          >
-            <Icon name="play" size={18} />
-            Слушать сейчас
-          </button>
-
-          <button className="secondary-button">
-            <Icon name="fire" size={18} />
-            Популярное
-          </button>
-        </div>
-      </div>
-
-      <div className="hero-disc">
-        <div className="disc-ring disc-ring-one" />
-        <div className="disc-ring disc-ring-two" />
-        <div className="disc-center">
-          <TrackCover track={track} large />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function CategoryTabs({ category, setCategory }) {
-  const tabs = [
-    ["for-you", "Для вас"],
-    ["new", "Новинки"],
-    ["popular", "Популярное"],
-    ["mixes", "Миксы"],
-    ["recent", "Недавно слушали"],
-  ];
-
-  return (
-    <div className="category-tabs">
-      {tabs.map(([value, label]) => (
-        <button
-          key={value}
-          className={category === value ? "active" : ""}
-          onClick={() => setCategory(value)}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function SectionHeader({ title, subtitle, action }) {
-  return (
-    <div className="section-header">
-      <div>
-        <h2>{title}</h2>
-        {subtitle && <p>{subtitle}</p>}
-      </div>
-
-      {action && (
-        <button className="text-button" onClick={action.onClick}>
-          {action.label}
-        </button>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) =>
+              setEmail(
+                event.target.value
+              )
+            }
+            placeholder="you@example.com"
+            autoComplete="email"
+            required
+          />
+        </label>
       )}
-    </div>
-  );
+
+      <label className="fm-form-field">
+        <span>Пароль</span>
+
+        <input
+          type="password"
+          value={password}
+          onChange={(event) =>
+            setPassword(
+              event.target.value
+            )
+          }
+          placeholder="Введите пароль"
+          autoComplete={
+            mode === "login"
+              ? "current-password"
+              : "new-password"
+          }
+          required
+        />
+      </label>
+
+      {mode === "register" && (
+        <label className="fm-form-field">
+          <span>Повтор пароля</span>
+
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) =>
+              setConfirmPassword(
+                event.target.value
+              )
+            }
+            placeholder="Повторите пароль"
+            autoComplete="new-password"
+            required
+          />
+        </label>
+      )}
+
+      {mode === "register" && (
+        <div className="fm-captcha-area">
+          <div className="fm-captcha-head">
+            <span>
+              CAPTCHA
+            </span>
+
+            <button
+              type="button"
+              onClick={loadCaptcha}
+              disabled={captchaLoading}
+            >
+              <Icon
+                name="refresh"
+                size={18}
+              />
+            </button>
+          </div>
+
+          <div className="fm-captcha-code">
+            {captchaLoading
+              ? "••••"
+              : captchaCode ||
+                "----"}
+          </div>
+
+          <input
+            value={captchaAnswer}
+            onChange={(event) =>
+              setCaptchaAnswer(
+                event.target.value
+                  .replace(/\D/g, "")
+                  .slice(0, 4)
+              )
+            }
+            inputMode="numeric"
+            maxLength={4}
+            placeholder="Введите 4 цифры"
+            autoComplete="off"
+          />
+        </div>
+      )}
+
+      {error && (
+        <div className="fm-auth-error">
+          {error}
+        </div>
+      )}
+
+      <button
+        className="fm-button fm-button-primary fm-button-wide"
+        disabled={loading}
+        type="submit"
+      >
+        {loading
+          ? "Проверяем..."
+          : mode === "login"
+          ? "Войти"
+          : "Создать аккаунт"}
+      </button>
+    </form>
+
+    <button
+      className="fm-auth-switch"
+      type="button"
+      onClick={() => {
+        setError("");
+
+        onModeChange(
+          mode === "login"
+            ? "register"
+            : "login"
+        );
+      }}
+    >
+      {mode === "login"
+        ? "Нет аккаунта? Регистрация"
+        : "Уже есть аккаунт? Войти"}
+    </button>
+  </div>
+</div>
+
+);
 }
 
-function QuickCard({ track, active, playing, onPlay }) {
-  return (
-    <button
-      className={`quick-card ${active ? "active" : ""}`}
-      onClick={() => onPlay(track)}
-    >
-      <TrackCover track={track} />
+function TrackMenu({
+track,
+liked,
+onLike,
+onPlay,
+onClose,
+}) {
+return (
+<div className="fm-modal-backdrop" onMouseDown={onClose} >
+<div
+className="fm-track-menu"
+onMouseDown={(event) =>
+event.stopPropagation()
+}
+>
+<div className="fm-menu-track">
+<TrackCover track={track} />
+
       <div>
         <strong>{track.title}</strong>
         <span>{track.artist}</span>
       </div>
+    </div>
 
-      <div className="quick-play">
-        <Icon name={active && playing ? "pause" : "play"} size={17} />
+    <button
+      onClick={() => {
+        onPlay(track);
+        onClose();
+      }}
+    >
+      <Icon name="play" size={19} />
+      Воспроизвести
+    </button>
+
+    <button
+      onClick={() => {
+        onLike(track);
+        onClose();
+      }}
+    >
+      <Icon
+        name={
+          liked
+            ? "heartFill"
+            : "heart"
+        }
+        size={19}
+      />
+      {liked
+        ? "Убрать из избранного"
+        : "Добавить в избранное"}
+    </button>
+
+    <button
+      onClick={onClose}
+    >
+      <Icon name="close" size={19} />
+      Закрыть
+    </button>
+  </div>
+</div>
+
+);
+}
+
+function QueuePanel({
+queue,
+currentTrack,
+playing,
+onPlay,
+onClose,
+}) {
+return (
+<div className="fm-modal-backdrop fm-queue-backdrop" onMouseDown={onClose} >
+<aside
+className="fm-queue-panel"
+onMouseDown={(event) =>
+event.stopPropagation()
+}
+>
+<div className="fm-panel-header">
+<div>
+<div className="fm-eyebrow">
+PLAY QUEUE
+</div>
+<h2>Очередь</h2>
+</div>
+
+      <button
+        className="fm-modal-close"
+        onClick={onClose}
+      >
+        <Icon name="close" size={23} />
+      </button>
+    </div>
+
+    {queue.length === 0 ? (
+      <EmptyState
+        icon="queue"
+        title="Очередь пуста"
+        text="Добавь треки через воспроизведение."
+      />
+    ) : (
+      <div className="fm-queue-list">
+        {queue.map((track, index) => (
+          <button
+            key={`${track.id}-${index}`}
+            className={`fm-queue-item ${
+              currentTrack?.id ===
+              track.id
+                ? "is-active"
+                : ""
+            }`}
+            onClick={() =>
+              onPlay(track, queue)
+            }
+          >
+            <TrackCover track={track} />
+
+            <div>
+              <strong>
+                {track.title}
+              </strong>
+              <span>
+                {track.artist}
+              </span>
+            </div>
+
+            {currentTrack?.id ===
+              track.id &&
+              playing && (
+                <span className="fm-playing-dot">
+                  ●
+                </span>
+              )}
+          </button>
+        ))}
+      </div>
+    )}
+  </aside>
+</div>
+
+);
+}
+
+function PlayerBar({
+track,
+playing,
+position,
+duration,
+volume,
+shuffle,
+repeat,
+onPlayPause,
+onNext,
+onPrevious,
+onSeek,
+onVolume,
+onShuffle,
+onRepeat,
+onQueue,
+onFullscreen,
+}) {
+if (!track) {
+return null;
+}
+
+const progress =
+duration > 0
+? Math.min(
+100,
+(position / duration) * 100
+)
+: 0;
+
+return (
+<div className="fm-player">
+<div className="fm-player-progress">
+<div
+className="fm-player-progress-value"
+style={{
+width: ${progress}%,
+}}
+/>
+</div>
+
+  <div className="fm-player-inner">
+    <button
+      className="fm-player-track"
+      onClick={onFullscreen}
+    >
+      <TrackCover track={track} />
+
+      <div>
+        <strong>{track.title}</strong>
+        <span>{track.artist}</span>
       </div>
     </button>
-  );
-}
 
-function MusicGrid({ tracks, activeId, playing, onPlay, onLike, likedIds }) {
-  if (!tracks.length) {
-    return (
-      <EmptyState
-        icon="music"
-        title="Музыки пока нет"
-        text="Добавь аудиофайлы в папку music на сервере."
-      />
-    );
-  }
-
-  return (
-    <div className="music-grid">
-      {tracks.map((track) => {
-        const liked = likedIds.has(track.id);
-
-        return (
-          <article
-            className={`music-card ${
-              activeId === track.id ? "active" : ""
-            }`}
-            key={track.id}
-          >
-            <div className="music-card-cover">
-              <TrackCover track={track} large />
-
-              <button
-                className="card-play"
-                onClick={() => onPlay(track)}
-              >
-                <Icon
-                  name={
-                    activeId === track.id && playing
-                      ? "pause"
-                      : "play"
-                  }
-                  size={22}
-                />
-              </button>
-
-              <button
-                className={`card-heart ${liked ? "liked" : ""}`}
-                onClick={() => onLike(track)}
-              >
-                <Icon
-                  name={liked ? "heartFill" : "heart"}
-                  size={18}
-                />
-              </button>
-            </div>
-
-            <div className="music-card-info">
-              <strong>{track.title}</strong>
-              <span>{track.artist}</span>
-            </div>
-          </article>
-        );
-      })}
-    </div>
-  );
-}
-
-function LoginModal({ onClose, onSuccess }) {
-  const [mode, setMode] = useState("login");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [captcha, setCaptcha] = useState("");
-  const [captchaCode, setCaptchaCode] = useState("");
-  const [captchaId, setCaptchaId] = useState("");
-  const [captchaLoading, setCaptchaLoading] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function loadCaptcha() {
-    setCaptchaLoading(true);
-    setError("");
-
-    try {
-      const data = await apiFetch("/api/captcha");
-
-      const code = String(
-        data?.code ||
-          data?.captcha ||
-          data?.captcha_code ||
-          ""
-      ).replace(/\D/g, "");
-
-      setCaptchaId(String(data?.captcha_id || data?.id || ""));
-      setCaptchaCode(code);
-      setCaptcha("");
-    } catch {
-      setCaptchaCode("");
-      setCaptchaId("");
-      setError("Не удалось загрузить CAPTCHA с сервера. Обновите код.");
-    } finally {
-      setCaptchaLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    loadCaptcha();
-  }, []);
-
-  async function submit(event) {
-    event.preventDefault();
-
-    setError("");
-
-    if (!username.trim()) {
-      setError("Введите логин.");
-      return;
-    }
-
-    if (password.length < 4) {
-      setError("Пароль должен содержать минимум 4 символа.");
-      return;
-    }
-
-    if (captcha.length !== 4) {
-      setError("Введите 4 цифры CAPTCHA.");
-      return;
-    }
-
-    if (captchaCode && captcha !== captchaCode) {
-      setError("Неверный код CAPTCHA.");
-      loadCaptcha();
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const endpoint =
-        mode === "login"
-          ? "/api/auth/login"
-          : "/api/auth/register";
-
-      const data = await apiFetch(endpoint, {
-        method: "POST",
-        body: JSON.stringify({
-          username: username.trim(),
-          password,
-          captcha,
-          captcha_code: captcha,
-          captcha_id: captchaId,
-        }),
-      });
-
-      const user =
-        data?.user ||
-        data?.profile ||
-        (data?.username ? data : null);
-
-      if (user) {
-        onSuccess(user);
-      } else {
-        onSuccess({
-          username: username.trim(),
-        });
-      }
-
-      onClose();
-    } catch (err) {
-      setError(
-        err.message ||
-          "Не удалось выполнить операцию."
-      );
-      loadCaptcha();
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div
-        className="auth-modal"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
+    <div className="fm-player-center">
+      <div className="fm-player-buttons">
         <button
-          className="modal-close"
-          onClick={onClose}
-          type="button"
-        >
-          <Icon name="close" size={24} />
-        </button>
-
-        <div className="auth-logo">F</div>
-
-        <h2>
-          {mode === "login"
-            ? "С возвращением"
-            : "Создать аккаунт"}
-        </h2>
-
-        <p className="auth-subtitle">
-          {mode === "login"
-            ? "Войди, чтобы продолжить слушать музыку."
-            : "Создай аккаунт Fenix Music бесплатно."}
-        </p>
-
-        <form onSubmit={submit}>
-          <label className="form-field">
-            <span>Логин</span>
-            <input
-              value={username}
-              onChange={(event) =>
-                setUsername(event.target.value)
-              }
-              placeholder="Введите логин"
-              autoComplete="username"
-            />
-          </label>
-
-          <label className="form-field">
-            <span>Пароль</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(event) =>
-                setPassword(event.target.value)
-              }
-              placeholder="Введите пароль"
-              autoComplete={
-                mode === "login"
-                  ? "current-password"
-                  : "new-password"
-              }
-            />
-          </label>
-
-          <div className="captcha-box">
-            <div className="captcha-top">
-              <span>CAPTCHA</span>
-
-              <button
-                type="button"
-                className="captcha-refresh"
-                onClick={loadCaptcha}
-                disabled={captchaLoading}
-              >
-                <Icon name="refresh" size={17} />
-              </button>
-            </div>
-
-            <div className="captcha-code">
-              {captchaLoading
-                ? "----"
-                : captchaCode
-                  ? captchaCode
-                  : "----"}
-            </div>
-
-            <input
-              className="captcha-input"
-              value={captcha}
-              onChange={(event) =>
-                setCaptcha(
-                  event.target.value
-                    .replace(/\D/g, "")
-                    .slice(0, 4)
-                )
-              }
-              placeholder="Введите 4 цифры"
-              inputMode="numeric"
-              maxLength={4}
-            />
-          </div>
-
-          {error && (
-            <div className="form-error">
-              {error}
-            </div>
-          )}
-
-          <button
-            className="auth-submit"
-            disabled={loading || captchaLoading}
-            type="submit"
-          >
-            {loading
-              ? "Подождите..."
-              : mode === "login"
-                ? "Войти"
-                : "Зарегистрироваться"}
-          </button>
-        </form>
-
-        <button
-          className="auth-switch"
-          type="button"
-          onClick={() => {
-            setMode(
-              mode === "login"
-                ? "register"
-                : "login"
-            );
-            setError("");
-          }}
-        >
-          {mode === "login"
-            ? "Нет аккаунта? Зарегистрироваться"
-            : "Уже есть аккаунт? Войти"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TrackMenu({ track, onClose, onLike, liked }) {
-  if (!track) return null;
-
-  return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div
-        className="track-menu"
-        onMouseDown={(event) =>
-          event.stopPropagation()
-        }
-      >
-        <div className="menu-track">
-          <TrackCover track={track} />
-          <div>
-            <strong>{track.title}</strong>
-            <span>{track.artist}</span>
-          </div>
-        </div>
-
-        <button
-          onClick={() => {
-            onLike(track);
-            onClose();
-          }}
+          className={
+            shuffle
+              ? "is-active"
+              : ""
+          }
+          onClick={onShuffle}
+          title="Перемешивание"
         >
           <Icon
-            name={liked ? "heartFill" : "heart"}
-            size={20}
+            name="shuffle"
+            size={19}
           />
-          {liked
-            ? "Убрать из избранного"
-            : "Добавить в избранное"}
         </button>
 
-        <button onClick={onClose}>
-          <Icon name="plus" size={20} />
-          Добавить в очередь
+        <button
+          onClick={onPrevious}
+          title="Предыдущий"
+        >
+          <Icon
+            name="previous"
+            size={19}
+          />
         </button>
 
-        <button onClick={onClose}>
-          <Icon name="library" size={20} />
-          Добавить в плейлист
+        <button
+          className="fm-player-main-button"
+          onClick={onPlayPause}
+          title={
+            playing
+              ? "Пауза"
+              : "Воспроизвести"
+          }
+        >
+          <Icon
+            name={
+              playing
+                ? "pause"
+                : "play"
+            }
+            size={22}
+          />
+        </button>
+
+        <button
+          onClick={onNext}
+          title="Следующий"
+        >
+          <Icon
+            name="next"
+            size={19}
+          />
+        </button>
+
+        <button
+          className={
+            repeat !== "off"
+              ? "is-active"
+              : ""
+          }
+          onClick={onRepeat}
+          title="Повтор"
+        >
+          <Icon
+            name="repeat"
+            size={19}
+          />
         </button>
       </div>
-    </div>
-  );
-}
 
-function Player({
-  track,
-  playing,
-  progress,
-  duration,
-  volume,
-  shuffle,
-  repeat,
-  onPlayPause,
-  onNext,
-  onPrev,
-  onSeek,
-  onVolume,
-  onShuffle,
-  onRepeat,
-  onFullscreen,
-}) {
-  if (!track) return null;
+      <div className="fm-player-time">
+        <span>
+          {formatTime(position)}
+        </span>
 
-  return (
-    <div className="player">
-      <div className="player-progress">
         <input
           type="range"
           min="0"
-          max={Math.max(duration, 1)}
+          max={duration || 0}
           step="0.1"
-          value={Math.min(progress, duration || 0)}
+          value={Math.min(
+            position,
+            duration || 0
+          )}
           onChange={(event) =>
-            onSeek(Number(event.target.value))
+            onSeek(
+              Number(
+                event.target.value
+              )
+            )
           }
         />
-      </div>
 
-      <div className="player-inner">
-        <div className="player-track">
-          <TrackCover track={track} />
-          <div>
-            <strong>{track.title}</strong>
-            <span>{track.artist}</span>
-          </div>
-        </div>
-
-        <div className="player-center">
-          <div className="player-controls">
-            <button
-              className={shuffle ? "control-active" : ""}
-              onClick={onShuffle}
-              title="Перемешивание"
-            >
-              <Icon name="shuffle" size={18} />
-            </button>
-
-            <button onClick={onPrev}>
-              <Icon name="prev" size={21} />
-            </button>
-
-            <button
-              className="player-play"
-              onClick={onPlayPause}
-            >
-              <Icon
-                name={playing ? "pause" : "play"}
-                size={21}
-              />
-            </button>
-
-            <button onClick={onNext}>
-              <Icon name="next" size={21} />
-            </button>
-
-            <button
-              className={repeat ? "control-active" : ""}
-              onClick={onRepeat}
-              title="Повтор"
-            >
-              <Icon name="repeat" size={18} />
-            </button>
-          </div>
-
-          <div className="player-time">
-            <span>{formatTime(progress)}</span>
-            <span>{formatTime(duration)}</span>
-          </div>
-        </div>
-
-        <div className="player-right">
-          <div className="volume-control">
-            <Icon
-              name={volume === 0 ? "volumeMute" : "volume"}
-              size={19}
-            />
-
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={volume}
-              onChange={(event) =>
-                onVolume(Number(event.target.value))
-              }
-            />
-          </div>
-
-          <button onClick={onFullscreen}>
-            <Icon name="fullscreen" size={19} />
-          </button>
-        </div>
+        <span>
+          {formatTime(duration)}
+        </span>
       </div>
     </div>
-  );
+
+    <div className="fm-player-right">
+      <button
+        onClick={onQueue}
+        title="Очередь"
+      >
+        <Icon
+          name="queue"
+          size={20}
+        />
+      </button>
+
+      <Icon
+        name={
+          volume === 0
+            ? "volumeOff"
+            : "volume"
+        }
+        size={18}
+      />
+
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={volume}
+        onChange={(event) =>
+          onVolume(
+            Number(
+              event.target.value
+            )
+          )
+        }
+      />
+
+      <button
+        onClick={onFullscreen}
+        title="Полный экран"
+      >
+        ⛶
+      </button>
+    </div>
+  </div>
+</div>
+
+);
 }
 
 function FullscreenPlayer({
-  track,
-  playing,
-  progress,
-  duration,
-  volume,
-  onClose,
-  onPlayPause,
-  onNext,
-  onPrev,
-  onSeek,
-  onVolume,
+track,
+playing,
+position,
+duration,
+volume,
+onClose,
+onPlayPause,
+onNext,
+onPrevious,
+onSeek,
+onVolume,
+onShuffle,
+onRepeat,
 }) {
-  if (!track) return null;
+const progress =
+duration > 0
+? Math.min(
+100,
+(position / duration) * 100
+)
+: 0;
 
-  return (
-    <div className="fullscreen-player">
-      <div className="fullscreen-bg" />
+return (
+<div className="fm-full-player">
+<div className="fm-full-background" />
 
-      <button
-        className="fullscreen-close"
-        onClick={onClose}
-      >
-        <Icon name="close" size={27} />
-      </button>
+  <button
+    className="fm-full-close"
+    onClick={onClose}
+  >
+    <Icon name="close" size={28} />
+  </button>
 
-      <div className="fullscreen-content">
-        <div className="fullscreen-cover">
-          <TrackCover track={track} large />
-        </div>
+  <div className="fm-full-content">
+    <div className="fm-eyebrow">
+      NOW PLAYING
+    </div>
 
-        <div className="fullscreen-info">
-          <span>СЕЙЧАС ИГРАЕТ</span>
-          <h1>{track.title}</h1>
-          <p>{track.artist}</p>
-        </div>
+    <TrackCover
+      track={track}
+      large
+    />
 
-        <div className="fullscreen-progress">
-          <input
-            type="range"
-            min="0"
-            max={Math.max(duration, 1)}
-            step="0.1"
-            value={Math.min(progress, duration || 0)}
-            onChange={(event) =>
-              onSeek(Number(event.target.value))
-            }
-          />
+    <h1>{track.title}</h1>
 
-          <div>
-            <span>{formatTime(progress)}</span>
-            <span>{formatTime(duration)}</span>
-          </div>
-        </div>
+    <p>{track.artist}</p>
 
-        <div className="fullscreen-controls">
-          <button onClick={onPrev}>
-            <Icon name="prev" size={29} />
-          </button>
+    <div className="fm-full-progress">
+      <input
+        type="range"
+        min="0"
+        max={duration || 0}
+        step="0.1"
+        value={Math.min(
+          position,
+          duration || 0
+        )}
+        onChange={(event) =>
+          onSeek(
+            Number(
+              event.target.value
+            )
+          )
+        }
+        style={{
+          "--fm-progress": `${progress}%`,
+        }}
+      />
 
-          <button
-            className="fullscreen-play"
-            onClick={onPlayPause}
-          >
-            <Icon
-              name={playing ? "pause" : "play"}
-              size={30}
-            />
-          </button>
+      <div>
+        <span>
+          {formatTime(position)}
+        </span>
 
-          <button onClick={onNext}>
-            <Icon name="next" size={29} />
-          </button>
-        </div>
-
-        <div className="fullscreen-volume">
-          <Icon
-            name={volume === 0 ? "volumeMute" : "volume"}
-            size={20}
-          />
-
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            onChange={(event) =>
-              onVolume(Number(event.target.value))
-            }
-          />
-        </div>
+        <span>
+          {formatTime(duration)}
+        </span>
       </div>
     </div>
-  );
+
+    <div className="fm-full-controls">
+      <button onClick={onShuffle}>
+        <Icon
+          name="shuffle"
+          size={22}
+        />
+      </button>
+
+      <button onClick={onPrevious}>
+        <Icon
+          name="previous"
+          size={24}
+        />
+      </button>
+
+      <button
+        className="fm-full-play"
+        onClick={onPlayPause}
+      >
+        <Icon
+          name={
+            playing
+              ? "pause"
+              : "play"
+          }
+          size={29}
+        />
+      </button>
+
+      <button onClick={onNext}>
+        <Icon
+          name="next"
+          size={24}
+        />
+      </button>
+
+      <button onClick={onRepeat}>
+        <Icon
+          name="repeat"
+          size={22}
+        />
+      </button>
+    </div>
+
+    <div className="fm-full-volume">
+      <Icon
+        name={
+          volume === 0
+            ? "volumeOff"
+            : "volume"
+        }
+        size={19}
+      />
+
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.01"
+        value={volume}
+        onChange={(event) =>
+          onVolume(
+            Number(
+              event.target.value
+            )
+          )
+        }
+      />
+    </div>
+  </div>
+</div>
+
+);
 }
 
 function HomePage({
-  tracks,
-  category,
-  setCategory,
-  activeId,
-  playing,
-  onPlay,
-  onLike,
-  likedIds,
-  search,
+tracks,
+likedIds,
+currentTrack,
+playing,
+onPlay,
+onLike,
+onMenu,
+onNavigate,
 }) {
-  const filtered = useMemo(() => {
-    let result = [...tracks];
+const popular = useMemo(
+() =>
+[...tracks]
+.sort(
+(a, b) =>
+b.plays - a.plays
+)
+.slice(0, 8),
+[tracks]
+);
 
-    if (search.trim()) {
-      const q = search.toLowerCase();
+const recent = tracks.slice(0, 6);
 
-      result = result.filter(
-        (track) =>
-          track.title.toLowerCase().includes(q) ||
-          track.artist.toLowerCase().includes(q) ||
-          track.album.toLowerCase().includes(q)
-      );
-    }
+return (
+<div className="fm-page">
+<section className="fm-hero">
+<div className="fm-hero-copy">
+<div className="fm-eyebrow">
+FENIX MUSIC
+</div>
 
-    if (category === "new") {
-      return result.slice().reverse();
-    }
+      <h1>
+        Твоя музыка.
+        <br />
+        Твой ритм.
+      </h1>
 
-    if (category === "popular") {
-      return result
-        .slice()
-        .sort(
-          (a, b) =>
-            b.plays_count - a.plays_count
-        );
-    }
+      <p>
+        Слушай любимые треки,
+        открывай новое и собирай
+        свою музыкальную вселенную.
+      </p>
 
-    return result;
-  }, [tracks, category, search]);
+      <div className="fm-hero-actions">
+        {tracks[0] && (
+          <button
+            className="fm-button fm-button-primary"
+            onClick={() =>
+              onPlay(
+                tracks[0],
+                tracks
+              )
+            }
+          >
+            <Icon
+              name="play"
+              size={17}
+            />
+            Слушать сейчас
+          </button>
+        )}
 
-  const heroTrack = tracks[0] || null;
-  const quickTracks = filtered.slice(0, 5);
+        <button
+          className="fm-button fm-button-secondary"
+          onClick={() =>
+            onNavigate("search")
+          }
+        >
+          <Icon
+            name="search"
+            size={18}
+          />
+          Найти музыку
+        </button>
+      </div>
+    </div>
 
-  return (
-    <div className="page">
-      {!search && (
-        <Hero
-          track={heroTrack}
-          onPlay={onPlay}
-        />
-      )}
+    <div className="fm-hero-art">
+      <div className="fm-hero-orbit">
+        <span>♫</span>
+        <span>♪</span>
+        <span>♬</span>
+      </div>
 
-      <CategoryTabs
-        category={category}
-        setCategory={setCategory}
+      <div className="fm-hero-logo">
+        F
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <SectionHeader
+      title="Продолжить слушать"
+      subtitle="Треки, которые доступны прямо сейчас"
+      action={{
+        label: "Все треки",
+        onClick: () =>
+          onNavigate("library"),
+      }}
+    />
+
+    {recent.length ? (
+      <div className="fm-track-grid fm-track-grid-4">
+        {recent.map((track) => (
+          <TrackCard
+            key={track.id}
+            track={track}
+            active={
+              currentTrack?.id ===
+              track.id
+            }
+            playing={playing}
+            liked={likedIds.has(
+              String(track.id)
+            )}
+            onPlay={() =>
+              onPlay(
+                track,
+                tracks
+              )
+            }
+            onLike={onLike}
+            onMenu={onMenu}
+          />
+        ))}
+      </div>
+    ) : (
+      <EmptyState
+        title="Музыки пока нет"
+        text="Добавь аудиофайлы в папку music на сервере."
+      />
+    )}
+  </section>
+
+  <section>
+    <SectionHeader
+      eyebrow="TRENDING"
+      title="Популярное"
+      subtitle="Самые прослушиваемые треки"
+      action={{
+        label: "Показать всё",
+        onClick: () =>
+          onNavigate("popular"),
+      }}
+    />
+
+    {popular.length ? (
+      <div className="fm-track-grid fm-track-grid-4">
+        {popular.map((track) => (
+          <TrackCard
+            key={track.id}
+            track={track}
+            active={
+              currentTrack?.id ===
+              track.id
+            }
+            playing={playing}
+            liked={likedIds.has(
+              String(track.id)
+            )}
+            onPlay={() =>
+              onPlay(
+                track,
+                popular
+              )
+            }
+            onLike={onLike}
+            onMenu={onMenu}
+          />
+        ))}
+      </div>
+    ) : (
+      <EmptyState
+        title="Пока нет популярных треков"
+        text="Статистика появится после прослушиваний."
+      />
+    )}
+  </section>
+
+  <section className="fm-feature-grid">
+    <button
+      className="fm-feature-card fm-feature-card-red"
+      onClick={() =>
+        onNavigate("popular")
+      }
+    >
+      <Icon
+        name="fire"
+        size={34}
       />
 
-      {search ? (
-        <section className="content-section">
-          <SectionHeader
-            title={`Результаты поиска`}
-            subtitle={`Найдено: ${filtered.length}`}
-          />
+      <strong>
+        Горячие треки
+      </strong>
 
-          <MusicGrid
-            tracks={filtered}
-            activeId={activeId}
-            playing={playing}
-            onPlay={onPlay}
-            onLike={onLike}
-            likedIds={likedIds}
-          />
-        </section>
-      ) : (
-        <>
-          <section className="content-section">
-            <SectionHeader
-              title={
-                category === "popular"
-                  ? "Популярное сейчас"
-                  : category === "new"
-                    ? "Свежие релизы"
-                    : "Для вас"
-              }
-              subtitle="Подборка музыки специально для тебя"
-            />
+      <span>
+        Музыка, которую сейчас
+        слушают чаще всего.
+      </span>
+    </button>
 
-            {quickTracks.length ? (
-              <div className="quick-grid">
-                {quickTracks.map((track) => (
-                  <QuickCard
-                    key={track.id}
-                    track={track}
-                    active={
-                      activeId === track.id
-                    }
-                    playing={playing}
-                    onPlay={onPlay}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon="music"
-                title="Музыка не найдена"
-                text="Положи аудиофайлы в папку music на сервере."
-              />
-            )}
-          </section>
+    <button
+      className="fm-feature-card"
+      onClick={() =>
+        onNavigate("library")
+      }
+    >
+      <Icon
+        name="library"
+        size={34}
+      />
 
-          <section className="content-section">
-            <SectionHeader
-              title="Треки"
-              subtitle="Вся доступная музыка"
-            />
+      <strong>
+        Твоя библиотека
+      </strong>
 
-            {filtered.length ? (
-              <div className="track-list">
-                <div className="track-list-head">
-                  <span>#</span>
-                  <span>ТРЕК</span>
-                  <span>АЛЬБОМ</span>
-                  <span>ПРОСЛУШИВАНИЯ</span>
-                  <span>ВРЕМЯ</span>
-                  <span />
-                </div>
+      <span>
+        Все доступные композиции
+        в одном месте.
+      </span>
+    </button>
 
-                {filtered.map((track, index) => (
-                  <TrackRow
-                    key={track.id}
-                    track={track}
-                    index={index}
-                    active={
-                      activeId === track.id
-                    }
-                    playing={playing}
-                    liked={likedIds.has(track.id)}
-                    onPlay={onPlay}
-                    onLike={onLike}
-                    onMenu={() => {}}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon="music"
-                title="Треков пока нет"
-                text="Добавь MP3, WAV, OGG, FLAC или M4A в папку music."
-              />
-            )}
-          </section>
-        </>
-      )}
-    </div>
-  );
+    <button
+      className="fm-feature-card"
+      onClick={() =>
+        onNavigate("favorites")
+      }
+    >
+      <Icon
+        name="heartFill"
+        size={34}
+      />
+
+      <strong>
+        Избранное
+      </strong>
+
+      <span>
+        Сохраняй любимые треки
+        одним нажатием.
+      </span>
+    </button>
+  </section>
+</div>
+
+);
 }
 
 function LibraryPage({
-  tracks,
-  likedIds,
-  onPlay,
-  activeId,
-  playing,
-  onLike,
+tracks,
+likedIds,
+currentTrack,
+playing,
+onPlay,
+onLike,
+onMenu,
 }) {
-  const liked = tracks.filter((track) =>
-    likedIds.has(track.id)
-  );
+return (
+<div className="fm-page">
+<div className="fm-page-title">
+<div className="fm-eyebrow">
+LIBRARY
+</div>
 
-  return (
-    <div className="page simple-page">
-      <div className="page-title">
-        <span>БИБЛИОТЕКА</span>
-        <h1>Моя музыка</h1>
-        <p>Твоя личная музыкальная коллекция.</p>
-      </div>
+    <h1>
+      Музыка
+    </h1>
 
-      <section className="content-section">
-        <SectionHeader
-          title="Все треки"
-          subtitle={`${tracks.length} доступных треков`}
-        />
+    <p>
+      {tracks.length}{" "}
+      {tracks.length === 1
+        ? "трек"
+        : "треков"}{" "}
+      доступно для прослушивания.
+    </p>
+  </div>
 
-        <MusicGrid
-          tracks={tracks}
-          activeId={activeId}
-          playing={playing}
-          onPlay={onPlay}
-          onLike={onLike}
-          likedIds={likedIds}
-        />
-      </section>
-
-      <section className="content-section">
-        <SectionHeader
-          title="Избранное"
-          subtitle={`${liked.length} треков`}
-        />
-
-        {liked.length ? (
-          <MusicGrid
-            tracks={liked}
-            activeId={activeId}
+  {tracks.length ? (
+    <div className="fm-track-list">
+      {tracks.map(
+        (track, index) => (
+          <TrackRow
+            key={track.id}
+            track={track}
+            index={index}
+            active={
+              currentTrack?.id ===
+              track.id
+            }
             playing={playing}
+            liked={likedIds.has(
+              String(track.id)
+            )}
             onPlay={onPlay}
             onLike={onLike}
-            likedIds={likedIds}
+            onMenu={onMenu}
           />
-        ) : (
-          <EmptyState
-            icon="heart"
-            title="Избранное пусто"
-            text="Нажми на сердечко возле трека, чтобы добавить его сюда."
-          />
-        )}
-      </section>
+        )
+      )}
     </div>
-  );
+  ) : (
+    <EmptyState
+      title="Музыка не найдена"
+      text="Проверь содержимое папки music на сервере."
+    />
+  )}
+</div>
+
+);
 }
 
-function LikedPage({
-  tracks,
-  likedIds,
-  onPlay,
-  activeId,
-  playing,
-  onLike,
+function PopularPage({
+tracks,
+likedIds,
+currentTrack,
+playing,
+onPlay,
+onLike,
+onMenu,
 }) {
-  const liked = tracks.filter((track) =>
-    likedIds.has(track.id)
-  );
+const popular = useMemo(
+() =>
+[...tracks].sort(
+(a, b) =>
+b.plays - a.plays
+),
+[tracks]
+);
 
-  return (
-    <div className="page simple-page">
-      <div className="page-title">
-        <span>КОЛЛЕКЦИЯ</span>
-        <h1>Избранное</h1>
-        <p>Треки, которые ты сохранил.</p>
-      </div>
+return (
+<div className="fm-page">
+<div className="fm-page-title">
+<div className="fm-eyebrow">
+TRENDING
+</div>
 
-      {liked.length ? (
-        <MusicGrid
-          tracks={liked}
-          activeId={activeId}
+    <h1>
+      Популярное
+    </h1>
+
+    <p>
+      Треки с максимальным
+      количеством прослушиваний.
+    </p>
+  </div>
+
+  {popular.length ? (
+    <div className="fm-track-grid fm-track-grid-4">
+      {popular.map((track) => (
+        <TrackCard
+          key={track.id}
+          track={track}
+          active={
+            currentTrack?.id ===
+            track.id
+          }
           playing={playing}
-          onPlay={onPlay}
+          liked={likedIds.has(
+            String(track.id)
+          )}
+          onPlay={() =>
+            onPlay(
+              track,
+              popular
+            )
+          }
           onLike={onLike}
-          likedIds={likedIds}
+          onMenu={onMenu}
         />
-      ) : (
-        <EmptyState
-          icon="heart"
-          title="Здесь пока ничего нет"
-          text="Добавляй любимые треки в избранное."
-        />
-      )}
+      ))}
     </div>
-  );
+  ) : (
+    <EmptyState
+      title="Популярных треков пока нет"
+      text="Начни слушать музыку."
+    />
+  )}
+</div>
+
+);
 }
 
-function RecentPage({
-  tracks,
-  recentIds,
-  onPlay,
-  activeId,
-  playing,
-  onLike,
-  likedIds,
+function FavoritesPage({
+tracks,
+likedIds,
+currentTrack,
+playing,
+onPlay,
+onLike,
+onMenu,
 }) {
-  const recent = recentIds
-    .map((id) =>
-      tracks.find((track) => track.id === id)
-    )
-    .filter(Boolean);
+const favoriteTracks =
+tracks.filter((track) =>
+likedIds.has(
+String(track.id)
+)
+);
 
-  return (
-    <div className="page simple-page">
-      <div className="page-title">
-        <span>ИСТОРИЯ</span>
-        <h1>Недавно слушали</h1>
-        <p>Треки, которые ты слушал недавно.</p>
-      </div>
+return (
+<div className="fm-page">
+<div className="fm-page-title">
+<div className="fm-eyebrow">
+YOUR MUSIC
+</div>
 
-      {recent.length ? (
-        <div className="track-list">
-          {recent.map((track, index) => (
-            <TrackRow
-              key={track.id}
-              track={track}
-              index={index}
-              active={
-                activeId === track.id
-              }
-              playing={playing}
-              liked={likedIds.has(track.id)}
-              onPlay={onPlay}
-              onLike={onLike}
-              onMenu={() => {}}
-            />
-          ))}
-        </div>
-      ) : (
-        <EmptyState
-          icon="clock"
-          title="История пока пуста"
-          text="Начни слушать музыку — здесь появятся последние треки."
-        />
+    <h1>
+      Избранное
+    </h1>
+
+    <p>
+      {favoriteTracks.length}{" "}
+      сохранённых треков.
+    </p>
+  </div>
+
+  {favoriteTracks.length ? (
+    <div className="fm-track-grid fm-track-grid-4">
+      {favoriteTracks.map(
+        (track) => (
+          <TrackCard
+            key={track.id}
+            track={track}
+            active={
+              currentTrack?.id ===
+              track.id
+            }
+            playing={playing}
+            liked
+            onPlay={() =>
+              onPlay(
+                track,
+                favoriteTracks
+              )
+            }
+            onLike={onLike}
+            onMenu={onMenu}
+          />
+        )
       )}
     </div>
-  );
+  ) : (
+    <EmptyState
+      icon="heart"
+      title="Избранное пусто"
+      text="Нажимай на сердечко у треков, чтобы сохранить их сюда."
+    />
+  )}
+</div>
+
+);
 }
 
 function SearchPage({
-  tracks,
-  query,
-  onPlay,
-  activeId,
-  playing,
-  onLike,
-  likedIds,
+tracks,
+search,
+setSearch,
+likedIds,
+currentTrack,
+playing,
+onPlay,
+onLike,
+onMenu,
 }) {
-  const q = query.toLowerCase();
+const query =
+search.trim().toLowerCase();
 
-  const result = tracks.filter(
-    (track) =>
-      track.title.toLowerCase().includes(q) ||
-      track.artist.toLowerCase().includes(q) ||
-      track.album.toLowerCase().includes(q)
-  );
-
-  return (
-    <div className="page simple-page">
-      <div className="page-title">
-        <span>ПОИСК</span>
-        <h1>Результаты</h1>
-        <p>
-          {query
-            ? `По запросу «${query}» найдено ${result.length}`
-            : "Начни вводить запрос в строке поиска."}
-        </p>
-      </div>
-
-      {result.length ? (
-        <MusicGrid
-          tracks={result}
-          activeId={activeId}
-          playing={playing}
-          onPlay={onPlay}
-          onLike={onLike}
-          likedIds={likedIds}
-        />
-      ) : (
-        <EmptyState
-          icon="search"
-          title="Ничего не найдено"
-          text="Попробуй изменить поисковый запрос."
-        />
-      )}
-    </div>
-  );
+const results = useMemo(() => {
+if (!query) {
+return tracks;
 }
 
-function ProfilePage({ user, onLogin }) {
-  if (!user) {
-    return (
-      <div className="page simple-page">
-        <div className="profile-login">
-          <div className="profile-big-avatar">
-            <Icon name="user" size={46} />
-          </div>
-          <h1>Твой профиль</h1>
-          <p>
-            Войди в аккаунт, чтобы сохранять
-            свою коллекцию и историю.
-          </p>
-          <button
-            className="primary-button"
-            onClick={onLogin}
-          >
-            Войти
-          </button>
-        </div>
-      </div>
-    );
-  }
+return tracks.filter(
+  (track) =>
+    track.title
+      .toLowerCase()
+      .includes(query) ||
+    track.artist
+      .toLowerCase()
+      .includes(query) ||
+    track.album
+      .toLowerCase()
+      .includes(query)
+);
 
-  return (
-    <div className="page simple-page">
-      <div className="profile-card">
-        <div className="profile-big-avatar">
-          {(user.username ||
-            user.first_name ||
-            user.name ||
-            "F")[0].toUpperCase()}
-        </div>
+}, [tracks, query]);
 
-        <div>
-          <span className="profile-label">
-            ПРОФИЛЬ
-          </span>
-          <h1>
-            {user.username ||
-              user.first_name ||
-              user.name ||
-              "Пользователь"}
-          </h1>
-          {user.id && (
-            <p>ID: {user.id}</p>
-          )}
-        </div>
-      </div>
+return (
+<div className="fm-page">
+<div className="fm-search-page-head">
+<div>
+<div className="fm-eyebrow">
+DISCOVER
+</div>
 
-      <div className="stats-grid">
-        <div>
-          <strong>0</strong>
-          <span>Плейлистов</span>
-        </div>
-        <div>
-          <strong>0</strong>
-          <span>Избранных</span>
-        </div>
-        <div>
-          <strong>0</strong>
-          <span>Прослушано</span>
-        </div>
-      </div>
+      <h1>
+        Поиск
+      </h1>
+
+      <p>
+        Найди нужный трек,
+        исполнителя или альбом.
+      </p>
     </div>
-  );
+
+    <div className="fm-search-large">
+      <Icon
+        name="search"
+        size={22}
+      />
+
+      <input
+        value={search}
+        onChange={(event) =>
+          setSearch(
+            event.target.value
+          )
+        }
+        placeholder="Найти музыку..."
+        autoFocus
+      />
+
+      {search && (
+        <button
+          onClick={() =>
+            setSearch("")
+          }
+        >
+          <Icon
+            name="close"
+            size={20}
+          />
+        </button>
+      )}
+    </div>
+  </div>
+
+  <SectionHeader
+    title={
+      query
+        ? `Результаты для «${search}»`
+        : "Вся музыка"
+    }
+    subtitle={`${results.length} треков`}
+  />
+
+  {results.length ? (
+    <div className="fm-track-grid fm-track-grid-4">
+      {results.map((track) => (
+        <TrackCard
+          key={track.id}
+          track={track}
+          active={
+            currentTrack?.id ===
+            track.id
+          }
+          playing={playing}
+          liked={likedIds.has(
+            String(track.id)
+          )}
+          onPlay={() =>
+            onPlay(
+              track,
+              results
+            )
+          }
+          onLike={onLike}
+          onMenu={onMenu}
+        />
+      ))}
+    </div>
+  ) : (
+    <EmptyState
+      icon="search"
+      title="Ничего не найдено"
+      text="Попробуй изменить запрос."
+    />
+  )}
+</div>
+
+);
+}
+
+function HistoryPage({
+tracks,
+history,
+likedIds,
+currentTrack,
+playing,
+onPlay,
+onLike,
+onMenu,
+}) {
+const historyTracks = history
+.map((id) =>
+tracks.find(
+(track) =>
+String(track.id) ===
+String(id)
+)
+)
+.filter(Boolean);
+
+return (
+<div className="fm-page">
+<div className="fm-page-title">
+<div className="fm-eyebrow">
+RECENTLY PLAYED
+</div>
+
+    <h1>
+      История
+    </h1>
+
+    <p>
+      Треки, которые ты недавно
+      слушал.
+    </p>
+  </div>
+
+  {historyTracks.length ? (
+    <div className="fm-track-list">
+      {historyTracks.map(
+        (track, index) => (
+          <TrackRow
+            key={`${track.id}-${index}`}
+            track={track}
+            index={index}
+            active={
+              currentTrack?.id ===
+              track.id
+            }
+            playing={playing}
+            liked={likedIds.has(
+              String(track.id)
+            )}
+            onPlay={onPlay}
+            onLike={onLike}
+            onMenu={onMenu}
+          />
+        )
+      )}
+    </div>
+  ) : (
+    <EmptyState
+      icon="history"
+      title="История пуста"
+      text="После прослушивания треки появятся здесь."
+    />
+  )}
+</div>
+
+);
+}
+
+function ProfilePage({
+user,
+onLogin,
+onLogout,
+}) {
+if (!user) {
+return (
+<div className="fm-page">
+<div className="fm-profile-guest">
+<div className="fm-profile-avatar">
+F
+</div>
+
+      <div className="fm-eyebrow">
+        FENIX ACCOUNT
+      </div>
+
+      <h1>
+        Твой профиль
+      </h1>
+
+      <p>
+        Войди в аккаунт, чтобы
+        сохранять избранное,
+        историю и настройки.
+      </p>
+
+      <button
+        className="fm-button fm-button-primary"
+        onClick={onLogin}
+      >
+        <Icon
+          name="user"
+          size={17}
+        />
+        Войти
+      </button>
+    </div>
+  </div>
+);
+
+}
+
+return (
+<div className="fm-page">
+<div className="fm-profile-card">
+<div className="fm-profile-avatar">
+{(user.username ||
+user.name ||
+"F")
+.charAt(0)
+.toUpperCase()}
+</div>
+
+    <div className="fm-profile-info">
+      <div className="fm-eyebrow">
+        FENIX MEMBER
+      </div>
+
+      <h1>
+        {user.username ||
+          user.name ||
+          "Пользователь"}
+      </h1>
+
+      {user.email && (
+        <p>
+          {user.email}
+        </p>
+      )}
+
+      <span className="fm-profile-status">
+        <Icon
+          name="check"
+          size={14}
+        />
+        Аккаунт активен
+      </span>
+    </div>
+
+    <button
+      className="fm-button fm-button-secondary"
+      onClick={onLogout}
+    >
+      <Icon
+        name="logout"
+        size={17}
+      />
+      Выйти
+    </button>
+  </div>
+
+  <div className="fm-profile-grid">
+    <article>
+      <Icon
+        name="shield"
+        size={27}
+      />
+
+      <h3>
+        Безопасность
+      </h3>
+
+      <p>
+        Защита аккаунта и CAPTCHA
+        включены.
+      </p>
+    </article>
+
+    <article>
+      <Icon
+        name="music"
+        size={27}
+      />
+
+      <h3>
+        Fenix Music
+      </h3>
+
+      <p>
+        Твоя персональная
+        музыкальная библиотека.
+      </p>
+    </article>
+
+    <article>
+      <Icon
+        name="star"
+        size={27}
+      />
+
+      <h3>
+        Premium
+      </h3>
+
+      <p>
+        Дополнительные возможности
+        можно добавить позже.
+      </p>
+    </article>
+  </div>
+</div>
+
+);
+}
+
+function Sidebar({
+page,
+setPage,
+user,
+onLogin,
+}) {
+const items = [
+{
+id: "home",
+label: "Главная",
+icon: "home",
+},
+{
+id: "search",
+label: "Поиск",
+icon: "search",
+},
+{
+id: "library",
+label: "Музыка",
+icon: "music",
+},
+{
+id: "popular",
+label: "Популярное",
+icon: "fire",
+},
+{
+id: "favorites",
+label: "Избранное",
+icon: "heart",
+},
+{
+id: "history",
+label: "История",
+icon: "history",
+},
+];
+
+return (
+<aside className="fm-sidebar">
+<button
+className="fm-brand"
+onClick={() =>
+setPage("home")
+}
+>
+<span className="fm-brand-mark">
+F
+</span>
+
+    <span>
+      <strong>
+        FENIX
+      </strong>
+      <small>
+        MUSIC
+      </small>
+    </span>
+  </button>
+
+  <nav className="fm-nav">
+    <div className="fm-nav-label">
+      MENU
+    </div>
+
+    {items.map((item) => (
+      <button
+        key={item.id}
+        className={
+          page === item.id
+            ? "is-active"
+            : ""
+        }
+        onClick={() =>
+          setPage(item.id)
+        }
+      >
+        <Icon
+          name={item.icon}
+          size={20}
+        />
+
+        <span>
+          {item.label}
+        </span>
+      </button>
+    ))}
+  </nav>
+
+  <div className="fm-sidebar-bottom">
+    <button
+      className={
+        page === "profile"
+          ? "is-active"
+          : ""
+      }
+      onClick={() =>
+        user
+          ? setPage("profile")
+          : onLogin()
+      }
+    >
+      <Icon
+        name="user"
+        size={20}
+      />
+
+      <span>
+        {user
+          ? user.username ||
+            user.name ||
+            "Профиль"
+          : "Войти"}
+      </span>
+    </button>
+
+    <div className="fm-sidebar-version">
+      FENIX MUSIC
+      <span>v3.0</span>
+    </div>
+  </div>
+</aside>
+
+);
+}
+
+function MobileNav({
+page,
+setPage,
+user,
+onLogin,
+}) {
+const items = [
+["home", "home", "Главная"],
+["search", "search", "Поиск"],
+["library", "music", "Музыка"],
+[
+"favorites",
+"heart",
+"Избранное",
+],
+[
+"profile",
+"user",
+"Профиль",
+],
+];
+
+return (
+<nav className="fm-mobile-nav">
+{items.map(
+([id, icon, label]) => (
+<button
+key={id}
+className={
+page === id
+? "is-active"
+: ""
+}
+onClick={() => {
+if (
+id === "profile" &&
+!user
+) {
+onLogin();
+return;
+}
+
+          setPage(id);
+        }}
+      >
+        <Icon
+          name={icon}
+          size={20}
+        />
+
+        <span>
+          {label}
+        </span>
+      </button>
+    )
+  )}
+</nav>
+
+);
 }
 
 function App() {
-  const audioRef = useRef(null);
+const [page, setPage] =
+useState("home");
 
-  const [page, setPage] = useState("home");
-  const [category, setCategory] = useState("for-you");
+const [tracks, setTracks] =
+useState([]);
 
-  const [tracks, setTracks] = useState([]);
-  const [loadingTracks, setLoadingTracks] = useState(true);
-  const [musicError, setMusicError] = useState("");
+const [user, setUser] =
+useState(null);
 
-  const [search, setSearch] = useState("");
+const [favorites, setFavorites] =
+useState(() => {
+try {
+return JSON.parse(
+localStorage.getItem(
+"fenix_music_favorites"
+) || "[]"
+);
+} catch {
+return [];
+}
+});
 
-  const [currentTrack, setCurrentTrack] =
-    useState(null);
+const [history, setHistory] =
+useState(() => {
+try {
+return JSON.parse(
+localStorage.getItem(
+"fenix_music_history"
+) || "[]"
+);
+} catch {
+return [];
+}
+});
 
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
+const [search, setSearch] =
+useState("");
 
-  const [volume, setVolume] = useState(() => {
-    const saved = localStorage.getItem(
-      "fenix_music_volume"
-    );
+const [loading, setLoading] =
+useState(true);
 
-    return saved !== null
-      ? Number(saved)
-      : 0.85;
-  });
+const [loadError, setLoadError] =
+useState("");
 
-  const [shuffle, setShuffle] =
-    useState(false);
+const [authOpen, setAuthOpen] =
+useState(false);
 
-  const [repeat, setRepeat] =
-    useState(false);
+const [authMode, setAuthMode] =
+useState("login");
 
-  const [likedIds, setLikedIds] =
-    useState(() => {
-      try {
-        return new Set(
-          JSON.parse(
-            localStorage.getItem(
-              "fenix_music_liked"
-            ) || "[]"
+const [currentTrack, setCurrentTrack] =
+useState(null);
+
+const [queue, setQueue] =
+useState([]);
+
+const [playing, setPlaying] =
+useState(false);
+
+const [position, setPosition] =
+useState(0);
+
+const [duration, setDuration] =
+useState(0);
+
+const [volume, setVolume] =
+useState(() => {
+const saved =
+localStorage.getItem(
+"fenix_music_volume"
+);
+
+  const value =
+    Number(saved);
+
+  return Number.isFinite(value)
+    ? Math.max(
+        0,
+        Math.min(1, value)
+      )
+    : 1;
+});
+
+const [shuffle, setShuffle] =
+useState(false);
+
+const [repeat, setRepeat] =
+useState("off");
+
+const [queueOpen, setQueueOpen] =
+useState(false);
+
+const [fullscreen, setFullscreen] =
+useState(false);
+
+const [menuTrack, setMenuTrack] =
+useState(null);
+
+const audioRef =
+useRef(null);
+
+const loadMusic = useCallback(
+async () => {
+setLoading(true);
+setLoadError("");
+
+  try {
+    const data =
+      await apiFetch(
+        "/music"
+      );
+
+    const source =
+      Array.isArray(data)
+        ? data
+        : Array.isArray(
+            data?.tracks
           )
-        );
-      } catch {
-        return new Set();
-      }
-    });
+        ? data.tracks
+        : Array.isArray(
+            data?.music
+          )
+        ? data.music
+        : [];
 
-  const [recentIds, setRecentIds] =
-    useState(() => {
-      try {
-        return JSON.parse(
-          localStorage.getItem(
-            "fenix_music_recent"
-          ) || "[]"
-        );
-      } catch {
-        return [];
-      }
-    });
+    setTracks(
+      source.map(
+        normalizeTrack
+      )
+    );
+  } catch (error) {
+    console.error(
+      "Fenix Music:",
+      error
+    );
 
-  const [user, setUser] = useState(null);
-
-  const [authOpen, setAuthOpen] =
-    useState(false);
-
-  const [fullscreen, setFullscreen] =
-    useState(false);
-
-  const [menuTrack, setMenuTrack] =
-    useState(null);
-
-  const activeId = currentTrack?.id || null;
-
-  async function loadMusic() {
-    setLoadingTracks(true);
-    setMusicError("");
-
-    try {
-      const data = await apiFetch("/api/music");
-
-      const source =
-        Array.isArray(data)
-          ? data
-          : data?.tracks ||
-            data?.music ||
-            data?.items ||
-            [];
-
-      const normalized = source
-        .map(normalizeTrack)
-        .filter(Boolean);
-
-      setTracks(normalized);
-    } catch (error) {
-      setTracks([]);
-      setMusicError(
-        error.message ||
-          "Не удалось загрузить музыку."
-      );
-    } finally {
-      setLoadingTracks(false);
-    }
+    setLoadError(
+      error.message ||
+        "Не удалось загрузить музыку."
+    );
+  } finally {
+    setLoading(false);
   }
+},
+[]
 
-  async function loadUser() {
-    try {
-      const data = await apiFetch("/api/auth/me");
+);
 
-      if (data?.user) {
-        setUser(data.user);
-      } else if (data?.username) {
-        setUser(data);
-      }
-    } catch {
-      // Пользователь может быть не авторизован.
-    }
-  }
-
-  useEffect(() => {
-    loadMusic();
-    loadUser();
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "fenix_music_liked",
-      JSON.stringify([...likedIds])
-    );
-  }, [likedIds]);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "fenix_music_recent",
-      JSON.stringify(recentIds)
-    );
-  }, [recentIds]);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "fenix_music_volume",
-      String(volume)
-    );
-
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-
-    if (!audio) return;
-
-    function onTimeUpdate() {
-      setProgress(audio.currentTime || 0);
-    }
-
-    function onLoadedMetadata() {
-      setDuration(
-        Number(audio.duration) || 0
-      );
-    }
-
-    function onEnded() {
-      if (repeat) {
-        audio.currentTime = 0;
-        audio.play().catch(() => {});
-        return;
-      }
-
-      playNext();
-    }
-
-    function onPlay() {
-      setPlaying(true);
-    }
-
-    function onPause() {
-      setPlaying(false);
-    }
-
-    function onError() {
-      setPlaying(false);
-    }
-
-    audio.addEventListener(
-      "timeupdate",
-      onTimeUpdate
-    );
-
-    audio.addEventListener(
-      "loadedmetadata",
-      onLoadedMetadata
-    );
-
-    audio.addEventListener(
-      "ended",
-      onEnded
-    );
-
-    audio.addEventListener(
-      "play",
-      onPlay
-    );
-
-    audio.addEventListener(
-      "pause",
-      onPause
-    );
-
-    audio.addEventListener(
-      "error",
-      onError
-    );
-
-    return () => {
-      audio.removeEventListener(
-        "timeupdate",
-        onTimeUpdate
-      );
-
-      audio.removeEventListener(
-        "loadedmetadata",
-        onLoadedMetadata
-      );
-
-      audio.removeEventListener(
-        "ended",
-        onEnded
-      );
-
-      audio.removeEventListener(
-        "play",
-        onPlay
-      );
-
-      audio.removeEventListener(
-        "pause",
-        onPause
-      );
-
-      audio.removeEventListener(
-        "error",
-        onError
-      );
-    };
-  }, [repeat, currentTrack, tracks, shuffle]);
-
-  function rememberTrack(track) {
-    setRecentIds((old) => {
-      const next = [
-        track.id,
-        ...old.filter(
-          (id) => id !== track.id
-        ),
-      ];
-
-      return next.slice(0, 30);
-    });
-  }
-
-  function playTrack(track) {
-    if (!track) return;
-
-    const audioUrl = track.audio_url;
-
-    if (!audioUrl) {
-      setMusicError(
-        "У этого трека отсутствует audio_url."
-      );
-      return;
-    }
+const loadMe = useCallback(
+async () => {
+try {
+const data =
+await apiFetch(
+"/auth/me"
+);
 
     if (
-      currentTrack?.id === track.id &&
-      audioRef.current
+      data?.user ||
+      data?.account ||
+      data?.profile
     ) {
-      audioRef.current
-        .play()
-        .then(() => setPlaying(true))
-        .catch(() => {});
-      return;
+      setUser(
+        data.user ||
+          data.account ||
+          data.profile
+      );
     }
+  } catch {
+    setUser(null);
+  }
+},
+[]
 
-    setCurrentTrack(track);
-    setProgress(0);
-    setDuration(
-      Number(track.duration) || 0
+);
+
+useEffect(() => {
+loadMusic();
+loadMe();
+}, [loadMusic, loadMe]);
+
+useEffect(() => {
+localStorage.setItem(
+"fenix_music_favorites",
+JSON.stringify(favorites)
+);
+}, [favorites]);
+
+useEffect(() => {
+localStorage.setItem(
+"fenix_music_history",
+JSON.stringify(history)
+);
+}, [history]);
+
+useEffect(() => {
+localStorage.setItem(
+"fenix_music_volume",
+String(volume)
+);
+}, [volume]);
+
+useEffect(() => {
+if (audioRef.current) {
+audioRef.current.volume =
+volume;
+}
+}, [volume]);
+
+const likedIds = useMemo(
+() =>
+new Set(
+favorites.map((id) =>
+String(id)
+)
+),
+[favorites]
+);
+
+const playTrack = useCallback(
+(
+track,
+sourceQueue = tracks
+) => {
+if (!track?.audio) {
+return;
+}
+
+  const normalized =
+    normalizeTrack(
+      track,
+      0
     );
-    rememberTrack(track);
 
-    setTimeout(() => {
-      if (!audioRef.current) return;
-
-      audioRef.current.src =
-        apiUrl(audioUrl);
-
-      audioRef.current.volume = volume;
-
-      audioRef.current
-        .play()
-        .then(() => setPlaying(true))
-        .catch(() => {
-          setPlaying(false);
-        });
-    }, 0);
-  }
-
-  function togglePlay() {
-    if (!audioRef.current) return;
-
-    if (!currentTrack) {
-      if (tracks[0]) {
-        playTrack(tracks[0]);
-      }
-
-      return;
-    }
-
-    if (audioRef.current.paused) {
-      audioRef.current
-        .play()
-        .then(() => setPlaying(true))
-        .catch(() => {});
-    } else {
-      audioRef.current.pause();
-      setPlaying(false);
-    }
-  }
-
-  function getNextTrack() {
-    if (!tracks.length) return null;
-
-    const currentIndex =
-      tracks.findIndex(
-        (track) =>
-          track.id === currentTrack?.id
-      );
-
-    if (shuffle) {
-      const available = tracks.filter(
-        (track) =>
-          track.id !== currentTrack?.id
-      );
-
-      if (!available.length) {
-        return tracks[0];
-      }
-
-      return available[
-        Math.floor(
-          Math.random() *
-            available.length
+  const preparedQueue =
+    sourceQueue.length
+      ? sourceQueue.map(
+          normalizeTrack
         )
-      ];
-    }
+      : [normalized];
 
-    if (currentIndex < 0) {
-      return tracks[0];
-    }
+  setQueue(
+    preparedQueue
+  );
 
-    return tracks[
-      (currentIndex + 1) %
-        tracks.length
-    ];
-  }
+  setCurrentTrack(
+    normalized
+  );
 
-  function getPrevTrack() {
-    if (!tracks.length) return null;
+  setPosition(0);
+  setDuration(
+    normalized.duration || 0
+  );
+  setPlaying(true);
 
-    const currentIndex =
-      tracks.findIndex(
-        (track) =>
-          track.id === currentTrack?.id
-      );
+  setHistory((previous) => {
+    const id =
+      String(normalized.id);
 
-    if (currentIndex <= 0) {
-      return tracks[tracks.length - 1];
-    }
+    return [
+      id,
+      ...previous.filter(
+        (item) =>
+          String(item) !== id
+      ),
+    ].slice(0, 50);
+  });
+},
+[tracks]
 
-    return tracks[currentIndex - 1];
-  }
+);
 
-  function playNext() {
-    const next = getNextTrack();
+useEffect(() => {
+if (!audioRef.current) {
+return;
+}
 
-    if (next) {
-      playTrack(next);
-    }
-  }
+const audio =
+  audioRef.current;
 
-  function playPrev() {
-    if (
-      audioRef.current &&
-      audioRef.current.currentTime > 5
-    ) {
-      audioRef.current.currentTime = 0;
-      setProgress(0);
-      return;
-    }
+if (!currentTrack?.audio) {
+  audio.pause();
+  setPlaying(false);
+  return;
+}
 
-    const prev = getPrevTrack();
+audio.src =
+  currentTrack.audio;
 
-    if (prev) {
-      playTrack(prev);
-    }
-  }
+audio.load();
 
-  function seek(value) {
-    if (!audioRef.current) return;
+if (playing) {
+  const promise =
+    audio.play();
 
-    audioRef.current.currentTime = value;
-    setProgress(value);
-  }
-
-  function changeVolume(value) {
-    setVolume(value);
-
-    if (audioRef.current) {
-      audioRef.current.volume = value;
-    }
-  }
-
-  function toggleLike(track) {
-    if (!track) return;
-
-    setLikedIds((old) => {
-      const next = new Set(old);
-
-      if (next.has(track.id)) {
-        next.delete(track.id);
-      } else {
-        next.add(track.id);
+  if (
+    promise &&
+    typeof promise.catch ===
+      "function"
+  ) {
+    promise.catch(
+      (error) => {
+        console.warn(
+          "Audio autoplay:",
+          error
+        );
+        setPlaying(false);
       }
-
-      return next;
-    });
-  }
-
-  function handleSearch(value) {
-    setSearch(value);
-
-    if (value.trim()) {
-      setPage("search");
-    } else if (page === "search") {
-      setPage("home");
-    }
-  }
-
-  function handleAuthSuccess(nextUser) {
-    setUser(nextUser);
-  }
-
-  function renderPage() {
-    if (page === "home") {
-      return (
-        <HomePage
-          tracks={tracks}
-          category={category}
-          setCategory={setCategory}
-          activeId={activeId}
-          playing={playing}
-          onPlay={playTrack}
-          onLike={toggleLike}
-          likedIds={likedIds}
-          search=""
-        />
-      );
-    }
-
-    if (page === "search") {
-      return (
-        <SearchPage
-          tracks={tracks}
-          query={search}
-          onPlay={playTrack}
-          activeId={activeId}
-          playing={playing}
-          onLike={toggleLike}
-          likedIds={likedIds}
-        />
-      );
-    }
-
-    if (page === "library") {
-      return (
-        <LibraryPage
-          tracks={tracks}
-          likedIds={likedIds}
-          onPlay={playTrack}
-          activeId={activeId}
-          playing={playing}
-          onLike={toggleLike}
-        />
-      );
-    }
-
-    if (page === "liked") {
-      return (
-        <LikedPage
-          tracks={tracks}
-          likedIds={likedIds}
-          onPlay={playTrack}
-          activeId={activeId}
-          playing={playing}
-          onLike={toggleLike}
-        />
-      );
-    }
-
-    if (page === "recent") {
-      return (
-        <RecentPage
-          tracks={tracks}
-          recentIds={recentIds}
-          onPlay={playTrack}
-          activeId={activeId}
-          playing={playing}
-          onLike={toggleLike}
-          likedIds={likedIds}
-        />
-      );
-    }
-
-    if (page === "profile") {
-      return (
-        <ProfilePage
-          user={user}
-          onLogin={() => setAuthOpen(true)}
-        />
-      );
-    }
-
-    return (
-      <HomePage
-        tracks={tracks}
-        category={category}
-        setCategory={setCategory}
-        activeId={activeId}
-        playing={playing}
-        onPlay={playTrack}
-        onLike={toggleLike}
-        likedIds={likedIds}
-        search=""
-      />
     );
   }
+}
 
-  return (
-    <div className="fenix-app">
-      <audio
-        ref={audioRef}
-        preload="metadata"
-      />
+}, [currentTrack]);
 
-      <div className="mobile-header">
-        <div className="brand">
-          <div className="brand-logo">F</div>
-          <div>
-            <strong>FENIX</strong>
-            <span>MUSIC</span>
-          </div>
-        </div>
+useEffect(() => {
+const audio =
+audioRef.current;
 
-        <button
-          className="icon-button"
-          onClick={() =>
-            setPage("profile")
-          }
-        >
-          <Icon name="user" size={22} />
-        </button>
-      </div>
+if (!audio) {
+  return;
+}
 
-      <Sidebar
-        page={page}
-        setPage={setPage}
-        user={user}
-        onLogin={() => setAuthOpen(true)}
-      />
+if (playing) {
+  const promise =
+    audio.play();
 
-      <main className="main">
-        <TopBar
-          onSearch={handleSearch}
-          onLogin={() => setAuthOpen(true)}
-          user={user}
-          onProfile={() =>
-            setPage("profile")
-          }
-        />
+  if (
+    promise &&
+    typeof promise.catch ===
+      "function"
+  ) {
+    promise.catch(() => {
+      setPlaying(false);
+    });
+  }
+} else {
+  audio.pause();
+}
 
-        {musicError && (
-          <div className="global-notice">
-            <span>{musicError}</span>
-            <button onClick={loadMusic}>
-              <Icon name="refresh" size={17} />
-              Повторить
-            </button>
-          </div>
-        )}
+}, [playing]);
 
-        {loadingTracks ? (
-          <div className="loading-screen">
-            <div className="loading-logo">F</div>
-            <div className="loading-spinner" />
-            <p>Загружаем Fenix Music...</p>
-          </div>
-        ) : (
-          renderPage()
-        )}
-      </main>
+const togglePlaying =
+useCallback(() => {
+if (!currentTrack) {
+if (tracks[0]) {
+playTrack(
+tracks[0],
+tracks
+);
+}
 
-      <Player
-        track={currentTrack}
-        playing={playing}
-        progress={progress}
-        duration={duration}
-        volume={volume}
-        shuffle={shuffle}
-        repeat={repeat}
-        onPlayPause={togglePlay}
-        onNext={playNext}
-        onPrev={playPrev}
-        onSeek={seek}
-        onVolume={changeVolume}
-        onShuffle={() =>
-          setShuffle((value) => !value)
-        }
-        onRepeat={() =>
-          setRepeat((value) => !value)
-        }
-        onFullscreen={() =>
-          setFullscreen(true)
-        }
-      />
+    return;
+  }
 
-      {authOpen && (
-        <LoginModal
-          onClose={() => setAuthOpen(false)}
-          onSuccess={handleAuthSuccess}
-        />
-      )}
+  setPlaying(
+    (value) => !value
+  );
+}, [
+  currentTrack,
+  tracks,
+  playTrack,
+]);
 
-      {menuTrack && (
-        <TrackMenu
-          track={menuTrack}
-          liked={likedIds.has(menuTrack.id)}
-          onLike={toggleLike}
-          onClose={() => setMenuTrack(null)}
-        />
-      )}
+const nextTrack =
+useCallback(() => {
+if (!currentTrack) {
+return;
+}
 
-      {fullscreen && currentTrack && (
-        <FullscreenPlayer
-          track={currentTrack}
-          playing={playing}
-          progress={progress}
-          duration={duration}
-          volume={volume}
-          onClose={() => setFullscreen(false)}
-          onPlayPause={togglePlay}
-          onNext={playNext}
-          onPrev={playPrev}
-          onSeek={seek}
-          onVolume={changeVolume}
-        />
-      )}
+  const source =
+    queue.length
+      ? queue
+      : tracks;
+
+  if (!source.length) {
+    return;
+  }
+
+  if (repeat === "one") {
+    setPosition(0);
+    setPlaying(true);
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0;
+    }
+
+    return;
+  }
+
+  let index =
+    source.findIndex(
+      (track) =>
+        String(track.id) ===
+        String(
+          currentTrack.id
+        )
+    );
+
+  let nextIndex;
+
+  if (shuffle) {
+    const candidates =
+      source
+        .map(
+          (_, itemIndex) =>
+            itemIndex
+        )
+        .filter(
+          (itemIndex) =>
+            itemIndex !== index
+        );
+
+    nextIndex =
+      candidates.length
+        ? candidates[
+            Math.floor(
+              Math.random() *
+                candidates.length
+            )
+          ]
+        : 0;
+  } else {
+    nextIndex =
+      index + 1;
+  }
+
+  if (
+    nextIndex >=
+    source.length
+  ) {
+    if (repeat === "all") {
+      nextIndex = 0;
+    } else {
+      setPlaying(false);
+      setPosition(0);
+      return;
+    }
+  }
+
+  playTrack(
+    source[nextIndex],
+    source
+  );
+}, [
+  currentTrack,
+  queue,
+  tracks,
+  repeat,
+  shuffle,
+  playTrack,
+]);
+
+const previousTrack =
+useCallback(() => {
+if (
+audioRef.current &&
+audioRef.current.currentTime >
+5
+) {
+audioRef.current.currentTime = 0;
+setPosition(0);
+return;
+}
+
+  const source =
+    queue.length
+      ? queue
+      : tracks;
+
+  if (!source.length) {
+    return;
+  }
+
+  const index =
+    source.findIndex(
+      (track) =>
+        String(track.id) ===
+        String(
+          currentTrack?.id
+        )
+    );
+
+  const previousIndex =
+    index > 0
+      ? index - 1
+      : source.length - 1;
+
+  playTrack(
+    source[previousIndex],
+    source
+  );
+}, [
+  queue,
+  tracks,
+  currentTrack,
+  playTrack,
+]);
+
+const seek = useCallback(
+(value) => {
+const audio =
+audioRef.current;
+
+  if (!audio) {
+    return;
+  }
+
+  audio.currentTime =
+    Number(value) || 0;
+
+  setPosition(
+    Number(value) || 0
+  );
+},
+[]
+
+);
+
+const changeVolume =
+useCallback(
+(value) => {
+const next =
+Math.max(
+0,
+Math.min(
+1,
+Number(value) || 0
+)
+);
+
+    setVolume(next);
+
+    if (audioRef.current) {
+      audioRef.current.volume =
+        next;
+    }
+  },
+  []
+);
+
+const toggleFavorite =
+useCallback(
+(track) => {
+if (!track?.id) {
+return;
+}
+
+    const id =
+      String(track.id);
+
+    setFavorites(
+      (previous) =>
+        previous.some(
+          (item) =>
+            String(item) === id
+        )
+          ? previous.filter(
+              (item) =>
+                String(item) !== id
+            )
+          : [
+              ...previous,
+              id,
+            ]
+    );
+  },
+  []
+);
+
+const handleAuthSuccess =
+useCallback(
+(nextUser) => {
+setUser(nextUser);
+setPage("profile");
+},
+[]
+);
+
+const logout =
+useCallback(
+async () => {
+try {
+await apiFetch(
+"/auth/logout",
+{
+method: "POST",
+}
+);
+} catch {
+} finally {
+setUser(null);
+setPage("home");
+}
+},
+[]
+);
+
+const handleAudioTime =
+() => {
+const audio =
+audioRef.current;
+
+  if (!audio) {
+    return;
+  }
+
+  setPosition(
+    audio.currentTime || 0
+  );
+};
+
+const handleAudioLoaded =
+() => {
+const audio =
+audioRef.current;
+
+  if (!audio) {
+    return;
+  }
+
+  const value =
+    Number(audio.duration);
+
+  if (
+    Number.isFinite(value)
+  ) {
+    setDuration(value);
+  }
+};
+
+const handleAudioEnded =
+() => {
+nextTrack();
+};
+
+const renderPage = () => {
+if (loading) {
+return (
+<div className="fm-loading">
+<div className="fm-loading-logo">
+F
+</div>
+
+      <div className="fm-loading-spinner" />
+
+      <strong>
+        Загружаем Fenix Music
+      </strong>
+
+      <span>
+        Подключаем музыкальную библиотеку...
+      </span>
     </div>
   );
+}
+
+if (loadError) {
+  return (
+    <div className="fm-page">
+      <EmptyState
+        icon="refresh"
+        title="Не удалось загрузить музыку"
+        text={loadError}
+        action={{
+          label: "Повторить",
+          onClick: loadMusic,
+        }}
+      />
+    </div>
+  );
+}
+
+const common = {
+  tracks,
+  likedIds,
+  currentTrack,
+  playing,
+  onPlay: playTrack,
+  onLike: toggleFavorite,
+  onMenu: setMenuTrack,
+};
+
+switch (page) {
+  case "search":
+    return (
+      <SearchPage
+        {...common}
+        search={search}
+        setSearch={setSearch}
+      />
+    );
+
+  case "library":
+    return (
+      <LibraryPage
+        {...common}
+      />
+    );
+
+  case "popular":
+    return (
+      <PopularPage
+        {...common}
+      />
+    );
+
+  case "favorites":
+    return (
+      <FavoritesPage
+        {...common}
+      />
+    );
+
+  case "history":
+    return (
+      <HistoryPage
+        {...common}
+        history={history}
+      />
+    );
+
+  case "profile":
+    return (
+      <ProfilePage
+        user={user}
+        onLogin={() => {
+          setAuthMode("login");
+          setAuthOpen(true);
+        }}
+        onLogout={logout}
+      />
+    );
+
+  case "home":
+  default:
+    return (
+      <HomePage
+        {...common}
+        onNavigate={setPage}
+      />
+    );
+}
+
+};
+
+return (
+<div className="fm-app">
+<audio
+ref={audioRef}
+preload="metadata"
+onTimeUpdate={
+handleAudioTime
+}
+onLoadedMetadata={
+handleAudioLoaded
+}
+onDurationChange={
+handleAudioLoaded
+}
+onEnded={
+handleAudioEnded
+}
+onPlay={() =>
+setPlaying(true)
+}
+onPause={() =>
+setPlaying(false)
+}
+onError={(event) => {
+console.error(
+"Fenix Music audio:",
+event
+);
+}}
+/>
+
+  <Sidebar
+    page={page}
+    setPage={setPage}
+    user={user}
+    onLogin={() => {
+      setAuthMode("login");
+      setAuthOpen(true);
+    }}
+  />
+
+  <main className="fm-main">
+    <header className="fm-topbar">
+      <div className="fm-mobile-brand">
+        <span>F</span>
+        <strong>
+          FENIX MUSIC
+        </strong>
+      </div>
+
+      <div className="fm-top-search">
+        <Icon
+          name="search"
+          size={20}
+        />
+
+        <input
+          value={search}
+          onChange={(event) => {
+            setSearch(
+              event.target.value
+            );
+
+            if (
+              event.target.value &&
+              page !== "search"
+            ) {
+              setPage("search");
+            }
+          }}
+          placeholder="Поиск музыки..."
+        />
+
+        {search && (
+          <button
+            onClick={() =>
+              setSearch("")
+            }
+          >
+            <Icon
+              name="close"
+              size={17}
+            />
+          </button>
+        )}
+      </div>
+
+      <div className="fm-top-actions">
+        <button
+          onClick={() =>
+            setPage("history")
+          }
+          title="История"
+        >
+          <Icon
+            name="history"
+            size={20}
+          />
+        </button>
+
+        <button
+          onClick={() => {
+            if (user) {
+              setPage("profile");
+            } else {
+              setAuthMode(
+                "login"
+              );
+              setAuthOpen(true);
+            }
+          }}
+          className="fm-user-button"
+        >
+          <span>
+            {user
+              ? (
+                  user.username ||
+                  user.name ||
+                  "F"
+                )
+                  .charAt(0)
+                  .toUpperCase()
+              : "F"}
+          </span>
+        </button>
+      </div>
+    </header>
+
+    <div className="fm-content">
+      {renderPage()}
+    </div>
+  </main>
+
+  <MobileNav
+    page={page}
+    setPage={setPage}
+    user={user}
+    onLogin={() => {
+      setAuthMode("login");
+      setAuthOpen(true);
+    }}
+  />
+
+  <PlayerBar
+    track={currentTrack}
+    playing={playing}
+    position={position}
+    duration={duration}
+    volume={volume}
+    shuffle={shuffle}
+    repeat={repeat}
+    onPlayPause={togglePlaying}
+    onNext={nextTrack}
+    onPrevious={previousTrack}
+    onSeek={seek}
+    onVolume={changeVolume}
+    onShuffle={() =>
+      setShuffle(
+        (value) => !value
+      )
+    }
+    onRepeat={() =>
+      setRepeat(
+        (value) =>
+          value === "off"
+            ? "all"
+            : value === "all"
+            ? "one"
+            : "off"
+      )
+    }
+    onQueue={() =>
+      setQueueOpen(true)
+    }
+    onFullscreen={() =>
+      setFullscreen(true)
+    }
+  />
+
+  {authOpen && (
+    <AuthModal
+      mode={authMode}
+      onModeChange={
+        setAuthMode
+      }
+      onClose={() =>
+        setAuthOpen(false)
+      }
+      onSuccess={
+        handleAuthSuccess
+      }
+    />
+  )}
+
+  {queueOpen && (
+    <QueuePanel
+      queue={queue}
+      currentTrack={
+        currentTrack
+      }
+      playing={playing}
+      onPlay={(
+        track,
+        source
+      ) => {
+        playTrack(
+          track,
+          source || queue
+        );
+        setQueueOpen(false);
+      }}
+      onClose={() =>
+        setQueueOpen(false)
+      }
+    />
+  )}
+
+  {menuTrack && (
+    <TrackMenu
+      track={menuTrack}
+      liked={likedIds.has(
+        String(menuTrack.id)
+      )}
+      onLike={toggleFavorite}
+      onPlay={(
+        track
+      ) => {
+        playTrack(
+          track,
+          tracks
+        );
+      }}
+      onClose={() =>
+        setMenuTrack(null)
+      }
+    />
+  )}
+
+  {fullscreen &&
+    currentTrack && (
+      <FullscreenPlayer
+        track={currentTrack}
+        playing={playing}
+        position={position}
+        duration={duration}
+        volume={volume}
+        onClose={() =>
+          setFullscreen(false)
+        }
+        onPlayPause={
+          togglePlaying
+        }
+        onNext={nextTrack}
+        onPrevious={
+          previousTrack
+        }
+        onSeek={seek}
+        onVolume={
+          changeVolume
+        }
+        onShuffle={() =>
+          setShuffle(
+            (value) => !value
+          )
+        }
+        onRepeat={() =>
+          setRepeat(
+            (value) =>
+              value === "off"
+                ? "all"
+                : value === "all"
+                ? "one"
+                : "off"
+          )
+        }
+      />
+    )}
+</div>
+
+);
 }
 
 export default App;
