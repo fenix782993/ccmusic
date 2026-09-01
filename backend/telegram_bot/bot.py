@@ -21,6 +21,10 @@ from backend.server import (
     SessionLocal,
     Track,
     User,
+    Like,
+    History,
+    Playlist,
+    PlaylistTrack,
     scan_music,
     MUSIC_DIR,
     COVER_DIR,
@@ -35,6 +39,9 @@ from .keyboards import (
     cancel_menu,
     after_upload_menu,
     track_menu,
+    profile_menu,
+    library_menu,
+    back_menu,
 )
 
 
@@ -62,6 +69,13 @@ AUDIO_EXTENSIONS = {
     ".flac",
     ".opus",
 }
+
+
+class States(StatesGroup):
+    waiting_audio = State()
+    waiting_cover = State()
+    waiting_search = State()
+    waiting_edit = State()
 
 
 def load_config():
@@ -98,13 +112,6 @@ def load_config():
     bot = Bot(token=BOT_TOKEN)
 
 
-class States(StatesGroup):
-    waiting_audio = State()
-    waiting_cover = State()
-    waiting_search = State()
-    waiting_edit = State()
-
-
 def is_admin(uid: int) -> bool:
     return uid in ADMIN_IDS
 
@@ -129,7 +136,7 @@ def track_text(t: Track) -> str:
     )
 
 
-def list_keyboard(rows):
+def list_keyboard(rows, back="home"):
     buttons = []
 
     for t in rows:
@@ -149,7 +156,7 @@ def list_keyboard(rows):
         [
             InlineKeyboardButton(
                 text="⬅️ Назад",
-                callback_data="admin",
+                callback_data=back,
             )
         ]
     )
@@ -159,17 +166,177 @@ def list_keyboard(rows):
     )
 
 
+def track_action_keyboard(
+    track_id: int,
+    liked: bool = False,
+    back="music",
+):
+    like_text = "💔 Убрать из избранного" if liked else "❤️ В избранное"
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=like_text,
+                    callback_data=f"like:{track_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="🎵 Открыть",
+                    callback_data=f"track:{track_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=back,
+                )
+            ],
+        ]
+    )
+
+
+def user_from_telegram(d, telegram_id: int):
+    """
+    На текущей схеме server.py отдельного telegram_id ещё нет.
+
+    Поэтому Telegram-пользователь определяется:
+    1. по username Telegram, если он совпадает с username сайта;
+    2. иначе возвращается None.
+
+    Это позволяет работать с существующей БД без изменения схемы.
+    """
+    tg_user = None
+
+    try:
+        tg_user = getattr(d, "_telegram_user", None)
+    except Exception:
+        pass
+
+    return None
+
+
+def find_user_by_telegram(d, message: Message):
+    """
+    Ищет пользователя сайта по Telegram username.
+
+    Если username Telegram совпадает с username FENIX MUSIC,
+    аккаунты считаются связанными.
+    """
+    username = (
+        message.from_user.username
+        if message.from_user
+        else None
+    )
+
+    if not username:
+        return None
+
+    username = username.strip().lstrip("@")
+
+    if not username:
+        return None
+
+    return (
+        d.query(User)
+        .filter(
+            func.lower(User.username)
+            == username.lower()
+        )
+        .first()
+    )
+
+
+def user_tracks_liked(d, user_id: int):
+    rows = (
+        d.query(Track)
+        .join(
+            Like,
+            Like.track_id == Track.id,
+        )
+        .filter(
+            Like.user_id == user_id
+        )
+        .order_by(
+            Like.created_at.desc(),
+            Track.id.desc(),
+        )
+        .limit(50)
+        .all()
+    )
+
+    return rows
+
+
+def user_history_tracks(d, user_id: int):
+    rows = (
+        d.query(History)
+        .filter(
+            History.user_id == user_id
+        )
+        .order_by(
+            History.played_at.desc()
+        )
+        .limit(50)
+        .all()
+    )
+
+    result = []
+
+    seen = set()
+
+    for row in rows:
+        if row.track_id in seen:
+            continue
+
+        track = d.get(
+            Track,
+            row.track_id,
+        )
+
+        if track:
+            result.append(track)
+            seen.add(track.id)
+
+    return result
+
+
+def user_playlists(d, user_id: int):
+    return (
+        d.query(Playlist)
+        .filter(
+            Playlist.user_id == user_id
+        )
+        .order_by(
+            Playlist.created_at.desc()
+        )
+        .all()
+    )
+
+
+# =========================================================
+# START
+# =========================================================
+
+
 @dp.message(CommandStart())
 async def start(message: Message):
     uid = message.from_user.id
 
     await message.answer(
         "🔥 <b>FENIX MUSIC</b>\n\n"
-        "🎧 Управление музыкальной библиотекой.",
+        "🎧 Музыкальная платформа.\n"
+        "Выбери нужный раздел:",
         reply_markup=main_menu(
             is_admin(uid)
         ),
     )
+
+
+# =========================================================
+# ADMIN
+# =========================================================
 
 
 @dp.message(Command("admin"))
@@ -186,6 +353,29 @@ async def admin_cmd(message: Message):
         "⚙️ <b>Админ-панель FENIX MUSIC</b>",
         reply_markup=admin_menu(),
     )
+
+
+@dp.callback_query(F.data == "admin")
+async def admin(c: CallbackQuery):
+    if not is_admin(c.from_user.id):
+        await c.answer(
+            "⛔ Доступ запрещён",
+            show_alert=True,
+        )
+        return
+
+    await c.message.edit_text(
+        "⚙️ <b>Админ-панель</b>\n\n"
+        "Управление музыкальной библиотекой.",
+        reply_markup=admin_menu(),
+    )
+
+    await c.answer()
+
+
+# =========================================================
+# HOME
+# =========================================================
 
 
 @dp.callback_query(F.data == "home")
@@ -206,45 +396,27 @@ async def home(
     await c.answer()
 
 
-@dp.callback_query(F.data == "admin")
-async def admin(c: CallbackQuery):
-    if not is_admin(c.from_user.id):
-        await c.answer(
-            "⛔ Доступ запрещён",
-            show_alert=True,
-        )
-        return
-
-    await c.message.edit_text(
-        "⚙️ <b>Админ-панель</b>\n\n"
-        "Управление музыкой.",
-        reply_markup=admin_menu(),
-    )
-
-    await c.answer()
+# =========================================================
+# GLOBAL STATS
+# =========================================================
 
 
 @dp.callback_query(F.data == "stats")
 async def stats(c: CallbackQuery):
-    if not is_admin(c.from_user.id):
-        await c.answer(
-            "⛔ Доступ запрещён",
-            show_alert=True,
-        )
-        return
-
     d = db()
 
     try:
         users = (
-            d.query(func.count(User.id))
-            .scalar()
+            d.query(
+                func.count(User.id)
+            ).scalar()
             or 0
         )
 
         tracks = (
-            d.query(func.count(Track.id))
-            .scalar()
+            d.query(
+                func.count(Track.id)
+            ).scalar()
             or 0
         )
 
@@ -254,23 +426,131 @@ async def stats(c: CallbackQuery):
                     func.sum(Track.plays),
                     0,
                 )
-            )
-            .scalar()
+            ).scalar()
             or 0
         )
 
+        likes = (
+            d.query(
+                func.count(Like.id)
+            ).scalar()
+            or 0
+        )
+
+        playlists = (
+            d.query(
+                func.count(Playlist.id)
+            ).scalar()
+            or 0
+        )
+
+        if is_admin(c.from_user.id):
+            text = (
+                "📊 <b>Статистика FENIX MUSIC</b>\n\n"
+                f"👥 Пользователей: <b>{users}</b>\n"
+                f"🎵 Песен: <b>{tracks}</b>\n"
+                f"▶️ Прослушиваний: <b>{plays}</b>\n"
+                f"❤️ Лайков: <b>{likes}</b>\n"
+                f"📚 Плейлистов: <b>{playlists}</b>"
+            )
+
+            keyboard = admin_menu()
+
+        else:
+            user = find_user_by_telegram(
+                d,
+                c.message,
+            )
+
+            if not user:
+                text = (
+                    "📊 <b>Статистика</b>\n\n"
+                    "Чтобы получить личную статистику, "
+                    "используй Telegram username, "
+                    "совпадающий с username аккаунта FENIX MUSIC."
+                )
+
+                keyboard = main_menu()
+
+            else:
+                history_count = (
+                    d.query(History)
+                    .filter_by(
+                        user_id=user.id
+                    )
+                    .count()
+                )
+
+                liked = (
+                    d.query(Like)
+                    .filter_by(
+                        user_id=user.id
+                    )
+                    .count()
+                )
+
+                playlist_count = (
+                    d.query(Playlist)
+                    .filter_by(
+                        user_id=user.id
+                    )
+                    .count()
+                )
+
+                minutes = int(
+                    (
+                        d.query(
+                            func.coalesce(
+                                func.sum(
+                                    Track.duration
+                                ),
+                                0,
+                            )
+                        )
+                        .join(
+                            History,
+                            History.track_id
+                            == Track.id,
+                        )
+                        .filter(
+                            History.user_id
+                            == user.id
+                        )
+                        .scalar()
+                        or 0
+                    )
+                    / 60
+                )
+
+                text = (
+                    "📊 <b>Твоя статистика</b>\n\n"
+                    f"👤 {user.username}\n\n"
+                    f"▶️ Треков прослушано: "
+                    f"<b>{history_count}</b>\n"
+                    f"❤️ В избранном: "
+                    f"<b>{liked}</b>\n"
+                    f"📚 Плейлистов: "
+                    f"<b>{playlist_count}</b>\n"
+                    f"⏱ Прослушано минут: "
+                    f"<b>{minutes}</b>"
+                )
+
+                keyboard = profile_menu()
+
         await c.message.edit_text(
-            "📊 <b>Статистика</b>\n\n"
-            f"👥 Пользователей: <b>{users}</b>\n"
-            f"🎵 Песен: <b>{tracks}</b>\n"
-            f"▶️ Прослушиваний: <b>{plays}</b>",
-            reply_markup=admin_menu(),
+            text,
+            reply_markup=keyboard,
         )
 
     finally:
         d.close()
 
     await c.answer()
+
+
+# =========================================================
+# MUSIC / NEW / POPULAR
+# =========================================================
 
 
 @dp.callback_query(
@@ -294,6 +574,7 @@ async def music_list(c: CallbackQuery):
                 Track.id.desc(),
             )
             title = "🔥 <b>Популярные</b>"
+            back = "home"
 
         elif c.data == "new":
             q = q.order_by(
@@ -301,12 +582,14 @@ async def music_list(c: CallbackQuery):
                 Track.id.desc(),
             )
             title = "🆕 <b>Новые</b>"
+            back = "home"
 
         else:
             q = q.order_by(
                 Track.id.desc()
             )
             title = "🎵 <b>Все песни</b>"
+            back = "home"
 
         rows = q.limit(30).all()
 
@@ -314,9 +597,16 @@ async def music_list(c: CallbackQuery):
             title
             + f"\n\nНайдено: {len(rows)}",
             reply_markup=(
-                list_keyboard(rows)
+                list_keyboard(
+                    rows,
+                    back=back,
+                )
                 if rows
-                else admin_menu()
+                else main_menu(
+                    is_admin(
+                        c.from_user.id
+                    )
+                )
             ),
         )
 
@@ -326,13 +616,26 @@ async def music_list(c: CallbackQuery):
     await c.answer()
 
 
-@dp.callback_query(F.data.startswith("track:"))
+# =========================================================
+# TRACK
+# =========================================================
+
+
+@dp.callback_query(
+    F.data.startswith("track:")
+)
 async def show_track(c: CallbackQuery):
     try:
         tid = int(
-            c.data.split(":", 1)[1]
+            c.data.split(
+                ":",
+                1,
+            )[1]
         )
-    except (ValueError, IndexError):
+    except (
+        ValueError,
+        IndexError,
+    ):
         await c.answer(
             "Ошибка",
             show_alert=True,
@@ -342,7 +645,10 @@ async def show_track(c: CallbackQuery):
     d = db()
 
     try:
-        t = d.get(Track, tid)
+        t = d.get(
+            Track,
+            tid,
+        )
 
         if not t:
             await c.answer(
@@ -351,9 +657,36 @@ async def show_track(c: CallbackQuery):
             )
             return
 
+        liked = False
+
+        user = find_user_by_telegram(
+            d,
+            c.message,
+        )
+
+        if user:
+            liked = (
+                d.query(Like)
+                .filter_by(
+                    user_id=user.id,
+                    track_id=t.id,
+                )
+                .first()
+                is not None
+            )
+
         await c.message.edit_text(
             track_text(t),
-            reply_markup=track_menu(t.id),
+            reply_markup=(
+                track_action_keyboard(
+                    t.id,
+                    liked=liked,
+                )
+                if not is_admin(
+                    c.from_user.id
+                )
+                else track_menu(t.id)
+            ),
         )
 
     finally:
@@ -362,12 +695,583 @@ async def show_track(c: CallbackQuery):
     await c.answer()
 
 
+# =========================================================
+# LIKE
+# =========================================================
+
+
+@dp.callback_query(
+    F.data.startswith("like:")
+)
+async def toggle_like(c: CallbackQuery):
+    try:
+        tid = int(
+            c.data.split(
+                ":",
+                1,
+            )[1]
+        )
+    except (
+        ValueError,
+        IndexError,
+    ):
+        await c.answer(
+            "Ошибка",
+            show_alert=True,
+        )
+        return
+
+    d = db()
+
+    try:
+        user = find_user_by_telegram(
+            d,
+            c.message,
+        )
+
+        if not user:
+            await c.answer(
+                "❗ Telegram не связан с аккаунтом FENIX MUSIC.",
+                show_alert=True,
+            )
+            return
+
+        track = d.get(
+            Track,
+            tid,
+        )
+
+        if not track:
+            await c.answer(
+                "Песня не найдена",
+                show_alert=True,
+            )
+            return
+
+        item = (
+            d.query(Like)
+            .filter_by(
+                user_id=user.id,
+                track_id=tid,
+            )
+            .first()
+        )
+
+        if item:
+            d.delete(item)
+            liked = False
+            message = "💔 Убрано из избранного"
+        else:
+            d.add(
+                Like(
+                    user_id=user.id,
+                    track_id=tid,
+                )
+            )
+            liked = True
+            message = "❤️ Добавлено в избранное"
+
+        d.commit()
+
+        await c.message.edit_text(
+            track_text(track),
+            reply_markup=track_action_keyboard(
+                tid,
+                liked=liked,
+            ),
+        )
+
+        await c.answer(message)
+
+    finally:
+        d.close()
+
+
+# =========================================================
+# FAVORITES
+# =========================================================
+
+
+@dp.callback_query(F.data == "favorites")
+async def favorites(c: CallbackQuery):
+    d = db()
+
+    try:
+        user = find_user_by_telegram(
+            d,
+            c.message,
+        )
+
+        if not user:
+            await c.message.edit_text(
+                "❤️ <b>Избранное</b>\n\n"
+                "Telegram ещё не связан с аккаунтом FENIX MUSIC.\n\n"
+                "Username Telegram должен совпадать "
+                "с username аккаунта сайта.",
+                reply_markup=main_menu(
+                    is_admin(
+                        c.from_user.id
+                    )
+                ),
+            )
+            await c.answer()
+            return
+
+        rows = user_tracks_liked(
+            d,
+            user.id,
+        )
+
+        if not rows:
+            await c.message.edit_text(
+                "❤️ <b>Избранное</b>\n\n"
+                "Здесь пока ничего нет.",
+                reply_markup=library_menu(),
+            )
+            await c.answer()
+            return
+
+        await c.message.edit_text(
+            f"❤️ <b>Избранное</b>\n\n"
+            f"Треков: {len(rows)}",
+            reply_markup=list_keyboard(
+                rows,
+                back="home",
+            ),
+        )
+
+    finally:
+        d.close()
+
+    await c.answer()
+
+
+# =========================================================
+# HISTORY
+# =========================================================
+
+
+@dp.callback_query(F.data == "history")
+async def history(c: CallbackQuery):
+    d = db()
+
+    try:
+        user = find_user_by_telegram(
+            d,
+            c.message,
+        )
+
+        if not user:
+            await c.message.edit_text(
+                "🕘 <b>История</b>\n\n"
+                "Telegram не связан с аккаунтом FENIX MUSIC.",
+                reply_markup=main_menu(
+                    is_admin(
+                        c.from_user.id
+                    )
+                ),
+            )
+            await c.answer()
+            return
+
+        rows = user_history_tracks(
+            d,
+            user.id,
+        )
+
+        if not rows:
+            await c.message.edit_text(
+                "🕘 <b>История</b>\n\n"
+                "История прослушиваний пуста.",
+                reply_markup=library_menu(),
+            )
+            await c.answer()
+            return
+
+        await c.message.edit_text(
+            f"🕘 <b>История</b>\n\n"
+            f"Уникальных треков: {len(rows)}",
+            reply_markup=list_keyboard(
+                rows,
+                back="home",
+            ),
+        )
+
+    finally:
+        d.close()
+
+    await c.answer()
+
+
+# =========================================================
+# PLAYLISTS
+# =========================================================
+
+
+@dp.callback_query(F.data == "playlists")
+async def playlists(c: CallbackQuery):
+    d = db()
+
+    try:
+        user = find_user_by_telegram(
+            d,
+            c.message,
+        )
+
+        if not user:
+            await c.message.edit_text(
+                "📚 <b>Плейлисты</b>\n\n"
+                "Telegram не связан с аккаунтом FENIX MUSIC.",
+                reply_markup=main_menu(
+                    is_admin(
+                        c.from_user.id
+                    )
+                ),
+            )
+            await c.answer()
+            return
+
+        rows = user_playlists(
+            d,
+            user.id,
+        )
+
+        if not rows:
+            await c.message.edit_text(
+                "📚 <b>Плейлисты</b>\n\n"
+                "У тебя пока нет плейлистов.\n\n"
+                "Создавать и редактировать их можно "
+                "на сайте FENIX MUSIC.",
+                reply_markup=library_menu(),
+            )
+            await c.answer()
+            return
+
+        buttons = []
+
+        for playlist in rows:
+            count = (
+                d.query(
+                    func.count(
+                        PlaylistTrack.id
+                    )
+                )
+                .filter(
+                    PlaylistTrack.playlist_id
+                    == playlist.id
+                )
+                .scalar()
+                or 0
+            )
+
+            buttons.append(
+                [
+                    InlineKeyboardButton(
+                        text=(
+                            f"📚 {playlist.name[:35]} "
+                            f"({count})"
+                        ),
+                        callback_data=(
+                            f"playlist:{playlist.id}"
+                        ),
+                    )
+                ]
+            )
+
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data="home",
+                )
+            ]
+        )
+
+        await c.message.edit_text(
+            "📚 <b>Мои плейлисты</b>\n\n"
+            f"Плейлистов: {len(rows)}",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=buttons
+            ),
+        )
+
+    finally:
+        d.close()
+
+    await c.answer()
+
+
+@dp.callback_query(
+    F.data.startswith("playlist:")
+)
+async def show_playlist(c: CallbackQuery):
+    try:
+        pid = int(
+            c.data.split(
+                ":",
+                1,
+            )[1]
+        )
+    except (
+        ValueError,
+        IndexError,
+    ):
+        await c.answer(
+            "Ошибка",
+            show_alert=True,
+        )
+        return
+
+    d = db()
+
+    try:
+        user = find_user_by_telegram(
+            d,
+            c.message,
+        )
+
+        if not user:
+            await c.answer(
+                "Аккаунт не связан",
+                show_alert=True,
+            )
+            return
+
+        playlist = (
+            d.query(Playlist)
+            .filter_by(
+                id=pid,
+                user_id=user.id,
+            )
+            .first()
+        )
+
+        if not playlist:
+            await c.answer(
+                "Плейлист не найден",
+                show_alert=True,
+            )
+            return
+
+        tracks = []
+
+        entries = (
+            d.query(PlaylistTrack)
+            .filter_by(
+                playlist_id=pid
+            )
+            .order_by(
+                PlaylistTrack.position
+            )
+            .all()
+        )
+
+        for entry in entries:
+            track = d.get(
+                Track,
+                entry.track_id,
+            )
+
+            if track:
+                tracks.append(track)
+
+        if not tracks:
+            await c.message.edit_text(
+                f"📚 <b>{playlist.name}</b>\n\n"
+                "Плейлист пуст.",
+                reply_markup=library_menu(),
+            )
+            await c.answer()
+            return
+
+        await c.message.edit_text(
+            f"📚 <b>{playlist.name}</b>\n\n"
+            f"Треков: {len(tracks)}",
+            reply_markup=list_keyboard(
+                tracks,
+                back="playlists",
+            ),
+        )
+
+    finally:
+        d.close()
+
+    await c.answer()
+
+
+# =========================================================
+# PROFILE
+# =========================================================
+
+
+@dp.callback_query(F.data == "profile")
+async def profile(c: CallbackQuery):
+    d = db()
+
+    try:
+        user = find_user_by_telegram(
+            d,
+            c.message,
+        )
+
+        if not user:
+            await c.message.edit_text(
+                "👤 <b>Профиль</b>\n\n"
+                "Telegram не связан с аккаунтом FENIX MUSIC.\n\n"
+                "Чтобы связать их сейчас, используй "
+                "одинаковый username Telegram и сайта.",
+                reply_markup=main_menu(
+                    is_admin(
+                        c.from_user.id
+                    )
+                ),
+            )
+            await c.answer()
+            return
+
+        liked = (
+            d.query(Like)
+            .filter_by(
+                user_id=user.id
+            )
+            .count()
+        )
+
+        history_count = (
+            d.query(History)
+            .filter_by(
+                user_id=user.id
+            )
+            .count()
+        )
+
+        playlist_count = (
+            d.query(Playlist)
+            .filter_by(
+                user_id=user.id
+            )
+            .count()
+        )
+
+        await c.message.edit_text(
+            "👤 <b>Профиль FENIX MUSIC</b>\n\n"
+            f"👤 Username: <b>{user.username}</b>\n"
+            f"📧 Email: <code>{user.email}</code>\n\n"
+            f"❤️ Избранное: <b>{liked}</b>\n"
+            f"🕘 Прослушиваний: <b>{history_count}</b>\n"
+            f"📚 Плейлистов: <b>{playlist_count}</b>",
+            reply_markup=profile_menu(),
+        )
+
+    finally:
+        d.close()
+
+    await c.answer()
+
+
+# =========================================================
+# SEARCH
+# =========================================================
+
+
+@dp.callback_query(F.data == "search")
+async def search_start(
+    c: CallbackQuery,
+    state: FSMContext,
+):
+    await state.set_state(
+        States.waiting_search
+    )
+
+    await c.message.edit_text(
+        "🔎 <b>Поиск FENIX MUSIC</b>\n\n"
+        "Напиши название песни, "
+        "исполнителя, альбом или жанр.",
+        reply_markup=cancel_menu(),
+    )
+
+    await c.answer()
+
+
+@dp.message(
+    States.waiting_search,
+    F.text,
+)
+async def search(
+    message: Message,
+    state: FSMContext,
+):
+    q = message.text.strip()
+
+    if not q:
+        await message.answer(
+            "❌ Введи поисковый запрос."
+        )
+        return
+
+    pattern = f"%{q}%"
+
+    d = db()
+
+    try:
+        rows = (
+            d.query(Track)
+            .filter(
+                or_(
+                    Track.title.ilike(pattern),
+                    Track.artist.ilike(pattern),
+                    Track.album.ilike(pattern),
+                    Track.genre.ilike(pattern),
+                )
+            )
+            .order_by(
+                Track.plays.desc(),
+                Track.id.desc(),
+            )
+            .limit(30)
+            .all()
+        )
+
+        if not rows:
+            await message.answer(
+                "❌ Ничего не найдено.\n\n"
+                f"Запрос: <b>{q}</b>",
+                reply_markup=main_menu(
+                    is_admin(
+                        message.from_user.id
+                    )
+                ),
+            )
+            return
+
+        await message.answer(
+            f"🔎 <b>Результаты поиска</b>\n\n"
+            f"Запрос: <b>{q}</b>\n"
+            f"Найдено: <b>{len(rows)}</b>",
+            reply_markup=list_keyboard(
+                rows,
+                back="home",
+            ),
+        )
+
+    finally:
+        d.close()
+        await state.clear()
+
+
+# =========================================================
+# UPLOAD
+# =========================================================
+
+
 @dp.callback_query(F.data == "upload")
 async def upload_start(
     c: CallbackQuery,
     state: FSMContext,
 ):
-    if not is_admin(c.from_user.id):
+    if not is_admin(
+        c.from_user.id
+    ):
         await c.answer(
             "⛔ Доступ запрещён",
             show_alert=True,
@@ -381,7 +1285,7 @@ async def upload_start(
     await c.message.edit_text(
         "⬆️ <b>Добавление песни</b>\n\n"
         "Отправь MP3 как аудио или документ.\n\n"
-        "Теги ID3 будут прочитаны автоматически.",
+        "ID3-теги будут прочитаны автоматически.",
         reply_markup=cancel_menu(),
     )
 
@@ -417,7 +1321,12 @@ async def receive_document(
         or "audio.mp3"
     )
 
-    if Path(name).suffix.lower() not in AUDIO_EXTENSIONS:
+    if (
+        Path(name)
+        .suffix
+        .lower()
+        not in AUDIO_EXTENSIONS
+    ):
         await message.answer(
             "❌ Нужен аудиофайл:\n"
             "MP3/M4A/AAC/OGG/WAV/FLAC/OPUS."
@@ -462,7 +1371,10 @@ async def save_telegram_audio(
     )
 
     if suffix not in AUDIO_EXTENSIONS:
-        suffix = ".mp3"
+        await message.answer(
+            "❌ Неподдерживаемый формат."
+        )
+        return
 
     filename = (
         f"{uuid.uuid4().hex}_"
@@ -488,13 +1400,17 @@ async def save_telegram_audio(
             album,
             genre,
             duration,
-        ) = metadata_from_file(target)
+        ) = metadata_from_file(
+            target
+        )
 
         d = db()
 
         try:
             normalized = (
-                normalize_saved_path(target)
+                normalize_saved_path(
+                    target
+                )
             )
 
             existing = (
@@ -568,44 +1484,9 @@ async def save_telegram_audio(
         await state.clear()
 
 
-@dp.message(F.audio)
-async def audio_without_upload_mode(
-    message: Message,
-):
-    if not is_admin(
-        message.from_user.id
-    ):
-        return
-
-    await message.answer(
-        "🎵 Файл получен.\n\n"
-        "Сначала открой:\n"
-        "/admin → ➕ Добавить песню\n\n"
-        "Затем отправь MP3 ещё раз."
-    )
-
-
-@dp.message(F.document)
-async def document_without_upload_mode(
-    message: Message,
-):
-    if not is_admin(
-        message.from_user.id
-    ):
-        return
-
-    name = (
-        message.document.file_name
-        or ""
-    )
-
-    if Path(name).suffix.lower() in AUDIO_EXTENSIONS:
-        await message.answer(
-            "🎵 Файл получен.\n\n"
-            "Открой /admin → "
-            "➕ Добавить песню и отправь "
-            "этот файл ещё раз."
-        )
+# =========================================================
+# COVER
+# =========================================================
 
 
 @dp.callback_query(
@@ -615,7 +1496,9 @@ async def cover_start(
     c: CallbackQuery,
     state: FSMContext,
 ):
-    if not is_admin(c.from_user.id):
+    if not is_admin(
+        c.from_user.id
+    ):
         await c.answer(
             "⛔ Доступ запрещён",
             show_alert=True,
@@ -624,9 +1507,15 @@ async def cover_start(
 
     try:
         tid = int(
-            c.data.split(":", 1)[1]
+            c.data.split(
+                ":",
+                1,
+            )[1]
         )
-    except (ValueError, IndexError):
+    except (
+        ValueError,
+        IndexError,
+    ):
         await c.answer(
             "Ошибка",
             show_alert=True,
@@ -636,7 +1525,10 @@ async def cover_start(
     d = db()
 
     try:
-        if not d.get(Track, tid):
+        if not d.get(
+            Track,
+            tid,
+        ):
             await c.answer(
                 "Песня не найдена",
                 show_alert=True,
@@ -654,8 +1546,8 @@ async def cover_start(
     )
 
     await c.message.edit_text(
-        "🖼 Отправь изображение "
-        "JPG/PNG/WEBP.",
+        "🖼 <b>Новая обложка</b>\n\n"
+        "Отправь JPG/PNG/WEBP.",
         reply_markup=cancel_menu(),
     )
 
@@ -728,14 +1620,14 @@ async def receive_cover(
                 )
 
             t.cover_url = (
-                f"/api/media/covers/"
+                "/api/media/covers/"
                 f"{target.name}"
             )
 
             d.commit()
 
             await message.answer(
-                "✅ Обложка сохранена.\n\n"
+                "✅ <b>Обложка сохранена</b>\n\n"
                 + track_text(t),
                 reply_markup=after_upload_menu(
                     t.id
@@ -763,6 +1655,11 @@ async def receive_cover(
         await state.clear()
 
 
+# =========================================================
+# EDIT
+# =========================================================
+
+
 @dp.callback_query(
     F.data.startswith("edit:")
 )
@@ -770,7 +1667,9 @@ async def edit_start(
     c: CallbackQuery,
     state: FSMContext,
 ):
-    if not is_admin(c.from_user.id):
+    if not is_admin(
+        c.from_user.id
+    ):
         await c.answer(
             "⛔ Доступ запрещён",
             show_alert=True,
@@ -779,9 +1678,15 @@ async def edit_start(
 
     try:
         tid = int(
-            c.data.split(":", 1)[1]
+            c.data.split(
+                ":",
+                1,
+            )[1]
         )
-    except (ValueError, IndexError):
+    except (
+        ValueError,
+        IndexError,
+    ):
         await c.answer(
             "Ошибка",
             show_alert=True,
@@ -797,7 +1702,8 @@ async def edit_start(
     )
 
     await c.message.edit_text(
-        "✏️ Отправь данные одной строкой:\n\n"
+        "✏️ <b>Редактирование</b>\n\n"
+        "Отправь данные одной строкой:\n\n"
         "<b>Название | Исполнитель | Альбом | Жанр</b>\n\n"
         "Пример:\n"
         "TAKETAKE | Избранный | Single | Pop",
@@ -858,7 +1764,7 @@ async def receive_edit(
         d.commit()
 
         await message.answer(
-            "✅ Данные обновлены.\n\n"
+            "✅ <b>Данные обновлены</b>\n\n"
             + track_text(t),
             reply_markup=after_upload_menu(
                 t.id
@@ -870,11 +1776,18 @@ async def receive_edit(
         await state.clear()
 
 
+# =========================================================
+# DELETE
+# =========================================================
+
+
 @dp.callback_query(
     F.data.startswith("delete:")
 )
 async def delete(c: CallbackQuery):
-    if not is_admin(c.from_user.id):
+    if not is_admin(
+        c.from_user.id
+    ):
         await c.answer(
             "⛔ Доступ запрещён",
             show_alert=True,
@@ -883,9 +1796,15 @@ async def delete(c: CallbackQuery):
 
     try:
         tid = int(
-            c.data.split(":", 1)[1]
+            c.data.split(
+                ":",
+                1,
+            )[1]
         )
-    except (ValueError, IndexError):
+    except (
+        ValueError,
+        IndexError,
+    ):
         await c.answer(
             "Ошибка",
             show_alert=True,
@@ -922,14 +1841,12 @@ async def delete(c: CallbackQuery):
                 "/api/media/covers/"
             )
         ):
-            cover_path = (
+            (
                 COVER_DIR
                 / Path(
                     t.cover_url
                 ).name
-            )
-
-            cover_path.unlink(
+            ).unlink(
                 missing_ok=True
             )
 
@@ -947,9 +1864,16 @@ async def delete(c: CallbackQuery):
     await c.answer()
 
 
+# =========================================================
+# SCAN
+# =========================================================
+
+
 @dp.callback_query(F.data == "scan")
 async def scan(c: CallbackQuery):
-    if not is_admin(c.from_user.id):
+    if not is_admin(
+        c.from_user.id
+    ):
         await c.answer(
             "⛔ Доступ запрещён",
             show_alert=True,
@@ -962,7 +1886,7 @@ async def scan(c: CallbackQuery):
         result = scan_music(d)
 
         await c.message.edit_text(
-            "🔄 <b>Сканирование</b>\n\n"
+            "🔄 <b>Сканирование завершено</b>\n\n"
             f"🎵 Файлов: {result['found']}\n"
             f"➕ Добавлено: {result['added']}\n"
             f"✏️ Обновлено: {result['updated']}",
@@ -975,83 +1899,9 @@ async def scan(c: CallbackQuery):
     await c.answer()
 
 
-@dp.callback_query(F.data == "search")
-async def search_start(
-    c: CallbackQuery,
-    state: FSMContext,
-):
-    await state.set_state(
-        States.waiting_search
-    )
-
-    await c.message.edit_text(
-        "🔎 Напиши название, "
-        "исполнителя или альбом.",
-        reply_markup=cancel_menu(),
-    )
-
-    await c.answer()
-
-
-@dp.message(
-    States.waiting_search,
-    F.text,
-)
-async def search(
-    message: Message,
-    state: FSMContext,
-):
-    q = message.text.strip()
-
-    if not q:
-        await message.answer(
-            "❌ Введи поисковый запрос."
-        )
-        return
-
-    pattern = f"%{q}%"
-
-    d = db()
-
-    try:
-        rows = (
-            d.query(Track)
-            .filter(
-                or_(
-                    Track.title.ilike(pattern),
-                    Track.artist.ilike(pattern),
-                    Track.album.ilike(pattern),
-                    Track.genre.ilike(pattern),
-                )
-            )
-            .order_by(
-                Track.plays.desc()
-            )
-            .limit(20)
-            .all()
-        )
-
-        if not rows:
-            await message.answer(
-                "❌ Ничего не найдено.",
-                reply_markup=main_menu(
-                    is_admin(
-                        message.from_user.id
-                    )
-                ),
-            )
-            return
-
-        await message.answer(
-            f"🔎 <b>Результаты:</b> {q}",
-            reply_markup=list_keyboard(
-                rows
-            ),
-        )
-
-    finally:
-        d.close()
-        await state.clear()
+# =========================================================
+# CANCEL
+# =========================================================
 
 
 @dp.callback_query(F.data == "cancel")
@@ -1062,15 +1912,70 @@ async def cancel(
     await state.clear()
 
     await c.message.edit_text(
-        "❌ Отменено.",
+        "❌ <b>Отменено.</b>",
         reply_markup=(
             admin_menu()
-            if is_admin(c.from_user.id)
+            if is_admin(
+                c.from_user.id
+            )
             else main_menu()
         ),
     )
 
     await c.answer()
+
+
+# =========================================================
+# FALLBACK AUDIO
+# =========================================================
+
+
+@dp.message(F.audio)
+async def audio_without_upload_mode(
+    message: Message,
+):
+    if not is_admin(
+        message.from_user.id
+    ):
+        return
+
+    await message.answer(
+        "🎵 Файл получен.\n\n"
+        "Сначала открой:\n"
+        "/admin → ⬆️ Добавить песню\n\n"
+        "Затем отправь MP3 ещё раз."
+    )
+
+
+@dp.message(F.document)
+async def document_without_upload_mode(
+    message: Message,
+):
+    if not is_admin(
+        message.from_user.id
+    ):
+        return
+
+    name = (
+        message.document.file_name
+        or ""
+    )
+
+    if (
+        Path(name).suffix.lower()
+        in AUDIO_EXTENSIONS
+    ):
+        await message.answer(
+            "🎵 Файл получен.\n\n"
+            "Открой /admin → "
+            "⬆️ Добавить песню "
+            "и отправь этот файл ещё раз."
+        )
+
+
+# =========================================================
+# MAIN
+# =========================================================
 
 
 async def main():
@@ -1085,7 +1990,7 @@ async def main():
     me = await bot.get_me()
 
     log.info(
-        "[BOT] Starting FENIX MUSIC Telegram Bot: "
+        "[BOT] FENIX MUSIC Telegram Bot: "
         "@%s (id=%s)",
         me.username,
         me.id,
