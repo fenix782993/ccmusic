@@ -1,2138 +1,2101 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
-import "./styles.css";
-
-const API_BASE = "";
-
-function apiUrl(path) {
-  return `${API_BASE}${path}`;
+const API = "";
+function api(path, options = {}) {
+return fetch(`${API}${path}`, {
+...options,
+headers: {
+Accept: "application/json",
+...(options.headers || {}),
+},
+});
 }
-
 function formatTime(value) {
-  const seconds = Number(value || 0);
-
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return "0:00";
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  const remaining = Math.floor(seconds % 60);
-
-  return `${minutes}:${String(remaining).padStart(2, "0")}`;
+const seconds = Math.max(0, Math.floor(Number(value) || 0));
+const minutes = Math.floor(seconds / 60);
+const secs = String(seconds % 60).padStart(2, "0");
+return `${minutes}:${secs}`;
 }
-
-function randomFallbackCaptcha() {
-  return String(
-    Math.floor(1000 + Math.random() * 9000)
-  );
+function generateLocalGradient(index) {
+const gradients = [
+"linear-gradient(135deg,#ff1744,#6a1b9a)",
+"linear-gradient(135deg,#ff6f00,#d50000)",
+"linear-gradient(135deg,#7c4dff,#00b8d4)",
+"linear-gradient(135deg,#f50057,#651fff)",
+"linear-gradient(135deg,#00c853,#1565c0)",
+"linear-gradient(135deg,#ff9100,#ff1744)",
+];
+return gradients[index % gradients.length];
 }
-
 function Icon({ name, size = 20 }) {
-  const common = {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 2,
-    strokeLinecap: "round",
-    strokeLinejoin: "round",
-    "aria-hidden": true,
-  };
-
-  if (name === "home") {
-    return (
-      <svg {...common}>
-        <path d="m3 10 9-7 9 7" />
-        <path d="M5 9v11h14V9" />
-        <path d="M9 20v-6h6v6" />
-      </svg>
-    );
-  }
-
-  if (name === "music") {
-    return (
-      <svg {...common}>
-        <path d="M9 18V5l11-2v13" />
-        <circle cx="6" cy="18" r="3" />
-        <circle cx="17" cy="16" r="3" />
-      </svg>
-    );
-  }
-
-  if (name === "heart") {
-    return (
-      <svg {...common}>
-        <path d="M20.8 8.7c0 5.5-8.8 10.3-8.8 10.3S3.2 14.2 3.2 8.7A4.7 4.7 0 0 1 12 6.4a4.7 4.7 0 0 1 8.8 2.3Z" />
-      </svg>
-    );
-  }
-
-  if (name === "history") {
-    return (
-      <svg {...common}>
-        <path d="M3 12a9 9 0 1 0 3-6.7" />
-        <path d="M3 4v5h5" />
-        <path d="M12 7v5l3 2" />
-      </svg>
-    );
-  }
-
-  if (name === "user") {
-    return (
-      <svg {...common}>
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21c.8-4 3.3-6 8-6s7.2 2 8 6" />
-      </svg>
-    );
-  }
-
-  if (name === "search") {
-    return (
-      <svg {...common}>
-        <circle cx="11" cy="11" r="7" />
-        <path d="m20 20-4-4" />
-      </svg>
-    );
-  }
-
-  if (name === "play") {
-    return (
-      <svg {...common} fill="currentColor" stroke="none">
-        <path d="M8 5.2v13.6c0 .9 1 1.4 1.8.9l10-6.8a1.1 1.1 0 0 0 0-1.8l-10-6.8C9 3.8 8 4.3 8 5.2Z" />
-      </svg>
-    );
-  }
-
-  if (name === "pause") {
-    return (
-      <svg {...common} fill="currentColor" stroke="none">
-        <rect x="7" y="5" width="3.5" height="14" rx="1" />
-        <rect x="13.5" y="5" width="3.5" height="14" rx="1" />
-      </svg>
-    );
-  }
-
-  if (name === "next") {
-    return (
-      <svg {...common}>
-        <path d="m6 5 9 7-9 7V5Z" fill="currentColor" stroke="none" />
-        <path d="M19 5v14" />
-      </svg>
-    );
-  }
-
-  if (name === "previous") {
-    return (
-      <svg {...common}>
-        <path d="m18 5-9 7 9 7V5Z" fill="currentColor" stroke="none" />
-        <path d="M5 5v14" />
-      </svg>
-    );
-  }
-
-  if (name === "shuffle") {
-    return (
-      <svg {...common}>
-        <path d="M16 3h5v5" />
-        <path d="M4 20 21 3" />
-        <path d="M21 16v5h-5" />
-        <path d="m15 15 6 6" />
-        <path d="M4 4l5 5" />
-      </svg>
-    );
-  }
-
-  if (name === "repeat") {
-    return (
-      <svg {...common}>
-        <path d="M17 2l4 4-4 4" />
-        <path d="M3 11V9a3 3 0 0 1 3-3h15" />
-        <path d="m7 22-4-4 4-4" />
-        <path d="M21 13v2a3 3 0 0 1-3 3H3" />
-      </svg>
-    );
-  }
-
-  if (name === "volume") {
-    return (
-      <svg {...common}>
-        <path d="M4 10v4h4l5 4V6l-5 4H4Z" />
-        <path d="M17 9a4 4 0 0 1 0 6" />
-        <path d="M19.5 6.5a8 8 0 0 1 0 11" />
-      </svg>
-    );
-  }
-
-  if (name === "volume-off") {
-    return (
-      <svg {...common}>
-        <path d="M4 10v4h4l5 4V6l-5 4H4Z" />
-        <path d="m18 9 4 6" />
-        <path d="m22 9-4 6" />
-      </svg>
-    );
-  }
-
-  if (name === "x") {
-    return (
-      <svg {...common}>
-        <path d="m6 6 12 12" />
-        <path d="m18 6-12 12" />
-      </svg>
-    );
-  }
-
-  if (name === "refresh") {
-    return (
-      <svg {...common}>
-        <path d="M20 11a8 8 0 0 0-14-5L3 9" />
-        <path d="M3 4v5h5" />
-        <path d="M4 13a8 8 0 0 0 14 5l3-3" />
-        <path d="M21 20v-5h-5" />
-      </svg>
-    );
-  }
-
-  if (name === "log-out") {
-    return (
-      <svg {...common}>
-        <path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4" />
-        <path d="m16 16 4-4-4-4" />
-        <path d="M20 12H9" />
-      </svg>
-    );
-  }
-
-  if (name === "edit") {
-    return (
-      <svg {...common}>
-        <path d="M12 20h9" />
-        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg {...common}>
-      <circle cx="12" cy="12" r="9" />
-    </svg>
-  );
+const icons = {
+home: "⌂",
+search: "⌕",
+library: "▣",
+heart: "♥",
+history: "◷",
+queue: "☷",
+play: "▶",
+pause: "Ⅱ",
+next: "⏭",
+prev: "⏮",
+shuffle: "⤨",
+repeat: "↻",
+volume: "🔊",
+menu: "☰",
+close: "×",
+user: "●",
+plus: "+",
+fullscreen: "⛶",
+back: "‹",
+forward: "›",
+refresh: "↻",
+fire: "🔥",
+star: "★",
+bolt: "⚡",
+};
+return (
+<span
+style={{
+display: "inline-flex",
+width: size,
+height: size,
+alignItems: "center",
+justifyContent: "center",
+fontSize: size * 0.9,
+lineHeight: 1,
+}}
+>
+{icons[name] || "•"}
+</span>
+);
 }
+function TrackCover({ track, index = 0, small = false }) {
+const style = {
+width: small ? 54 : 180,
+height: small ? 54 : 180,
+minWidth: small ? 54 : 180,
+borderRadius: small ? 12 : 20,
+overflow: "hidden",
+background: generateLocalGradient(index),
+position: "relative",
+boxShadow: small
+? "0 8px 25px rgba(0,0,0,.25)"
+: "0 18px 50px rgba(0,0,0,.35)",
+};
+if (track?.cover_url) {
+return (
+<div style={style}>
+<img
+src={track.cover_url}
+alt=""
+style={{
+width: "100%",
+height: "100%",
+objectFit: "cover",
+}}
+onError={(event) => {
+event.currentTarget.style.display = "none";
+}}
+/>
+<div
+style={{
+position: "absolute",
+inset: 0,
+display: "flex",
+alignItems: "center",
+justifyContent: "center",
+fontSize: small ? 22 : 64,
+fontWeight: 900,
+color: "#fff",
+textShadow: "0 4px 20px rgba(0,0,0,.5)",
+pointerEvents: "none",
+}}
+>
+♪
+</div>
+</div>
+);
+}
+return (
+<div style={style}>
+<div
+style={{
+position: "absolute",
+width: "70%",
+height: "70%",
+borderRadius: "50%",
+border: "2px solid rgba(255,255,255,.25)",
+left: "15%",
+top: "15%",
+}}
+/>
+<div
+style={{
+position: "absolute",
+width: "22%",
+height: "22%",
+borderRadius: "50%",
+background: "#08080b",
+left: "39%",
+top: "39%",
+}}
+/>
+<div
+style={{
+position: "absolute",
+inset: 0,
+display: "flex",
+alignItems: "center",
+justifyContent: "center",
+color: "#fff",
+fontWeight: 900,
+fontSize: small ? 18 : 30,
+}}
+>
+♪
+</div>
+</div>
+);
+}
+function TrackCard({
+track,
+index,
+onPlay,
+onFavorite,
+favorite,
+}) {
+return (
+<div className="fm-track-card">
+<button
+className="fm-card-cover-button"
+onClick={() => onPlay(track)}
+>
+<TrackCover track={track} index={index} />
+<span className="fm-card-play">
+<Icon name="play" size={24} />
+</span>
+</button>
+      <div className="fm-card-info">
+        <div className="fm-card-title">
+          {track.title || "Без названия"}
+        </div>
 
-function App() {
-  const audioRef = useRef(null);
+        <div className="fm-card-artist">
+          {track.artist_name || "Fenix Music"}
+        </div>
 
-  const [page, setPage] = useState("home");
-  const [tracks, setTracks] = useState([]);
-  const [favorites, setFavorites] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [user, setUser] = useState(null);
+        <div className="fm-card-bottom">
+          <button
+            className={`fm-icon-button ${
+              favorite ? "active" : ""
+            }`}
+            onClick={() => onFavorite(track)}
+            title="Избранное"
+          >
+            <Icon name="heart" size={18} />
+          </button>
 
-  const [currentTrack, setCurrentTrack] = useState(null);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
+          <span className="fm-play-count">
+            {Number(track.plays_count || 0)} прослушиваний
+          </span>
+        </div>
+      </div>
+    </div>
+);
+}
+function TrackRow({
+track,
+index,
+onPlay,
+onFavorite,
+favorite,
+playing,
+}) {
+return (
+<div className={`fm-track-row ${playing ? "playing" : ""}`}>
+<button
+className="fm-row-cover"
+onClick={() => onPlay(track)}
+>
+<TrackCover track={track} index={index} small />
+{playing && (
+<span className="fm-playing-indicator">
+<i />
+<i />
+<i />
+</span>
+)}
+</button>
+      <button
+        className="fm-row-main"
+        onClick={() => onPlay(track)}
+      >
+        <strong>{track.title || "Без названия"}</strong>
+        <span>
+          {track.artist_name || "Fenix Music"}
+          {track.album_name
+            ? ` • ${track.album_name}`
+            : ""}
+        </span>
+      </button>
 
-  const [search, setSearch] = useState("");
+      <span className="fm-row-duration">
+        {track.duration ? formatTime(track.duration) : "—"}
+      </span>
 
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState("login");
+      <button
+        className={`fm-icon-button ${
+          favorite ? "active" : ""
+        }`}
+        onClick={() => onFavorite(track)}
+      >
+        <Icon name="heart" size={18} />
+      </button>
 
-  const [toast, setToast] = useState("");
-
-  const [loadingTracks, setLoadingTracks] = useState(true);
-  const [loadingUser, setLoadingUser] = useState(true);
-
-  function notify(message) {
-    setToast(message);
-
-    window.clearTimeout(window.__fenixToastTimer);
-
-    window.__fenixToastTimer = window.setTimeout(() => {
-      setToast("");
-    }, 3000);
-  }
-
-  async function request(path, options = {}) {
-    const response = await fetch(apiUrl(path), {
-      credentials: "include",
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(options.headers || {}),
-      },
-    });
-
-    let data = null;
-
-    try {
-      data = await response.json();
-    } catch {
-      data = {};
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        data?.error ||
-          data?.message ||
-          `Ошибка ${response.status}`
-      );
-    }
-
-    return data;
-  }
-
-  async function loadUser() {
-    try {
-      const data = await request("/api/auth/me");
-      setUser(data.user || null);
-    } catch {
-      setUser(null);
-    } finally {
-      setLoadingUser(false);
-    }
-  }
-
-  async function loadTracks() {
-    setLoadingTracks(true);
-
-    try {
-      const data = await request("/api/tracks");
-
-      const incoming = Array.isArray(data.tracks)
-        ? data.tracks
-        : [];
-
-      setTracks(incoming);
-    } catch (error) {
-      console.error("Tracks:", error);
-      setTracks([]);
-      notify("Не удалось загрузить музыку");
-    } finally {
-      setLoadingTracks(false);
-    }
-  }
-
-  async function loadFavorites() {
-    if (!user) {
-      setFavorites([]);
-      return;
-    }
-
-    try {
-      const data = await request("/api/favorites");
-
-      setFavorites(
-        Array.isArray(data.tracks)
-          ? data.tracks
-          : []
-      );
-    } catch {
-      setFavorites([]);
-    }
-  }
-
-  async function loadHistory() {
-    if (!user) {
-      setHistory([]);
-      return;
-    }
-
-    try {
-      const data = await request("/api/history");
-
-      setHistory(
-        Array.isArray(data.tracks)
-          ? data.tracks
-          : []
-      );
-    } catch {
-      setHistory([]);
-    }
-  }
-
-  useEffect(() => {
-    loadUser();
-    loadTracks();
-  }, []);
-
-  useEffect(() => {
-    if (user) {
-      loadFavorites();
-      loadHistory();
-    } else {
-      setFavorites([]);
-      setHistory([]);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    audio.volume = volume;
-  }, [volume]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-
-    if (!audio || !currentTrack) {
-      return;
-    }
-
-    const source =
-      currentTrack.audio_url ||
-      `/api/tracks/${currentTrack.id}/audio`;
-
-    if (audio.src !== new URL(source, window.location.href).href) {
-      audio.src = source;
-    }
-
-    audio.load();
-
-    if (playing) {
-      audio.play().catch(() => {
-        setPlaying(false);
-      });
-    }
-  }, [currentTrack]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    if (playing) {
-      audio.play().catch(() => {
-        setPlaying(false);
-      });
-    } else {
-      audio.pause();
-    }
-  }, [playing]);
-
-  function handleTimeUpdate() {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    setProgress(audio.currentTime || 0);
-  }
-
-  function handleLoadedMetadata() {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    setDuration(audio.duration || 0);
-  }
-
-  function handleEnded() {
-    playNext();
-  }
-
-  async function registerPlay(track) {
-    try {
-      await request(
-        `/api/tracks/${track.id}/play`,
+      <button
+        className="fm-more-button"
+        onClick={() => onPlay(track)}
+      >
+        •••
+      </button>
+    </div>
+);
+}
+function AuthModal({
+open,
+onClose,
+mode,
+setMode,
+}) {
+const [captchaCode, setCaptchaCode] = useState("");
+const [captchaId, setCaptchaId] = useState("");
+const [captchaInput, setCaptchaInput] = useState("");
+const [captchaLoading, setCaptchaLoading] = useState(false);
+const [captchaError, setCaptchaError] = useState("");
+const [message, setMessage] = useState("");
+const [name, setName] = useState("");
+const [password, setPassword] = useState("");
+const loadCaptcha = async () => {
+try {
+setCaptchaLoading(true);
+setCaptchaError("");
+setMessage("");
+      const response = await api(
+        `/api/captcha?_=${Date.now()}`,
         {
-          method: "POST",
-          body: JSON.stringify({}),
+          method: "GET",
+          cache: "no-store",
         }
       );
-    } catch {
-      return;
-    }
-  }
 
-  async function saveHistory(track) {
-    if (!user) {
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(
+          data.error || "CAPTCHA server error"
+        );
+      }
+
+      if (!data.captcha_id || !data.code) {
+        throw new Error("Некорректный ответ CAPTCHA");
+      }
+
+      setCaptchaId(data.captcha_id);
+      setCaptchaCode(String(data.code));
+      setCaptchaInput("");
+      setCaptchaError("");
+    } catch (error) {
+      console.error(error);
+      setCaptchaCode("");
+      setCaptchaId("");
+      setCaptchaInput("");
+      setCaptchaError(
+        "Не удалось загрузить CAPTCHA с сервера. Обновите код."
+      );
+    } finally {
+      setCaptchaLoading(false);
+    }
+};
+useEffect(() => {
+if (open) {
+loadCaptcha();
+}
+}, [open]);
+if (!open) return null;
+const submit = async (event) => {
+event.preventDefault();
+setMessage("");
+setCaptchaError("");
+    if (captchaInput.length !== 4) {
+      setCaptchaError("Введите все 4 цифры CAPTCHA.");
       return;
     }
 
     try {
-      await request("/api/history", {
+      const response = await api("/api/captcha/verify", {
         method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          track_id: Number(track.id),
+          captcha_id: captchaId,
+          code: captchaInput,
         }),
       });
 
-      loadHistory();
-    } catch {
-      return;
-    }
-  }
+      const data = await response.json();
 
-  function playTrack(track) {
-    if (!track) {
-      return;
+      if (!response.ok || !data.valid) {
+        setCaptchaError(
+          data.error || "Неверная CAPTCHA."
+        );
+        await loadCaptcha();
+        return;
+      }
+
+      setMessage(
+        mode === "login"
+          ? "CAPTCHA пройдена. Авторизация готова."
+          : "CAPTCHA пройдена. Регистрация готова."
+      );
+    } catch (error) {
+      setCaptchaError(
+        "Ошибка соединения с сервером."
+      );
     }
+};
+return (
+<div className="fm-modal-backdrop" onMouseDown={onClose}>
+<div
+className="fm-auth-modal"
+onMouseDown={(event) => event.stopPropagation()}
+>
+<buttonclassName="fm-modal-close"onClick={onClose}>
+<Icon name="close" size={26} />
+</button>
+        <div className="fm-auth-logo">
+          <div className="fm-logo-mark">F</div>
+          <div>
+            <strong>FENIX</strong>
+            <span>MUSIC</span>
+          </div>
+        </div>
+
+        <h2>
+          {mode === "login"
+            ? "С возвращением"
+            : "Создать аккаунт"}
+        </h2>
+
+        <p className="fm-auth-subtitle">
+          {mode === "login"
+            ? "Войдите в свою музыкальную вселенную."
+            : "Создайте профиль и сохраняйте любимую музыку."}
+        </p>
+
+        <form onSubmit={submit}>
+          <label className="fm-label">
+            Имя пользователя
+            <input
+              className="fm-input"
+              value={name}
+              onChange={(event) =>
+                setName(event.target.value)
+              }
+              placeholder="Введите имя"
+            />
+          </label>
+
+          <label className="fm-label">
+            Пароль
+            <input
+              className="fm-input"
+              type="password"
+              value={password}
+              onChange={(event) =>
+                setPassword(event.target.value)
+              }
+              placeholder="Введите пароль"
+            />
+          </label>
+
+          <div className="fm-captcha-title">
+            Проверка безопасности
+          </div>
+
+          <div className="fm-captcha">
+            <div className="fm-captcha-code">
+              {captchaLoading
+                ? "••••"
+                : captchaCode || "----"}
+            </div>
+
+            <button
+              type="button"
+              className="fm-captcha-refresh"
+              onClick={loadCaptcha}
+              title="Новая CAPTCHA"
+            >
+              <Icon name="refresh" size={22} />
+            </button>
+          </div>
+
+          <input
+            className="fm-input fm-captcha-input"
+            inputMode="numeric"
+            maxLength={4}
+            value={captchaInput}
+            placeholder="Введите 4 цифры"
+            onChange={(event) =>
+              setCaptchaInput(
+                event.target.value
+                  .replace(/\D/g, "")
+                  .slice(0, 4)
+              )
+            }
+          />
+
+          {captchaError && (
+            <div className="fm-error">
+              {captchaError}
+            </div>
+          )}
+
+          {message && (
+            <div className="fm-success">
+              {message}
+            </div>
+          )}
+
+          <button className="fm-primary-button" type="submit">
+            {mode === "login"
+              ? "Войти"
+              : "Зарегистрироваться"}
+          </button>
+        </form>
+
+        <button
+          className="fm-switch-auth"
+          onClick={() => {
+            setMode(
+              mode === "login"
+                ? "register"
+                : "login"
+            );
+            setMessage("");
+            setCaptchaError("");
+            setCaptchaInput("");
+          }}
+        >
+          {mode === "login"
+            ? "Нет аккаунта? Зарегистрироваться"
+            : "Уже есть аккаунт? Войти"}
+        </button>
+      </div>
+    </div>
+);
+}
+function App() {
+const audioRef = useRef(null);
+const [tracks, setTracks] = useState([]);
+const [activeTrack, setActiveTrack] = useState(null);
+const [playing, setPlaying] = useState(false);
+const [currentTime, setCurrentTime] = useState(0);
+const [duration, setDuration] = useState(0);
+const [volume, setVolume] = useState(0.8);
+const [muted, setMuted] = useState(false);
+const [shuffle, setShuffle] = useState(false);
+const [repeat, setRepeat] = useState(false);
+const [queue, setQueue] = useState([]);
+const [history, setHistory] = useState([]);
+const [favorites, setFavorites] = useState(() => {
+try {
+return JSON.parse(
+localStorage.getItem("fenix_music_favorites") || "[]"
+);
+} catch {
+return [];
+}
+});
+const [search, setSearch] = useState("");
+const [searchOpen, setSearchOpen] = useState(false);
+const [section, setSection] = useState("home");
+const [authOpen, setAuthOpen] = useState(false);
+const [authMode, setAuthMode] = useState("login");
+const [fullscreenPlayer, setFullscreenPlayer] =
+useState(false);
+const [sidebarOpen, setSidebarOpen] =
+useState(false);
+const [loading, setLoading] = useState(true);
+const [serverError, setServerError] = useState("");
+const [toast, setToast] = useState("");
+const [mobileNav, setMobileNav] =
+useState("home");
+const showToast = (text) => {
+setToast(text);
+    window.clearTimeout(showToast.timer);
+
+    showToast.timer = window.setTimeout(() => {
+      setToast("");
+    }, 2500);
+};
+const loadTracks = async () => {
+try {
+setLoading(true);
+setServerError("");
+      const response = await api(
+        `/api/music/tracks?_=${Date.now()}`,
+        {
+          cache: "no-store",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          `HTTP ${response.status}`
+        );
+      }
+
+      const data = await response.json();
+
+      if (!data.ok) {
+        throw new Error(
+          data.error || "Music API error"
+        );
+      }
+
+      const loaded = Array.isArray(data.tracks)
+        ? data.tracks
+        : [];
+
+      setTracks(loaded);
+    } catch (error) {
+      console.error("Music load error:", error);
+      setServerError(
+        "Не удалось загрузить музыку с сервера."
+      );
+    } finally {
+      setLoading(false);
+    }
+};
+useEffect(() => {
+loadTracks();
+}, []);
+useEffect(() => {
+localStorage.setItem(
+"fenix_music_favorites",
+JSON.stringify(favorites)
+);
+}, [favorites]);
+useEffect(() => {
+localStorage.setItem(
+"fenix_music_history",
+JSON.stringify(history)
+);
+}, [history]);
+useEffect(() => {
+try {
+const savedHistory =
+JSON.parse(
+localStorage.getItem(
+"fenix_music_history"
+) || "[]"
+);
+      if (Array.isArray(savedHistory)) {
+        setHistory(savedHistory);
+      }
+    } catch {}
+}, []);
+useEffect(() => {
+if (!audioRef.current) return;
+    audioRef.current.volume = muted
+      ? 0
+      : volume;
+}, [volume, muted]);
+const favoriteSet = useMemo(
+() => new Set(favorites),
+[favorites]
+);
+const toggleFavorite = async (track) => {
+const id = track.id;
+    setFavorites((current) =>
+      current.includes(id)
+        ? current.filter(
+            (item) => item !== id
+          )
+        : [...current, id]
+    );
+
+    try {
+      await api("/api/music/favorite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id,
+          favorite:
+            !favoriteSet.has(id),
+        }),
+      });
+    } catch {
+      // Local favorite still works if API is unavailable.
+    }
+};
+const playTrack = async (
+track,
+list = tracks
+) => {
+if (!track) return;
+    const audio = audioRef.current;
+
+    if (!audio) return;
+
+    const url =
+      track.audio_url ||
+      `/api/music/audio/${encodeURIComponent(
+        track.file_name || ""
+      )}`;
 
     if (
-      currentTrack &&
-      String(currentTrack.id) === String(track.id)
+      activeTrack?.id === track.id &&
+      audio.src
     ) {
-      setPlaying((value) => !value);
-      return;
+      try {
+        await audio.play();
+        setPlaying(true);
+        return;
+      } catch {
+        return;
+      }
     }
 
-    setProgress(0);
-    setDuration(Number(track.duration || 0));
-    setCurrentTrack(track);
-    setPlaying(true);
-
-    registerPlay(track);
-    saveHistory(track);
-  }
-
-  function playNext() {
-    if (!currentTrack || tracks.length === 0) {
-      return;
-    }
-
-    const index = tracks.findIndex(
-      (track) =>
-        String(track.id) === String(currentTrack.id)
+    setActiveTrack(track);
+    setCurrentTime(0);
+    setDuration(
+      Number(track.duration || 0)
     );
 
-    const nextIndex =
-      index >= 0
-        ? (index + 1) % tracks.length
-        : 0;
-
-    playTrack(tracks[nextIndex]);
-  }
-
-  function playPrevious() {
-    if (!currentTrack || tracks.length === 0) {
-      return;
-    }
-
-    const index = tracks.findIndex(
-      (track) =>
-        String(track.id) === String(currentTrack.id)
+    const remaining = list.filter(
+      (item) =>
+        item.id !== track.id
     );
 
-    const previousIndex =
-      index <= 0
-        ? tracks.length - 1
-        : index - 1;
+    setQueue(remaining);
 
-    playTrack(tracks[previousIndex]);
-  }
+    if (
+      !history.some(
+        (item) => item.id === track.id
+      )
+    ) {
+      setHistory((current) =>
+        [track, ...current].slice(0, 30)
+      );
+    } else {
+      setHistory((current) => {
+        const filtered =
+          current.filter(
+            (item) =>
+              item.id !== track.id
+          );
 
-  function togglePlay() {
-    if (!currentTrack) {
-      if (tracks.length > 0) {
-        playTrack(tracks[0]);
+        return [track, ...filtered].slice(
+          0,
+          30
+        );
+      });
+    }
+
+    try {
+      audio.src = url;
+      audio.load();
+
+      await audio.play();
+
+      setPlaying(true);
+
+      api("/api/music/play", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          id: track.id,
+          file_name: track.file_name,
+        }),
+      }).catch(() => {});
+    } catch (error) {
+      console.error(
+        "Playback error:",
+        error
+      );
+
+      showToast(
+        "Не удалось воспроизвести этот трек"
+      );
+    }
+};
+const togglePlay = async () => {
+const audio = audioRef.current;
+    if (!audio) return;
+
+    if (!activeTrack) {
+      if (tracks.length) {
+        await playTrack(tracks[0]);
       }
 
       return;
     }
 
-    setPlaying((value) => !value);
-  }
-
-  function seek(event) {
-    const audio = audioRef.current;
-
-    if (!audio || !duration) {
-      return;
-    }
-
-    const rect =
-      event.currentTarget.getBoundingClientRect();
-
-    const ratio =
-      (event.clientX - rect.left) /
-      rect.width;
-
-    const nextTime =
-      Math.max(0, Math.min(1, ratio)) *
-      duration;
-
-    audio.currentTime = nextTime;
-    setProgress(nextTime);
-  }
-
-  function toggleFavorite(track) {
-    if (!user) {
-      setAuthMode("login");
-      setAuthOpen(true);
-      notify("Войдите, чтобы добавлять музыку в избранное");
-      return;
-    }
-
-    const id = Number(track.id);
-
-    const exists = favorites.some(
-      (item) =>
-        Number(item.id) === id
-    );
-
-    if (exists) {
-      removeFavorite(track);
+    if (audio.paused) {
+      try {
+        await audio.play();
+        setPlaying(true);
+      } catch {
+        showToast(
+          "Браузер заблокировал воспроизведение"
+        );
+      }
     } else {
-      addFavorite(track);
+      audio.pause();
+      setPlaying(false);
     }
-  }
+};
+const nextTrack = async () => {
+if (!activeTrack) return;
+    let next = null;
 
-  async function addFavorite(track) {
-    try {
-      await request("/api/favorites", {
-        method: "POST",
-        body: JSON.stringify({
-          track_id: Number(track.id),
-        }),
-      });
-
-      await loadFavorites();
-
-      notify("Добавлено в избранное");
-    } catch (error) {
-      notify(error.message);
-    }
-  }
-
-  async function removeFavorite(track) {
-    try {
-      await request(
-        `/api/favorites/${track.id}`,
-        {
-          method: "DELETE",
-        }
+    if (shuffle) {
+      const pool = tracks.filter(
+        (track) =>
+          track.id !== activeTrack.id
       );
 
-      await loadFavorites();
-
-      notify("Удалено из избранного");
-    } catch (error) {
-      notify(error.message);
+      if (pool.length) {
+        next =
+          pool[
+            Math.floor(
+              Math.random() *
+                pool.length
+            )
+          ];
+      }
+    } else if (queue.length) {
+      next = queue[0];
+      setQueue((current) =>
+        current.slice(1)
+      );
     }
-  }
 
-  function isFavorite(track) {
-    return favorites.some(
-      (item) =>
-        String(item.id) === String(track.id)
-    );
-  }
+    if (!next) {
+      const index =
+        tracks.findIndex(
+          (track) =>
+            track.id ===
+            activeTrack.id
+        );
 
-  function openLogin() {
-    setAuthMode("login");
-    setAuthOpen(true);
-  }
+      if (index >= 0) {
+        next =
+          tracks[
+            (index + 1) %
+              tracks.length
+          ];
+      }
+    }
 
-  function openRegister() {
-    setAuthMode("register");
-    setAuthOpen(true);
-  }
+    if (next) {
+      await playTrack(next, tracks);
+    }
+};
+const previousTrack = async () => {
+if (!activeTrack) return;
+    if (currentTime > 5) {
+      const audio = audioRef.current;
 
-  async function logout() {
-    try {
-      await request("/api/auth/logout", {
-        method: "POST",
-      });
-    } catch {
+      if (audio) {
+        audio.currentTime = 0;
+        setCurrentTime(0);
+      }
+
       return;
     }
 
-    setUser(null);
-    setFavorites([]);
-    setHistory([]);
-    setPage("home");
-    notify("Вы вышли из аккаунта");
-  }
+    const currentIndex =
+      tracks.findIndex(
+        (track) =>
+          track.id ===
+          activeTrack.id
+      );
 
-  const filteredTracks = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    if (currentIndex < 0) return;
 
+    const previous =
+      tracks[
+        (currentIndex - 1 + tracks.length) %
+          tracks.length
+      ];
+
+    if (previous) {
+      await playTrack(previous, tracks);
+    }
+};
+useEffect(() => {
+const audio = audioRef.current;
+    if (!audio) return;
+
+    const onTimeUpdate = () => {
+      setCurrentTime(
+        audio.currentTime || 0
+      );
+    };
+
+    const onLoaded = () => {
+      const actual =
+        Number(audio.duration);
+
+      if (Number.isFinite(actual)) {
+        setDuration(actual);
+      }
+    };
+
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+
+    const onEnded = () => {
+      if (repeat) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+        return;
+      }
+
+      nextTrack();
+    };
+
+    audio.addEventListener(
+      "timeupdate",
+      onTimeUpdate
+    );
+
+    audio.addEventListener(
+      "loadedmetadata",
+      onLoaded
+    );
+
+    audio.addEventListener(
+      "durationchange",
+      onLoaded
+    );
+
+    audio.addEventListener(
+      "play",
+      onPlay
+    );
+
+    audio.addEventListener(
+      "pause",
+      onPause
+    );
+
+    audio.addEventListener(
+      "ended",
+      onEnded
+    );
+
+    return () => {
+      audio.removeEventListener(
+        "timeupdate",
+        onTimeUpdate
+      );
+
+      audio.removeEventListener(
+        "loadedmetadata",
+        onLoaded
+      );
+
+      audio.removeEventListener(
+        "durationchange",
+        onLoaded
+      );
+
+      audio.removeEventListener(
+        "play",
+        onPlay
+      );
+
+      audio.removeEventListener(
+        "pause",
+        onPause
+      );
+
+      audio.removeEventListener(
+        "ended",
+        onEnded
+      );
+    };
+}, [
+repeat,
+shuffle,
+queue,
+tracks,
+activeTrack,
+currentTime,
+]);
+const seek = (event) => {
+const value =
+Number(event.target.value);
+    const audio = audioRef.current;
+
+    if (!audio) return;
+
+    audio.currentTime = value;
+    setCurrentTime(value);
+};
+const filteredTracks = useMemo(() => {
+const query =
+search.trim().toLowerCase();
     if (!query) {
       return tracks;
     }
 
-    return tracks.filter((track) => {
-      const title =
-        String(track.title || "").toLowerCase();
+    return tracks.filter(
+      (track) => {
+        const text = [
+          track.title,
+          track.artist_name,
+          track.album_name,
+          track.file_name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-      const artist =
-        String(track.artist_name || "").toLowerCase();
+        return text.includes(query);
+      }
+    );
+}, [tracks, search]);
+const popularTracks = useMemo(
+() =>
+[...tracks].sort(
+(a, b) =>
+Number(b.plays_count || 0) -
+Number(a.plays_count || 0)
+),
+[tracks]
+);
+const favoriteTracks = useMemo(
+() =>
+tracks.filter((track) =>
+favoriteSet.has(track.id)
+),
+[tracks, favoriteSet]
+);
+const newTracks = useMemo(
+() =>
+[...tracks].sort(
+(a, b) =>
+new Date(
+b.created_at ||
+b.modified_at ||
+0
+) -
+new Date(
+a.created_at ||
+a.modified_at ||
+0
+)
+),
+[tracks]
+);
+const displayTracks =
+section === "favorites"
+? favoriteTracks
+: section === "history"
+? history
+: section === "popular"
+? popularTracks
+: section === "new"
+? newTracks
+: filteredTracks;
+const goSection = (value) => {
+setSection(value);
+setMobileNav(value);
+setSidebarOpen(false);
+    if (value !== "search") {
+      setSearchOpen(false);
+    }
+};
+const navItems = [
+{
+id: "home",
+label: "Главная",
+icon: "home",
+},
+{
+id: "search",
+label: "Поиск",
+icon: "search",
+},
+{
+id: "favorites",
+label: "Моя музыка",
+icon: "heart",
+},
+{
+id: "history",
+label: "История",
+icon: "history",
+},
+{
+id: "queue",
+label: "Очередь",
+icon: "queue",
+},
+];
+const title =
+section === "home"
+? "Для вас"
+: section === "favorites"
+? "Моя музыка"
+: section === "history"
+? "Недавно прослушанное"
+: section === "popular"
+? "Популярное"
+: section === "new"
+? "Новинки"
+: section === "search"
+? "Поиск"
+: section === "queue"
+? "Очередь"
+: "Fenix Music";
+return (
+<div className="fm-app">
+<audio ref={audioRef} preload="metadata" />
+      <aside
+        className={`fm-sidebar ${
+          sidebarOpen ? "open" : ""
+        }`}
+      >
+        <div className="fm-brand">
+          <div className="fm-logo-mark">F</div>
 
-      const album =
-        String(track.album_name || "").toLowerCase();
+          <div className="fm-brand-text">
+            <strong>FENIX</strong>
+            <span>MUSIC</span>
+          </div>
+        </div>
 
-      return (
-        title.includes(query) ||
-        artist.includes(query) ||
-        album.includes(query)
-      );
-    });
-  }, [tracks, search]);
+        <nav className="fm-nav">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              className={
+                section === item.id
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                goSection(item.id)
+              }
+            >
+              <Icon
+                name={item.icon}
+                size={21}
+              />
+              <span>{item.label}</span>
 
-  const popularTracks = useMemo(() => {
-    return [...tracks]
-      .sort(
-        (a, b) =>
-          Number(b.plays_count || 0) -
-          Number(a.plays_count || 0)
-      )
-      .slice(0, 12);
-  }, [tracks]);
+              {item.id ===
+                "favorites" &&
+                favoriteTracks.length > 0 && (
+                  <em>
+                    {favoriteTracks.length}
+                  </em>
+                )}
+            </button>
+          ))}
+        </nav>
 
-  function goTo(nextPage) {
-    setPage(nextPage);
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
-  }
+        <div className="fm-nav-heading">
+          КАТАЛОГ
+        </div>
 
-  return (
-    <div className="app">
-      <audio
-        ref={audioRef}
-        onTimeUpdate={handleTimeUpdate}
-        onLoadedMetadata={handleLoadedMetadata}
-        onEnded={handleEnded}
-        preload="metadata"
+        <nav className="fm-nav">
+          <button
+            className={
+              section === "popular"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              goSection("popular")
+            }
+          >
+            <Icon name="fire" size={21} />
+            <span>Популярное</span>
+          </button>
+
+          <button
+            className={
+              section === "new"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              goSection("new")
+            }
+          >
+            <Icon name="star" size={21} />
+            <span>Новинки</span>
+          </button>
+
+          <button
+            onClick={() =>
+              showToast(
+                "Миксы скоро появятся"
+              )
+            }
+          >
+            <Icon name="bolt" size={21} />
+            <span>Миксы</span>
+          </button>
+        </nav>
+
+        <div className="fm-sidebar-bottom">
+          <div className="fm-mini-card">
+            <div className="fm-mini-card-icon">
+              ✦
+            </div>
+            <div>
+              <strong>Fenix Premium</strong>
+              <span>
+                Музыка без ограничений
+              </span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div
+        className={`fm-sidebar-overlay ${
+          sidebarOpen ? "show" : ""
+        }`}
+        onClick={() =>
+          setSidebarOpen(false)
+        }
       />
 
-      <header className="topbar">
-        <button
-          className="logo"
-          onClick={() => goTo("home")}
-          type="button"
-        >
-          <span className="logo-mark">
-            FX
-          </span>
+      <main className="fm-main">
+        <header className="fm-header">
+          <button
+            className="fm-mobile-menu"
+            onClick={() =>
+              setSidebarOpen(true)
+            }
+          >
+            <Icon name="menu" size={24} />
+          </button>
 
-          <span className="logo-text">
-            FENIX MUSIC
-          </span>
-        </button>
+          <div className="fm-header-arrows">
+            <button
+              onClick={() =>
+                window.history.back()
+              }
+            >
+              <Icon name="back" size={23} />
+            </button>
 
-        <div className="topbar-actions">
-          <div className="search-box">
-            <span className="search-icon">
-              <Icon
-                name="search"
-                size={18}
-              />
-            </span>
+            <button
+              onClick={() =>
+                window.history.forward()
+              }
+            >
+              <Icon name="forward" size={23} />
+            </button>
+          </div>
+
+          <div className="fm-search">
+            <Icon name="search" size={22} />
 
             <input
               value={search}
-              onChange={(event) =>
-                setSearch(event.target.value)
-              }
-              placeholder="Поиск музыки..."
-            />
-          </div>
-
-          {user ? (
-            <button
-              className="secondary-button"
-              type="button"
-              onClick={() => goTo("profile")}
-            >
-              <Icon
-                name="user"
-                size={17}
-              />
-              {user.username}
-            </button>
-          ) : (
-            <button
-              className="primary-button"
-              type="button"
-              onClick={openLogin}
-            >
-              Войти
-            </button>
-          )}
-        </div>
-      </header>
-
-      <div className="main-layout">
-        <aside className="sidebar">
-          <div className="nav-section">
-            <div className="nav-title">
-              Навигация
-            </div>
-
-            <button
-              className={`nav-item ${
-                page === "home" ? "active" : ""
-              }`}
-              type="button"
-              onClick={() => goTo("home")}
-            >
-              <Icon name="home" />
-              Главная
-            </button>
-
-            <button
-              className={`nav-item ${
-                page === "music" ? "active" : ""
-              }`}
-              type="button"
-              onClick={() => goTo("music")}
-            >
-              <Icon name="music" />
-              Музыка
-            </button>
-
-            <button
-              className={`nav-item ${
-                page === "favorites" ? "active" : ""
-              }`}
-              type="button"
-              onClick={() => goTo("favorites")}
-            >
-              <Icon name="heart" />
-              Избранное
-            </button>
-
-            <button
-              className={`nav-item ${
-                page === "history" ? "active" : ""
-              }`}
-              type="button"
-              onClick={() => goTo("history")}
-            >
-              <Icon name="history" />
-              История
-            </button>
-          </div>
-
-          <div className="nav-section">
-            <div className="nav-title">
-              Аккаунт
-            </div>
-
-            <button
-              className={`nav-item ${
-                page === "profile" ? "active" : ""
-              }`}
-              type="button"
-              onClick={() => {
-                if (!user) {
-                  openLogin();
-                  return;
-                }
-
-                goTo("profile");
+              placeholder="Что хочешь послушать?"
+              onFocus={() => {
+                setSearchOpen(true);
+                setSection("search");
               }}
-            >
-              <Icon name="user" />
-              Профиль
-            </button>
-          </div>
-        </aside>
+              onChange={(event) => {
+                setSearch(
+                  event.target.value
+                );
+                setSearchOpen(true);
+                setSection("search");
+              }}
+            />
 
-        <main className="content">
-          {page === "home" && (
+            {search && (
+              <button
+                onClick={() => {
+                  setSearch("");
+                  setSearchOpen(false);
+                }}
+              >
+                <Icon name="close" size={18} />
+              </button>
+            )}
+          </div>
+
+          <button
+            className="fm-login-button"
+            onClick={() => {
+              setAuthMode("login");
+              setAuthOpen(true);
+            }}
+          >
+            Войти
+          </button>
+
+          <button
+            className="fm-register-button"
+            onClick={() => {
+              setAuthMode("register");
+              setAuthOpen(true);
+            }}
+          >
+            Регистрация
+          </button>
+        </header>
+
+        <div className="fm-content">
+          {section === "home" && (
             <>
-              <section className="hero">
-                <div className="hero-content">
-                  <span className="hero-badge">
+              <section className="fm-hero">
+                <div className="fm-hero-glow" />
+
+                <div className="fm-hero-content">
+                  <span className="fm-eyebrow">
                     FENIX MUSIC
                   </span>
 
                   <h1>
                     Твоя музыка.
                     <br />
-                    Твоя вселенная.
+                    <span>
+                      Твоя вселенная.
+                    </span>
                   </h1>
 
                   <p>
                     Слушай любимые треки,
-                    находи новую музыку
-                    и собирай собственную
+                    открывай новых
+                    исполнителей и собирай
+                    свою идеальную
                     библиотеку.
                   </p>
 
-                  <div className="hero-actions">
+                  <div className="fm-hero-buttons">
                     <button
-                      className="primary-button"
-                      type="button"
+                      className="fm-primary-button hero"
                       onClick={() => {
-                        if (tracks.length > 0) {
-                          playTrack(tracks[0]);
-                        } else {
-                          goTo("music");
+                        if (tracks.length) {
+                          playTrack(
+                            tracks[0]
+                          );
                         }
                       }}
                     >
                       <Icon
                         name="play"
-                        size={17}
+                        size={18}
                       />
                       Слушать музыку
                     </button>
 
                     <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => goTo("music")}
+                      className="fm-secondary-button"
+                      onClick={() =>
+                        goSection(
+                          "favorites"
+                        )
+                      }
                     >
-                      Все треки
+                      <Icon
+                        name="heart"
+                        size={18}
+                      />
+                      Моя коллекция
                     </button>
                   </div>
                 </div>
+
+                <div className="fm-hero-art">
+                  <div className="fm-disc">
+                    <div className="fm-disc-center">
+                      F
+                    </div>
+                  </div>
+                </div>
               </section>
 
-              <section className="section">
-                <div className="section-header">
+              <section className="fm-section">
+                <div className="fm-section-heading">
                   <div>
-                    <h2 className="section-title">
-                      Для вас
-                    </h2>
-
-                    <p className="section-subtitle">
-                      Музыка, доступная прямо сейчас
-                    </p>
+                    <span className="fm-section-kicker">
+                      РЕКОМЕНДАЦИИ
+                    </span>
+                    <h2>Для вас</h2>
                   </div>
 
                   <button
-                    className="section-link"
-                    type="button"
-                    onClick={() => goTo("music")}
+                    className="fm-see-all"
+                    onClick={() =>
+                      goSection("popular")
+                    }
                   >
                     Смотреть всё
-                  </button>
-                </div>
-
-                <TrackGrid
-                  tracks={filteredTracks.slice(0, 8)}
-                  loading={loadingTracks}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  isFavorite={isFavorite}
-                />
-              </section>
-
-              <section className="section">
-                <div className="section-header">
-                  <div>
-                    <h2 className="section-title">
-                      Популярное
-                    </h2>
-
-                    <p className="section-subtitle">
-                      Самые прослушиваемые треки
-                    </p>
-                  </div>
-                </div>
-
-                <TrackGrid
-                  tracks={popularTracks}
-                  loading={loadingTracks}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  isFavorite={isFavorite}
-                />
-              </section>
-            </>
-          )}
-
-          {page === "music" && (
-            <section className="section">
-              <div className="section-header">
-                <div>
-                  <h1 className="section-title">
-                    Музыка
-                  </h1>
-
-                  <p className="section-subtitle">
-                    {tracks.length} треков
-                  </p>
-                </div>
-              </div>
-
-              <TrackGrid
-                tracks={filteredTracks}
-                loading={loadingTracks}
-                onPlay={playTrack}
-                onFavorite={toggleFavorite}
-                isFavorite={isFavorite}
-              />
-            </section>
-          )}
-
-          {page === "favorites" && (
-            <section className="section">
-              <div className="section-header">
-                <div>
-                  <h1 className="section-title">
-                    Избранное
-                  </h1>
-
-                  <p className="section-subtitle">
-                    Твои любимые треки
-                  </p>
-                </div>
-              </div>
-
-              {!user ? (
-                <LoginPrompt
-                  onLogin={openLogin}
-                />
-              ) : (
-                <TrackGrid
-                  tracks={favorites}
-                  loading={false}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  isFavorite={isFavorite}
-                />
-              )}
-            </section>
-          )}
-
-          {page === "history" && (
-            <section className="section">
-              <div className="section-header">
-                <div>
-                  <h1 className="section-title">
-                    История
-                  </h1>
-
-                  <p className="section-subtitle">
-                    Недавно прослушанные треки
-                  </p>
-                </div>
-              </div>
-
-              {!user ? (
-                <LoginPrompt
-                  onLogin={openLogin}
-                />
-              ) : (
-                <TrackGrid
-                  tracks={history}
-                  loading={false}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  isFavorite={isFavorite}
-                />
-              )}
-            </section>
-          )}
-
-          {page === "profile" && (
-            <ProfilePage
-              user={user}
-              loading={loadingUser}
-              onLogin={openLogin}
-              onLogout={logout}
-              onSaved={() => {
-                loadUser();
-                notify("Профиль сохранён");
-              }}
-            />
-          )}
-        </main>
-      </div>
-
-      {currentTrack && (
-        <Player
-          track={currentTrack}
-          playing={playing}
-          progress={progress}
-          duration={duration}
-          volume={volume}
-          onToggle={togglePlay}
-          onNext={playNext}
-          onPrevious={playPrevious}
-          onSeek={seek}
-          onVolume={setVolume}
-        />
-      )}
-
-      {authOpen && (
-        <AuthModal
-          mode={authMode}
-          setMode={setAuthMode}
-          close={() => setAuthOpen(false)}
-          onSuccess={(nextUser) => {
-            setUser(nextUser || null);
-            setAuthOpen(false);
-            setPage("home");
-            notify(
-              authMode === "register"
-                ? "Аккаунт создан"
-                : "Вы вошли в аккаунт"
-            );
-          }}
-        />
-      )}
-
-      {toast && (
-        <div className="toast-container">
-          <div className="toast">
-            {toast}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TrackGrid({
-  tracks,
-  loading,
-  onPlay,
-  onFavorite,
-  isFavorite,
-}) {
-  if (loading) {
-    return (
-      <div className="loading">
-        <div className="spinner" />
-      </div>
-    );
-  }
-
-  if (!tracks || tracks.length === 0) {
-    return (
-      <div className="empty-state">
-        <div>
-          <strong>
-            Музыки пока нет
-          </strong>
-
-          <span>
-            Добавленные через бота треки
-            появятся здесь автоматически.
-          </span>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="track-grid">
-      {tracks.map((track) => (
-        <TrackCard
-          key={String(track.id)}
-          track={track}
-          onPlay={onPlay}
-          onFavorite={onFavorite}
-          favorite={isFavorite(track)}
-        />
-      ))}
-    </div>
-  );
-}
-
-function TrackCard({
-  track,
-  onPlay,
-  onFavorite,
-  favorite,
-}) {
-  const title =
-    track.title ||
-    track.file_name ||
-    "Без названия";
-
-  const artist =
-    track.artist_name ||
-    "Fenix Music";
-
-  const cover =
-    track.cover_url ||
-    "/music-cover.svg";
-
-  return (
-    <article className="track-card">
-      <div className="track-cover">
-        <img
-          src={cover}
-          alt={title}
-          onError={(event) => {
-            event.currentTarget.style.display =
-              "none";
-          }}
-        />
-
-        <button
-          className="track-play"
-          type="button"
-          aria-label={`Слушать ${title}`}
-          onClick={() => onPlay(track)}
-        >
-          <Icon
-            name="play"
-            size={19}
-          />
-        </button>
-      </div>
-
-      <div className="track-info">
-        <h3 className="track-title">
-          {title}
-        </h3>
-
-        <p className="track-artist">
-          {artist}
-        </p>
-
-        <div className="track-meta">
-          <span>
-            {formatTime(track.duration)}
-          </span>
-
-          <button
-            type="button"
-            onClick={() => onFavorite(track)}
-            style={{
-              color: favorite
-                ? "#ff3e6d"
-                : "#777783",
-              background: "transparent",
-              padding: 0,
-              display: "grid",
-              placeItems: "center",
-            }}
-            aria-label="Избранное"
-          >
-            <Icon
-              name="heart"
-              size={17}
-            />
-          </button>
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function Player({
-  track,
-  playing,
-  progress,
-  duration,
-  volume,
-  onToggle,
-  onNext,
-  onPrevious,
-  onSeek,
-  onVolume,
-}) {
-  const cover =
-    track.cover_url ||
-    "/music-cover.svg";
-
-  const actualDuration =
-    duration ||
-    Number(track.duration || 0);
-
-  return (
-    <div className="player">
-      <div className="player-cover">
-        <img
-          src={cover}
-          alt={track.title || "Track"}
-          onError={(event) => {
-            event.currentTarget.style.display =
-              "none";
-          }}
-        />
-      </div>
-
-      <div className="player-info">
-        <p className="player-title">
-          {track.title ||
-            track.file_name ||
-            "Без названия"}
-        </p>
-
-        <p className="player-artist">
-          {track.artist_name ||
-            "Fenix Music"}
-        </p>
-      </div>
-
-      <div className="player-controls">
-        <button
-          className="player-button secondary-control"
-          type="button"
-          onClick={onPrevious}
-          aria-label="Предыдущий"
-        >
-          <Icon
-            name="previous"
-            size={20}
-          />
-        </button>
-
-        <button
-          className="player-button main"
-          type="button"
-          onClick={onToggle}
-          aria-label={
-            playing ? "Пауза" : "Воспроизвести"
-          }
-        >
-          <Icon
-            name={playing ? "pause" : "play"}
-            size={21}
-          />
-        </button>
-
-        <button
-          className="player-button secondary-control"
-          type="button"
-          onClick={onNext}
-          aria-label="Следующий"
-        >
-          <Icon
-            name="next"
-            size={20}
-          />
-        </button>
-      </div>
-
-      <div className="progress-area">
-        <span className="progress-time">
-          {formatTime(progress)}
-        </span>
-
-        <div
-          className="progress"
-          onClick={onSeek}
-          role="slider"
-          aria-valuemin="0"
-          aria-valuemax={actualDuration}
-          aria-valuenow={progress}
-          tabIndex={0}
-        >
-          <div
-            className="progress-fill"
-            style={{
-              width:
-                actualDuration > 0
-                  ? `${Math.min(
-                      100,
-                      (progress /
-                        actualDuration) *
-                        100
-                    )}%`
-                  : "0%",
-            }}
-          />
-        </div>
-
-        <span className="progress-time">
-          {formatTime(actualDuration)}
-        </span>
-      </div>
-
-      <div className="volume">
-        <Icon
-          name={
-            volume > 0
-              ? "volume"
-              : "volume-off"
-          }
-          size={18}
-        />
-
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.01"
-          value={volume}
-          onChange={(event) =>
-            onVolume(
-              Number(event.target.value)
-            )
-          }
-          aria-label="Громкость"
-        />
-      </div>
-    </div>
-  );
-}
-
-function LoginPrompt({ onLogin }) {
-  return (
-    <div className="empty-state">
-      <div>
-        <strong>
-          Войди в аккаунт
-        </strong>
-
-        <span>
-          Авторизуйся, чтобы пользоваться
-          этой функцией.
-        </span>
-
-        <div
-          style={{
-            marginTop: 18,
-          }}
-        >
-          <button
-            className="primary-button"
-            type="button"
-            onClick={onLogin}
-          >
-            Войти
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProfilePage({
-  user,
-  loading,
-  onLogin,
-  onLogout,
-  onSaved,
-}) {
-  const [username, setUsername] =
-    useState("");
-
-  const [bio, setBio] =
-    useState("");
-
-  const [avatarUrl, setAvatarUrl] =
-    useState("");
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    setUsername(user.username || "");
-    setBio(user.bio || "");
-    setAvatarUrl(user.avatar_url || "");
-  }, [user]);
-
-  async function save() {
-    setError("");
-    setSaving(true);
-
-    try {
-      const response =
-        await fetch(
-          apiUrl("/api/auth/profile"),
-          {
-            method: "PUT",
-            credentials: "include",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify({
-              username,
-              bio,
-              avatar_url: avatarUrl,
-            }),
-          }
-        );
-
-      const data =
-        await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data?.error ||
-            "Не удалось сохранить профиль"
-        );
-      }
-
-      onSaved();
-    } catch (err) {
-      setError(
-        err.message ||
-          "Ошибка сохранения"
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="loading">
-        <div className="spinner" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <LoginPrompt onLogin={onLogin} />
-    );
-  }
-
-  const firstLetter =
-    String(
-      user.username || "F"
-    )
-      .charAt(0)
-      .toUpperCase();
-
-  return (
-    <section className="section">
-      <div className="section-header">
-        <div>
-          <h1 className="section-title">
-            Профиль
-          </h1>
-
-          <p className="section-subtitle">
-            Управление аккаунтом Fenix Music
-          </p>
-        </div>
-
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={onLogout}
-        >
-          <Icon
-            name="log-out"
-            size={17}
-          />
-          Выйти
-        </button>
-      </div>
-
-      <div className="profile">
-        <div>
-          {avatarUrl ? (
-            <img
-              className="avatar"
-              src={avatarUrl}
-              alt={username}
-              onError={(event) => {
-                event.currentTarget.style.display =
-                  "none";
-              }}
-            />
-          ) : (
-            <div className="avatar">
-              {firstLetter}
-            </div>
-          )}
-        </div>
-
-        <div className="profile-content">
-          <h2 className="profile-name">
-            {user.username}
-          </h2>
-
-          <p className="profile-email">
-            {user.email}
-          </p>
-
-          <div
-            className="form"
-            style={{
-              marginTop: 25,
-            }}
-          >
-            <div className="form-group">
-              <label className="form-label">
-                Username
-              </label>
-
-              <input
-                className="form-input"
-                value={username}
-                onChange={(event) =>
-                  setUsername(
-                    event.target.value
-                  )
-                }
-                maxLength={64}
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                О себе
-              </label>
-
-              <textarea
-                className="form-input"
-                value={bio}
-                onChange={(event) =>
-                  setBio(event.target.value)
-                }
-                maxLength={1000}
-                placeholder="Расскажи о себе..."
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">
-                URL аватара
-              </label>
-
-              <input
-                className="form-input"
-                value={avatarUrl}
-                onChange={(event) =>
-                  setAvatarUrl(
-                    event.target.value
-                  )
-                }
-                placeholder="https://..."
-              />
-            </div>
-
-            {error && (
-              <div className="form-error">
-                {error}
-              </div>
-            )}
-
-            <button
-              className="primary-button"
-              type="button"
-              onClick={save}
-              disabled={saving}
-            >
-              <Icon
-                name="edit"
-                size={17}
-              />
-
-              {saving
-                ? "Сохранение..."
-                : "Сохранить профиль"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function AuthModal({
-  mode,
-  setMode,
-  close,
-  onSuccess,
-}) {
-  const [username, setUsername] =
-    useState("");
-
-  const [email, setEmail] =
-    useState("");
-
-  const [password, setPassword] =
-    useState("");
-
-  const [confirmPassword, setConfirmPassword] =
-    useState("");
-
-  const [captchaId, setCaptchaId] =
-    useState("");
-
-  const [captchaText, setCaptchaText] =
-    useState("");
-
-  const [captchaAnswer, setCaptchaAnswer] =
-    useState("");
-
-  const [busy, setBusy] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  const [captchaLoading, setCaptchaLoading] =
-    useState(false);
-
-  async function loadCaptcha() {
-    setCaptchaLoading(true);
-    setError("");
-
-    try {
-      const response =
-        await fetch(
-          apiUrl("/api/auth/captcha"),
-          {
-            credentials: "include",
-          }
-        );
-
-      const data =
-        await response.json();
-
-      if (!response.ok || !data.ok) {
-        throw new Error(
-          data?.error ||
-            "Не удалось получить CAPTCHA"
-        );
-      }
-
-      setCaptchaId(
-        String(data.id || "")
-      );
-
-      setCaptchaText(
-        String(
-          data.text ||
-            data.code ||
-            ""
-        )
-      );
-
-      setCaptchaAnswer("");
-    } catch (err) {
-      setCaptchaId("");
-      setCaptchaText(
-        randomFallbackCaptcha()
-      );
-      setCaptchaAnswer("");
-
-      setError(
-        "Не удалось загрузить CAPTCHA с сервера. Обновите код."
-      );
-
-      console.error(
-        "CAPTCHA:",
-        err
-      );
-    } finally {
-      setCaptchaLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    if (mode === "register") {
-      loadCaptcha();
-    }
-  }, [mode]);
-
-  function switchMode(nextMode) {
-    setMode(nextMode);
-    setError("");
-
-    if (nextMode === "register") {
-      window.setTimeout(
-        loadCaptcha,
-        0
-      );
-    }
-  }
-
-  async function submit(event) {
-    event.preventDefault();
-    setError("");
-
-    if (mode === "register") {
-      if (
-        username.trim().length < 3
-      ) {
-        setError(
-          "Username должен содержать минимум 3 символа."
-        );
-        return;
-      }
-
-      if (
-        password.length < 6
-      ) {
-        setError(
-          "Пароль должен содержать минимум 6 символов."
-        );
-        return;
-      }
-
-      if (
-        password !== confirmPassword
-      ) {
-        setError(
-          "Пароли не совпадают."
-        );
-        return;
-      }
-
-      if (
-        !captchaAnswer.trim()
-      ) {
-        setError(
-          "Введите код CAPTCHA."
-        );
-        return;
-      }
-
-      if (
-        captchaId &&
-        captchaText &&
-        captchaAnswer.trim().toUpperCase() !==
-          captchaText.trim().toUpperCase()
-      ) {
-        setError(
-          "Неверный код CAPTCHA."
-        );
-
-        loadCaptcha();
-        return;
-      }
-    }
-
-    setBusy(true);
-
-    try {
-      const endpoint =
-        mode === "register"
-          ? "/api/auth/register"
-          : "/api/auth/login";
-
-      const body =
-        mode === "register"
-          ? {
-              username:
-                username.trim(),
-              email:
-                email.trim().toLowerCase(),
-              password,
-              captcha:
-                captchaAnswer.trim(),
-              captcha_id:
-                captchaId,
-            }
-          : {
-              login:
-                email.trim(),
-              password,
-            };
-
-      const response =
-        await fetch(
-          apiUrl(endpoint),
-          {
-            method: "POST",
-            credentials: "include",
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-            body: JSON.stringify(body),
-          }
-        );
-
-      const data =
-        await response.json();
-
-      if (!response.ok || !data.ok) {
-        throw new Error(
-          data?.error ||
-            "Неизвестная ошибка"
-        );
-      }
-
-      onSuccess(
-        data.user || null
-      );
-    } catch (err) {
-      setError(
-        err.message ||
-          "Произошла ошибка"
-      );
-
-      if (mode === "register") {
-        loadCaptcha();
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div
-      className="modal-backdrop"
-      onMouseDown={(event) => {
-        if (
-          event.target ===
-          event.currentTarget
-        ) {
-          close();
-        }
-      }}
-    >
-      <div className="modal">
-        <div className="modal-header">
-          <div>
-            <h2 className="modal-title">
-              {mode === "register"
-                ? "Создать аккаунт"
-                : "Войти"}
-            </h2>
-
-            <p className="modal-description">
-              {mode === "register"
-                ? "Создай свой аккаунт Fenix Music."
-                : "Войди в свой Fenix Music аккаунт."}
-            </p>
-          </div>
-
-          <button
-            className="icon-button"
-            type="button"
-            onClick={close}
-            aria-label="Закрыть"
-          >
-            <Icon
-              name="x"
-              size={19}
-            />
-          </button>
-        </div>
-
-        <form
-          className="form"
-          onSubmit={submit}
-        >
-          {mode === "register" && (
-            <div className="form-group">
-              <label className="form-label">
-                Username
-              </label>
-
-              <input
-                className="form-input"
-                value={username}
-                onChange={(event) =>
-                  setUsername(
-                    event.target.value
-                  )
-                }
-                placeholder="Например: fenix"
-                maxLength={64}
-                autoComplete="username"
-                required
-              />
-            </div>
-          )}
-
-          <div className="form-group">
-            <label className="form-label">
-              {mode === "register"
-                ? "Email"
-                : "Email или username"}
-            </label>
-
-            <input
-              className="form-input"
-              type={
-                mode === "register"
-                  ? "email"
-                  : "text"
-              }
-              value={email}
-              onChange={(event) =>
-                setEmail(
-                  event.target.value
-                )
-              }
-              placeholder={
-                mode === "register"
-                  ? "you@example.com"
-                  : "Введите email или username"
-              }
-              autoComplete={
-                mode === "register"
-                  ? "email"
-                  : "username"
-              }
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">
-              Пароль
-            </label>
-
-            <input
-              className="form-input"
-              type="password"
-              value={password}
-              onChange={(event) =>
-                setPassword(
-                  event.target.value
-                )
-              }
-              placeholder="Минимум 6 символов"
-              autoComplete={
-                mode === "register"
-                  ? "new-password"
-                  : "current-password"
-              }
-              required
-            />
-          </div>
-
-          {mode === "register" && (
-            <>
-              <div className="form-group">
-                <label className="form-label">
-                  Повторите пароль
-                </label>
-
-                <input
-                  className="form-input"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(event) =>
-                    setConfirmPassword(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Повторите пароль"
-                  autoComplete="new-password"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">
-                  CAPTCHA
-                </label>
-
-                <div className="captcha">
-                  <div className="captcha-image">
-                    {captchaLoading
-                      ? "...."
-                      : captchaText ||
-                        "----"}
-                  </div>
-
-                  <button
-                    className="captcha-refresh"
-                    type="button"
-                    onClick={loadCaptcha}
-                    disabled={captchaLoading}
-                    aria-label="Обновить CAPTCHA"
-                  >
                     <Icon
-                      name="refresh"
-                      size={19}
+                      name="forward"
+                      size={18}
                     />
                   </button>
                 </div>
 
-                <input
-                  className="form-input"
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={4}
-                  value={captchaAnswer}
-                  onChange={(event) =>
-                    setCaptchaAnswer(
-                      event.target.value
-                        .replace(
-                          /\D/g,
-                          ""
+                {loading ? (
+                  <div className="fm-loading-grid">
+                    {Array.from({
+                      length: 6,
+                    }).map(
+                      (_, index) => (
+                        <div
+                          className="fm-skeleton"
+                          key={index}
+                        />
+                      )
+                    )}
+                  </div>
+                ) : tracks.length ? (
+                  <div className="fm-card-grid">
+                    {tracks
+                      .slice(0, 6)
+                      .map(
+                        (
+                          track,
+                          index
+                        ) => (
+                          <TrackCard
+                            key={
+                              track.id ||
+                              index
+                            }
+                            track={track}
+                            index={index}
+                            onPlay={
+                              playTrack
+                            }
+                            onFavorite={
+                              toggleFavorite
+                            }
+                            favorite={favoriteSet.has(
+                              track.id
+                            )}
+                          />
                         )
-                        .slice(0, 4)
+                      )}
+                  </div>
+                ) : (
+                  <div className="fm-empty">
+                    <div className="fm-empty-icon">
+                      ♪
+                    </div>
+                    <h3>
+                      Пока нет музыки
+                    </h3>
+                    <p>
+                      Добавь аудиофайлы в
+                      папку music на
+                      сервере.
+                    </p>
+                  </div>
+                )}
+              </section>
+
+              <section className="fm-section">
+                <div className="fm-section-heading">
+                  <div>
+                    <span className="fm-section-kicker">
+                      В ТРЕНДЕ
+                    </span>
+                    <h2>
+                      Популярное
+                    </h2>
+                  </div>
+
+                  <button
+                    className="fm-see-all"
+                    onClick={() =>
+                      goSection(
+                        "popular"
+                      )
+                    }
+                  >
+                    Смотреть всё
+                    <Icon
+                      name="forward"
+                      size={18}
+                    />
+                  </button>
+                </div>
+
+                <div className="fm-list">
+                  {popularTracks
+                    .slice(0, 7)
+                    .map(
+                      (
+                        track,
+                        index
+                      ) => (
+                        <TrackRow
+                          key={
+                            track.id ||
+                            index
+                          }
+                          track={track}
+                          index={index}
+                          onPlay={
+                            playTrack
+                          }
+                          onFavorite={
+                            toggleFavorite
+                          }
+                          favorite={favoriteSet.has(
+                            track.id
+                          )}
+                          playing={
+                            activeTrack?.id ===
+                              track.id &&
+                            playing
+                          }
+                        />
+                      )
+                    )}
+                </div>
+              </section>
+
+              <section className="fm-section">
+                <div className="fm-section-heading">
+                  <div>
+                    <span className="fm-section-kicker">
+                      СВЕЖЕЕ
+                    </span>
+                    <h2>
+                      Новинки
+                    </h2>
+                  </div>
+
+                  <button
+                    className="fm-see-all"
+                    onClick={() =>
+                      goSection("new")
+                    }
+                  >
+                    Все новинки
+                    <Icon
+                      name="forward"
+                      size={18}
+                    />
+                  </button>
+                </div>
+
+                <div className="fm-card-grid">
+                  {newTracks
+                    .slice(0, 4)
+                    .map(
+                      (
+                        track,
+                        index
+                      ) => (
+                        <TrackCard
+                          key={
+                            track.id ||
+                            index
+                          }
+                          track={track}
+                          index={index + 2}
+                          onPlay={
+                            playTrack
+                          }
+                          onFavorite={
+                            toggleFavorite
+                          }
+                          favorite={favoriteSet.has(
+                            track.id
+                          )}
+                        />
+                      )
+                    )}
+                </div>
+              </section>
+            </>
+          )}
+
+          {section !== "home" && (
+            <section className="fm-section fm-page-section">
+              <div className="fm-page-heading">
+                <div>
+                  <span className="fm-section-kicker">
+                    FENIX MUSIC
+                  </span>
+
+                  <h1>{title}</h1>
+
+                  {section ===
+                    "search" && (
+                    <p>
+                      {search
+                        ? `Результаты для «${search}»`
+                        : "Найди любимые треки и исполнителей."}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  className="fm-refresh-button"
+                  onClick={loadTracks}
+                >
+                  <Icon
+                    name="refresh"
+                    size={20}
+                  />
+                  Обновить
+                </button>
+              </div>
+
+              {section ===
+                "queue" ? (
+                queue.length ? (
+                  <div className="fm-list">
+                    {queue.map(
+                      (
+                        track,
+                        index
+                      ) => (
+                        <TrackRow
+                          key={
+                            track.id ||
+                            index
+                          }
+                          track={track}
+                          index={index}
+                          onPlay={
+                            playTrack
+                          }
+                          onFavorite={
+                            toggleFavorite
+                          }
+                          favorite={favoriteSet.has(
+                            track.id
+                          )}
+                          playing={
+                            activeTrack?.id ===
+                              track.id &&
+                            playing
+                          }
+                        />
+                      )
+                    )}
+                  </div>
+                ) : (
+                  <div className="fm-empty">
+                    <div className="fm-empty-icon">
+                      ☷
+                    </div>
+                    <h3>
+                      Очередь пуста
+                    </h3>
+                    <p>
+                      Запусти трек, чтобы
+                      увидеть очередь.
+                    </p>
+                  </div>
+                )
+              ) : displayTracks.length ? (
+                <div className="fm-list">
+                  {displayTracks.map(
+                    (
+                      track,
+                      index
+                    ) => (
+                      <TrackRow
+                        key={
+                          track.id ||
+                          `${track.file_name}-${index}`
+                        }
+                        track={track}
+                        index={index}
+                        onPlay={
+                          playTrack
+                        }
+                        onFavorite={
+                          toggleFavorite
+                        }
+                        favorite={favoriteSet.has(
+                          track.id
+                        )}
+                        playing={
+                          activeTrack?.id ===
+                            track.id &&
+                          playing
+                        }
+                      />
+                    )
+                  )}
+                </div>
+              ) : (
+                <div className="fm-empty">
+                  <div className="fm-empty-icon">
+                    {section ===
+                    "favorites"
+                      ? "♥"
+                      : section ===
+                        "history"
+                      ? "◷"
+                      : "⌕"}
+                  </div>
+
+                  <h3>
+                    {section ===
+                    "favorites"
+                      ? "Избранное пусто"
+                      : section ===
+                        "history"
+                      ? "История пуста"
+                      : "Ничего не найдено"}
+                  </h3>
+
+                  <p>
+                    {section ===
+                    "favorites"
+                      ? "Добавляй треки в избранное."
+                      : section ===
+                        "history"
+                      ? "Начни слушать музыку."
+                      : "Попробуй изменить поисковый запрос."}
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {serverError && (
+            <div className="fm-server-warning">
+              <span>!</span>
+              <div>
+                <strong>
+                  Backend подключён, но
+                  музыка недоступна
+                </strong>
+                <p>
+                  {serverError}
+                </p>
+              </div>
+
+              <button
+                onClick={loadTracks}
+              >
+                Повторить
+              </button>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {activeTrack && (
+        <div
+          className={`fm-player ${
+            fullscreenPlayer
+              ? "fullscreen"
+              : ""
+          }`}
+        >
+          {fullscreenPlayer && (
+            <button
+              className="fm-fullscreen-close"
+              onClick={() =>
+                setFullscreenPlayer(
+                  false
+                )
+              }
+            >
+              <Icon
+                name="close"
+                size={26}
+              />
+            </button>
+          )}
+
+          {fullscreenPlayer ? (
+            <div className="fm-fullscreen-player">
+              <div className="fm-fullscreen-cover">
+                <TrackCover
+                  track={activeTrack}
+                  index={0}
+                />
+              </div>
+
+              <div className="fm-visualizer">
+                {Array.from({
+                  length: 32,
+                }).map(
+                  (_, index) => (
+                    <i
+                      key={index}
+                      style={{
+                        animationDelay: `${
+                          index * 0.035
+                        }s`,
+                      }}
+                    />
+                  )
+                )}
+              </div>
+
+              <div className="fm-fullscreen-info">
+                <span>
+                  NOW PLAYING
+                </span>
+                <h1>
+                  {activeTrack.title}
+                </h1>
+                <p>
+                  {activeTrack.artist_name ||
+                    "Fenix Music"}
+                </p>
+              </div>
+
+              <input
+                className="fm-progress fullscreen-progress"
+                type="range"
+                min="0"
+                max={duration || 0}
+                step="0.1"
+                value={Math.min(
+                  currentTime,
+                  duration || 0
+                )}
+                onChange={seek}
+              />
+
+              <div className="fm-time-row">
+                <span>
+                  {formatTime(
+                    currentTime
+                  )}
+                </span>
+                <span>
+                  {formatTime(
+                    duration
+                  )}
+                </span>
+              </div>
+
+              <div className="fm-controls fullscreen-controls">
+                <button
+                  className={
+                    shuffle
+                      ? "control-active"
+                      : ""
+                  }
+                  onClick={() =>
+                    setShuffle(
+                      !shuffle
                     )
                   }
-                  placeholder="Введите 4 цифры"
-                  autoComplete="off"
-                  required
+                >
+                  <Icon
+                    name="shuffle"
+                    size={23}
+                  />
+                </button>
+
+                <button
+                  onClick={
+                    previousTrack
+                  }
+                >
+                  <Icon
+                    name="prev"
+                    size={28}
+                  />
+                </button>
+
+                <button
+                  className="fm-big-play"
+                  onClick={togglePlay}
+                >
+                  <Icon
+                    name={
+                      playing
+                        ? "pause"
+                        : "play"
+                    }
+                    size={28}
+                  />
+                </button>
+
+                <button
+                  onClick={nextTrack}
+                >
+                  <Icon
+                    name="next"
+                    size={28}
+                  />
+                </button>
+
+                <button
+                  className={
+                    repeat
+                      ? "control-active"
+                      : ""
+                  }
+                  onClick={() =>
+                    setRepeat(!repeat)
+                  }
+                >
+                  <Icon
+                    name="repeat"
+                    size={23}
+                  />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <button
+                className="fm-player-main"
+                onClick={() =>
+                  setFullscreenPlayer(
+                    true
+                  )
+                }
+              >
+                <TrackCover
+                  track={activeTrack}
+                  small
                 />
+
+                <div className="fm-player-info">
+                  <strong>
+                    {activeTrack.title}
+                  </strong>
+
+                  <span>
+                    {activeTrack.artist_name ||
+                      "Fenix Music"}
+                  </span>
+                </div>
+              </button>
+
+              <div className="fm-player-center">
+                <div className="fm-controls">
+                  <button
+                    className={
+                      shuffle
+                        ? "control-active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setShuffle(
+                        !shuffle
+                      )
+                    }
+                  >
+                    <Icon
+                      name="shuffle"
+                      size={18}
+                    />
+                  </button>
+
+                  <button
+                    onClick={
+                      previousTrack
+                    }
+                  >
+                    <Icon
+                      name="prev"
+                      size={20}
+                    />
+                  </button>
+
+                  <button
+                    className="fm-play-button"
+                    onClick={
+                      togglePlay
+                    }
+                  >
+                    <Icon
+                      name={
+                        playing
+                          ? "pause"
+                          : "play"
+                      }
+                      size={18}
+                    />
+                  </button>
+
+                  <button
+                    onClick={nextTrack}
+                  >
+                    <Icon
+                      name="next"
+                      size={20}
+                    />
+                  </button>
+
+                  <button
+                    className={
+                      repeat
+                        ? "control-active"
+                        : ""
+                    }
+                    onClick={() =>
+                      setRepeat(!repeat)
+                    }
+                  >
+                    <Icon
+                      name="repeat"
+                      size={18}
+                    />
+                  </button>
+                </div>
+
+                <div className="fm-progress-line">
+                  <span>
+                    {formatTime(
+                      currentTime
+                    )}
+                  </span>
+
+                  <input
+                    className="fm-progress"
+                    type="range"
+                    min="0"
+                    max={duration || 0}
+                    step="0.1"
+                    value={Math.min(
+                      currentTime,
+                      duration || 0
+                    )}
+                    onChange={seek}
+                  />
+
+                  <span>
+                    {formatTime(
+                      duration
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              <div className="fm-player-right">
+                <button
+                  onClick={() =>
+                    setMuted(!muted)
+                  }
+                >
+                  <Icon
+                    name="volume"
+                    size={19}
+                  />
+                </button>
+
+                <input
+                  className="fm-volume"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={
+                    muted
+                      ? 0
+                      : volume
+                  }
+                  onChange={(
+                    event
+                  ) => {
+                    const value =
+                      Number(
+                        event.target
+                          .value
+                      );
+
+                    setVolume(value);
+                    setMuted(
+                      value === 0
+                    );
+                  }}
+                />
+
+                <button
+                  onClick={() =>
+                    setFullscreenPlayer(
+                      true
+                    )
+                  }
+                >
+                  <Icon
+                    name="fullscreen"
+                    size={19}
+                  />
+                </button>
               </div>
             </>
           )}
-
-          {error && (
-            <div className="form-error">
-              {error}
-            </div>
-          )}
-
-          <button
-            className="primary-button"
-            type="submit"
-            disabled={busy}
-          >
-            {busy
-              ? "Подождите..."
-              : mode === "register"
-              ? "Создать аккаунт"
-              : "Войти"}
-          </button>
-        </form>
-
-        <div className="auth-switch">
-          {mode === "register" ? (
-            <>
-              Уже есть аккаунт?{" "}
-              <button
-                type="button"
-                onClick={() =>
-                  switchMode("login")
-                }
-              >
-                Войти
-              </button>
-            </>
-          ) : (
-            <>
-              Нет аккаунта?{" "}
-              <button
-                type="button"
-                onClick={() =>
-                  switchMode("register")
-                }
-              >
-                Создать
-              </button>
-            </>
-          )}
         </div>
-      </div>
+      )}
+
+      <nav className="fm-mobile-nav">
+        {navItems
+          .slice(0, 4)
+          .map((item) => (
+            <button
+              key={item.id}
+              className={
+                mobileNav ===
+                item.id
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                goSection(
+                  item.id
+                )
+              }
+            >
+              <Icon
+                name={item.icon}
+                size={21}
+              />
+              <span>
+                {item.label}
+              </span>
+            </button>
+          ))}
+      </nav>
+
+      <AuthModal
+        open={authOpen}
+        onClose={() =>
+          setAuthOpen(false)
+        }
+        mode={authMode}
+        setMode={setAuthMode}
+      />
+
+      {toast && (
+        <div className="fm-toast">
+          {toast}
+        </div>
+      )}
     </div>
-  );
-}
-
-const rootElement =
-  document.getElementById("root");
-
-if (!rootElement) {
-  throw new Error(
-    "Fenix Music: элемент #root не найден"
-  );
-}
-
-createRoot(rootElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
 );
+}
 export default App;
