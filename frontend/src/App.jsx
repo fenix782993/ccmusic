@@ -272,7 +272,6 @@ return (
 index + 1
 )} </button>
 
-```
   <button className="fm-row-main" onClick={() => onPlay(track)}>
     <TrackCover track={track} size="small" />
     <div className="fm-row-text">
@@ -301,7 +300,6 @@ index + 1
     <Icon name="more" size={20} />
   </button>
 </div>
-```
 
 );
 }
@@ -309,8 +307,6 @@ index + 1
 function SectionHeader({ title, subtitle, action, onAction }) {
 return ( <div className="fm-section-header"> <div> <h2>{title}</h2>
 {subtitle && <p>{subtitle}</p>} </div>
-
-```
   {action && (
     <button className="fm-see-all" onClick={onAction}>
       {action}
@@ -318,7 +314,6 @@ return ( <div className="fm-section-header"> <div> <h2>{title}</h2>
     </button>
   )}
 </div>
-```
 
 );
 }
@@ -327,7 +322,6 @@ function MusicCard({ track, onPlay, onLike, liked }) {
 return ( <article className="fm-music-card">
 <button className="fm-card-cover-wrap" onClick={() => onPlay(track)}> <TrackCover track={track} /> <span className="fm-card-play"> <Icon name="play" size={22} /> </span> </button>
 
-```
   <div className="fm-card-info">
     <button className="fm-card-title" onClick={() => onPlay(track)}>
       {track.title}
@@ -343,7 +337,6 @@ return ( <article className="fm-music-card">
     </div>
   </div>
 </article>
-```
 
 );
 }
@@ -360,8 +353,6 @@ const [error, setError] = useState("");
 
 async function loadCaptcha() {
 setError("");
-
-```
 try {
   const data = await apiFetch("/api/auth/captcha");
   setCaptchaId(data.captcha_id || data.id || "");
@@ -371,8 +362,6 @@ try {
   setCaptchaCode(randomCaptcha());
   setError("Не удалось загрузить CAPTCHA с сервера. Используется резервный код.");
 }
-```
-
 }
 
 useEffect(() => {
@@ -1769,8 +1758,6 @@ return ( <div className="fm-app"> <audio ref={audioRef} preload="metadata" />
     />
   )}
 </div>
-```
-
 );
 }
 export default App
