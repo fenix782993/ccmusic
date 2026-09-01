@@ -4,21 +4,13 @@ services:
     runtime: python
     plan: free
 
-    buildCommand: >
-      python -m pip install --upgrade pip &&
-      python -m pip install -r backend/requirements.txt &&
-      cd frontend &&
-      npm install &&
-      npm run build
+    buildCommand: "python -m pip install --upgrade pip && python -m pip install -r backend/requirements.txt && cd frontend && npm install && npm run build"
 
-    startCommand: >
-      python -m uvicorn backend.server:app
-      --host 0.0.0.0
-      --port $PORT
+    startCommand: "python -m uvicorn backend.server:app --host 0.0.0.0 --port $PORT"
 
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.8
+        value: "3.12.8"
 
       - key: DATABASE_URL
         sync: false
