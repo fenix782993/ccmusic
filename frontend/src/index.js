@@ -1,10 +1,3 @@
-export const API_URL=import.meta.env.VITE_API_URL||'http://localhost:8000/api';
-export async function api(path,options={}){
- const token=localStorage.getItem('fenix_token');
- const headers={...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(options.headers||{})};
- if(token) headers.Authorization=`Bearer ${token}`;
- const res=await fetch(`${API_URL}${path}`,{...options,headers});
- if(!res.ok) throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail||'API error');
- return res.status===204?null:res.json();
-}
-export function mediaUrl(url){if(!url)return ''; if(url.startsWith('http'))return url; const base=API_URL.replace(/\/api\/?$/,''); return `${base}${url}`;}
+export const API_URL=import.meta.env.VITE_API_URL||'/api';
+export async function api(path,options={}){const token=localStorage.getItem('fenix_token');const headers={...(options.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(options.headers||{})};if(token)headers.Authorization=`Bearer ${token}`;const res=await fetch(`${API_URL}${path}`,{...options,headers});if(!res.ok)throw new Error((await res.json().catch(()=>({detail:res.statusText}))).detail||'API error');return res.status===204?null:res.json()}
+export function mediaUrl(url){if(!url)return '';if(url.startsWith('http'))return url;if(url.startsWith('/'))return url;return `${API_URL}/${url.replace(/^\//,'')}`}
