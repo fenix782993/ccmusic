@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 import os
-from datetime import timedelta
+import uuid
+
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -40,12 +42,16 @@ from backend.server import (
 # CONFIG
 # ============================================================
 
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv(
+    "TELEGRAM_BOT_TOKEN",
+    "",
+).strip()
 
 if not BOT_TOKEN:
     raise RuntimeError(
         "TELEGRAM_BOT_TOKEN is not configured"
     )
+
 
 TELEGRAM_ADMIN_IDS = set()
 
@@ -79,7 +85,9 @@ logging.basicConfig(
     ),
 )
 
-logger = logging.getLogger("fenix_music_bot")
+logger = logging.getLogger(
+    "fenix_music_bot"
+)
 
 
 # ============================================================
@@ -119,7 +127,6 @@ def db_session():
 
 
 def tg_id(message_or_callback) -> str:
-
     user = (
         message_or_callback.from_user
         if hasattr(
@@ -136,7 +143,9 @@ def tg_id(message_or_callback) -> str:
     )
 
 
-def is_env_admin(tg_user_id: int) -> bool:
+def is_env_admin(
+    tg_user_id: int,
+) -> bool:
 
     return tg_user_id in TELEGRAM_ADMIN_IDS
 
@@ -148,8 +157,9 @@ def get_user_by_telegram(
     return (
         db.query(User)
         .filter(
-            User.telegram_id
-            == str(telegram_id)
+            User.telegram_id == str(
+                telegram_id
+            )
         )
         .first()
     )
@@ -162,8 +172,7 @@ def get_user_by_link_token(
     return (
         db.query(User)
         .filter(
-            User.telegram_link_token
-            == token
+            User.telegram_link_token == token
         )
         .first()
     )
@@ -175,7 +184,9 @@ def is_admin_user(
 ) -> bool:
 
     if not user:
-        return False
+        return is_env_admin(
+            telegram_id
+        )
 
     return bool(
         user.is_admin
@@ -183,13 +194,34 @@ def is_admin_user(
     )
 
 
-def duration_label(seconds: int) -> str:
+def duration_label(
+    seconds: int,
+) -> str:
 
-    seconds = int(seconds or 0)
+    seconds = int(
+        seconds or 0
+    )
 
     return (
         f"{seconds // 60}:"
         f"{seconds % 60:02d}"
+    )
+
+
+def escape_html(
+    value,
+) -> str:
+
+    value = str(
+        value or ""
+    )
+
+    return (
+        value
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
     )
 
 
@@ -222,20 +254,9 @@ def track_text(
     ).strip()
 
 
-def escape_html(value) -> str:
-
-    value = str(value or "")
-
-    return (
-        value
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
-
-
-def parse_lyrics(track: Track) -> str:
+def parse_lyrics(
+    track: Track,
+) -> str:
 
     text = (
         track.lyrics
@@ -255,7 +276,9 @@ def parse_lyrics(track: Track) -> str:
 
     try:
 
-        data = json.loads(synced)
+        data = json.loads(
+            synced
+        )
 
         if not isinstance(
             data,
@@ -286,7 +309,6 @@ def parse_lyrics(track: Track) -> str:
         return "\n".join(lines)
 
     except Exception:
-
         return ""
 
 
@@ -580,6 +602,7 @@ async def require_linked_user(
                 "и создай код привязки Telegram.\n\n"
                 "После этого отправь сюда:\n"
                 "<code>/link ТВОЙ_КОД</code>",
+                parse_mode="HTML",
             )
 
             return None
@@ -604,8 +627,12 @@ async def cmd_start(
 
     args = (
         message.text or ""
-    ).split(maxsplit=1)
+    ).split(
+        maxsplit=1
+    )
 
+    # /start TOKEN
+    # Оставляем deep-link привязку рабочей.
     if len(args) > 1:
 
         token = args[1].strip()
@@ -628,33 +655,40 @@ async def cmd_start(
             ),
         )
 
+        # ====================================================
+        # ГЛАВНОЕ ИЗМЕНЕНИЕ:
+        # обычный /start БОЛЬШЕ НЕ ПОКАЗЫВАЕТ
+        # инструкцию Telegram-привязки.
+        #
+        # Даже если пользователь не привязан,
+        # ему сразу показывается главное меню.
+        # ====================================================
+
         if user:
 
-            await message.answer(
-                "🔥 <b>FENIX MUSIC</b>\n\n"
+            text = (
+                "🎵 <b>FENIX MUSIC</b>\n\n"
                 f"Привет, "
-                f"<b>{escape_html(user.username)}</b>!\n"
-                "Telegram успешно привязан.\n\n"
-                "Выбирай действие:",
-                reply_markup=main_menu(
-                    user,
-                    message.from_user.id,
-                ),
+                f"<b>{escape_html(user.username)}</b>! 👋\n\n"
+                "Выбирай действие:"
             )
 
         else:
 
-            await message.answer(
+            text = (
                 "🎵 <b>FENIX MUSIC</b>\n\n"
-                "Добро пожаловать!\n\n"
-                "Чтобы синхронизировать Telegram "
-                "с аккаунтом FENIX MUSIC:\n\n"
-                "1️⃣ Открой сайт.\n"
-                "2️⃣ Профиль → Telegram.\n"
-                "3️⃣ Создай код привязки.\n"
-                "4️⃣ Отправь сюда:\n"
-                "<code>/link ТВОЙ_КОД</code>",
+                "Добро пожаловать! 👋\n\n"
+                "Выбирай нужный раздел:"
             )
+
+        await message.answer(
+            text,
+            reply_markup=main_menu(
+                user,
+                message.from_user.id,
+            ),
+            parse_mode="HTML",
+        )
 
     finally:
 
@@ -674,13 +708,16 @@ async def cmd_link(
 
     parts = (
         message.text or ""
-    ).split(maxsplit=1)
+    ).split(
+        maxsplit=1
+    )
 
     if len(parts) != 2:
 
         await message.answer(
             "❌ Использование:\n"
-            "<code>/link TOKEN</code>"
+            "<code>/link TOKEN</code>",
+            parse_mode="HTML",
         )
 
         return
@@ -737,15 +774,11 @@ async def link_account(
         if expires.tzinfo is None:
 
             expires = expires.replace(
-                tzinfo=__import__(
-                    "datetime"
-                ).timezone.utc
+                tzinfo=timezone.utc
             )
 
-        if expires < __import__(
-            "datetime"
-        ).datetime.now(
-            __import__("datetime").timezone.utc
+        if expires < datetime.now(
+            timezone.utc
         ):
 
             user.telegram_link_token = None
@@ -767,8 +800,7 @@ async def link_account(
         another = (
             db.query(User)
             .filter(
-                User.telegram_id
-                == telegram_id,
+                User.telegram_id == telegram_id,
                 User.id != user.id,
             )
             .first()
@@ -814,9 +846,10 @@ async def link_account(
                 user,
                 message.from_user.id,
             ),
+            parse_mode="HTML",
         )
 
-    except Exception as exc:
+    except Exception:
 
         db.rollback()
 
@@ -901,22 +934,14 @@ async def cb_home(
             ),
         )
 
-        if not user:
-
-            await callback.answer(
-                "Telegram не привязан",
-                show_alert=True,
-            )
-
-            return
-
         await callback.message.edit_text(
-            "🔥 <b>FENIX MUSIC</b>\n\n"
+            "🎵 <b>FENIX MUSIC</b>\n\n"
             "Главное меню:",
             reply_markup=main_menu(
                 user,
                 callback.from_user.id,
             ),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -980,6 +1005,7 @@ async def show_music(
                 f"{title}\n\n"
                 "Музыка пока отсутствует.",
                 reply_markup=back_home_keyboard(),
+                parse_mode="HTML",
             )
 
             await callback.answer()
@@ -1017,6 +1043,7 @@ async def show_music(
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=rows
             ),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -1128,9 +1155,11 @@ async def cb_track(
                 liked=liked,
                 show_lyrics=bool(
                     (track.lyrics or "").strip()
-                    or (track.lyrics_sync or "").strip()
+                    or
+                    (track.lyrics_sync or "").strip()
                 ),
             ),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -1189,7 +1218,6 @@ async def cb_play(
 
             return
 
-        # Telegram playback.
         track.plays = (
             int(track.plays or 0)
             + 1
@@ -1228,7 +1256,7 @@ async def cb_play(
             ),
         )
 
-    except Exception as exc:
+    except Exception:
 
         db.rollback()
 
@@ -1310,7 +1338,6 @@ async def cb_like(
         if existing:
 
             db.delete(existing)
-
             liked = False
 
         else:
@@ -1332,7 +1359,8 @@ async def cb_like(
                 liked=liked,
                 show_lyrics=bool(
                     (track.lyrics or "").strip()
-                    or (track.lyrics_sync or "").strip()
+                    or
+                    (track.lyrics_sync or "").strip()
                 ),
             )
         )
@@ -1384,7 +1412,9 @@ async def cb_lyrics(
 
             return
 
-        lyrics = parse_lyrics(track)
+        lyrics = parse_lyrics(
+            track
+        )
 
         if not lyrics:
 
@@ -1401,13 +1431,12 @@ async def cb_lyrics(
             f"{escape_html(lyrics)}"
         )
 
-        # Telegram message limit protection.
         if len(text) > 4000:
-
             text = text[:3950] + "\n\n…"
 
         await callback.message.answer(
-            text
+            text,
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -1449,17 +1478,13 @@ async def cb_favorites(
             return
 
         rows = (
-            db.query(
-                Track
-            )
+            db.query(Track)
             .join(
                 Like,
-                Like.track_id
-                == Track.id,
+                Like.track_id == Track.id,
             )
             .filter(
-                Like.user_id
-                == user.id
+                Like.user_id == user.id
             )
             .order_by(
                 Like.created_at.desc()
@@ -1474,6 +1499,7 @@ async def cb_favorites(
                 "❤️ <b>Избранное</b>\n\n"
                 "Здесь пока ничего нет.",
                 reply_markup=back_home_keyboard(),
+                parse_mode="HTML",
             )
 
             await callback.answer()
@@ -1511,6 +1537,7 @@ async def cb_favorites(
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=buttons
             ),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -1569,6 +1596,7 @@ async def cb_history(
                 "🕘 <b>История</b>\n\n"
                 "История прослушиваний пуста.",
                 reply_markup=back_home_keyboard(),
+                parse_mode="HTML",
             )
 
             await callback.answer()
@@ -1614,6 +1642,7 @@ async def cb_history(
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=buttons
             ),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -1717,6 +1746,7 @@ async def cb_playlists(
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=rows
             ),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -1750,7 +1780,8 @@ async def cb_newplaylist(
 
     await callback.message.answer(
         "📂 <b>Создание плейлиста</b>\n\n"
-        "Отправь название плейлиста."
+        "Отправь название плейлиста.",
+        parse_mode="HTML",
     )
 
     await callback.answer()
@@ -1786,7 +1817,8 @@ async def playlist_name(
 
     await message.answer(
         "📝 Теперь отправь описание.\n\n"
-        "Если описание не нужно — отправь <code>-</code>."
+        "Если описание не нужно — отправь <code>-</code>.",
+        parse_mode="HTML",
     )
 
 
@@ -1867,6 +1899,7 @@ async def playlist_description(
                     ],
                 ]
             ),
+            parse_mode="HTML",
         )
 
     finally:
@@ -1974,13 +2007,22 @@ async def cb_playlist(
             ]
         )
 
-        await callback.message.edit_text(
+        description = escape_html(
+            playlist.description or ""
+        )
+
+        text = (
             f"📂 <b>{escape_html(playlist.name)}</b>\n\n"
-            f"{escape_html(playlist.description or '')}\n\n"
-            f"Треков: <b>{len(items)}</b>",
+            f"{description}\n\n"
+            f"Треков: <b>{len(items)}</b>"
+        )
+
+        await callback.message.edit_text(
+            text,
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=rows
             ),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -2080,6 +2122,7 @@ async def cb_add_playlist(
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=rows
             ),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -2211,9 +2254,11 @@ async def cb_put_playlist(
                 ),
                 show_lyrics=bool(
                     (track.lyrics or "").strip()
-                    or (track.lyrics_sync or "").strip()
+                    or
+                    (track.lyrics_sync or "").strip()
                 ),
             ),
+            parse_mode="HTML",
         )
 
     finally:
@@ -2360,6 +2405,7 @@ async def cb_profile(
             f"📂 Плейлистов: <b>{playlists}</b>\n"
             f"🔗 Telegram: <b>привязан</b>",
             reply_markup=back_home_keyboard(),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -2435,12 +2481,10 @@ async def cb_stats(
             )
             .join(
                 History,
-                History.track_id
-                == Track.id,
+                History.track_id == Track.id,
             )
             .filter(
-                History.user_id
-                == user.id
+                History.user_id == user.id
             )
             .scalar()
             or 0
@@ -2457,6 +2501,7 @@ async def cb_stats(
             f"📂 Плейлистов: "
             f"<b>{playlists}</b>",
             reply_markup=back_home_keyboard(),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -2481,6 +2526,7 @@ async def cb_charts(
         "📈 <b>Чарты FENIX MUSIC</b>\n\n"
         "Выбери период:",
         reply_markup=charts_keyboard(),
+        parse_mode="HTML",
     )
 
     await callback.answer()
@@ -2532,12 +2578,8 @@ async def cb_chart_period(
                 return
 
             cutoff = (
-                __import__(
-                    "datetime"
-                ).datetime.now(
-                    __import__(
-                        "datetime"
-                    ).timezone.utc
+                datetime.now(
+                    timezone.utc
                 )
                 - timedelta(
                     days=days
@@ -2553,12 +2595,10 @@ async def cb_chart_period(
                 )
                 .join(
                     History,
-                    History.track_id
-                    == Track.id,
+                    History.track_id == Track.id,
                 )
                 .filter(
-                    History.played_at
-                    >= cutoff
+                    History.played_at >= cutoff
                 )
                 .group_by(
                     Track.id
@@ -2579,6 +2619,7 @@ async def cb_chart_period(
                 "📈 <b>Чарты</b>\n\n"
                 "За этот период прослушиваний нет.",
                 reply_markup=charts_keyboard(),
+                parse_mode="HTML",
             )
 
             await callback.answer()
@@ -2595,6 +2636,7 @@ async def cb_chart_period(
             if period == "all":
 
                 track = item
+
                 plays = int(
                     track.plays or 0
                 )
@@ -2602,6 +2644,7 @@ async def cb_chart_period(
             else:
 
                 track, count = item
+
                 plays = int(
                     count or 0
                 )
@@ -2628,6 +2671,7 @@ async def cb_chart_period(
             f"Период: <b>{period_name}</b>\n\n"
             + "\n".join(lines),
             reply_markup=charts_keyboard(),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -2656,7 +2700,8 @@ async def cb_search(
     await callback.message.answer(
         "🔎 <b>Поиск музыки</b>\n\n"
         "Отправь название трека, исполнителя "
-        "или альбом."
+        "или альбом.",
+        parse_mode="HTML",
     )
 
     await callback.answer()
@@ -2694,21 +2739,13 @@ async def search_query(
             db.query(Track)
             .filter(
                 (
-                    Track.title.ilike(
-                        pattern
-                    )
+                    Track.title.ilike(pattern)
                     |
-                    Track.artist.ilike(
-                        pattern
-                    )
+                    Track.artist.ilike(pattern)
                     |
-                    Track.album.ilike(
-                        pattern
-                    )
+                    Track.album.ilike(pattern)
                     |
-                    Track.genre.ilike(
-                        pattern
-                    )
+                    Track.genre.ilike(pattern)
                 )
             )
             .limit(30)
@@ -2724,6 +2761,7 @@ async def search_query(
                 f"Запрос: "
                 f"<code>{escape_html(query_text)}</code>",
                 reply_markup=back_home_keyboard(),
+                parse_mode="HTML",
             )
 
             return
@@ -2761,6 +2799,7 @@ async def search_query(
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=rows
             ),
+            parse_mode="HTML",
         )
 
     finally:
@@ -2843,6 +2882,7 @@ async def cb_admin(
             "⚙️ <b>Админ-панель FENIX MUSIC</b>\n\n"
             "Управление музыкой и системой:",
             reply_markup=admin_menu(),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -2941,6 +2981,7 @@ async def cb_admin_stats(
             f"🔗 Telegram: <b>{telegram}</b>\n"
             f"📝 С текстами: <b>{lyrics}</b>",
             reply_markup=admin_menu(),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -2994,6 +3035,7 @@ async def cb_scan(
             f"➕ Добавлено: <b>{result['added']}</b>\n"
             f"♻️ Обновлено: <b>{result['updated']}</b>",
             reply_markup=admin_menu(),
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -3059,7 +3101,8 @@ async def cb_upload(
             "⬆️ <b>Загрузка музыки</b>\n\n"
             "Отправь MP3/M4A/OGG/WAV/FLAC/OPUS "
             "как аудио или документ.\n\n"
-            "Метаданные будут взяты из файла."
+            "Метаданные будут взяты из файла.",
+            parse_mode="HTML",
         )
 
         await callback.answer()
@@ -3102,7 +3145,6 @@ async def upload_document(
     document = message.document
 
     if not document:
-
         return
 
     filename = (
@@ -3184,7 +3226,7 @@ async def process_upload(
         target = (
             AUDIO_DIR
             / (
-                f"{__import__('uuid').uuid4().hex}_"
+                f"{uuid.uuid4().hex}_"
                 f"{safe_name}"
             )
         )
@@ -3208,21 +3250,27 @@ async def process_upload(
             target
         )
 
+        try:
+
+            relative_path = target.relative_to(
+                Path.cwd()
+            )
+
+            audio_path = str(
+                relative_path
+            )
+
+        except ValueError:
+
+            audio_path = target.as_posix()
+
         track = Track(
             title=title,
             artist=artist,
             album=album,
             genre=genre,
             duration=duration,
-            audio_path=str(
-                target.relative_to(
-                    Path.cwd()
-                )
-            )
-            if target.is_relative_to(
-                Path.cwd()
-            )
-            else target.as_posix(),
+            audio_path=audio_path,
             plays=0,
         )
 
@@ -3256,6 +3304,7 @@ async def process_upload(
                     ],
                 ]
             ),
+            parse_mode="HTML",
         )
 
     except Exception:
@@ -3403,14 +3452,6 @@ async def cmd_music(
             ),
         )
 
-        if not user:
-
-            await message.answer(
-                "🔐 Сначала привяжи Telegram."
-            )
-
-            return
-
         tracks = (
             db.query(Track)
             .order_by(
@@ -3447,6 +3488,7 @@ async def cmd_music(
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=rows
             ),
+            parse_mode="HTML",
         )
 
     finally:
@@ -3465,6 +3507,7 @@ async def cmd_charts(
         "📈 <b>Чарты</b>\n\n"
         "Выбери период:",
         reply_markup=charts_keyboard(),
+        parse_mode="HTML",
     )
 
 
@@ -3500,6 +3543,7 @@ async def cmd_profile(
             f"ID: <code>{user.id}</code>\n"
             f"Telegram ID: <code>{user.telegram_id}</code>",
             reply_markup=back_home_keyboard(),
+            parse_mode="HTML",
         )
 
     finally:
@@ -3558,7 +3602,7 @@ async def main():
         ),
     )
 
-    # На всякий случай удаляем старый webhook.
+    # Удаляем старый webhook.
     await bot.delete_webhook(
         drop_pending_updates=True
     )
