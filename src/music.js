@@ -18,12 +18,16 @@ const AUDIO_EXTENSIONS = new Set([
   ".webm",
 ]);
 
-function ensureMusicDir() {
+function ensureStorage() {
   if (!fs.existsSync(MUSIC_DIR)) {
     fs.mkdirSync(MUSIC_DIR, {
       recursive: true,
     });
   }
+}
+
+function ensureMusicDir() {
+  ensureStorage();
 }
 
 function safeName(name) {
@@ -35,12 +39,17 @@ function safeName(name) {
 }
 
 function isAudioFile(fileName) {
-  const ext = path.extname(fileName).toLowerCase();
+  const ext = path
+    .extname(String(fileName))
+    .toLowerCase();
+
   return AUDIO_EXTENSIONS.has(ext);
 }
 
 function getMimeType(fileName) {
-  const ext = path.extname(fileName).toLowerCase();
+  const ext = path
+    .extname(String(fileName))
+    .toLowerCase();
 
   const types = {
     ".mp3": "audio/mpeg",
@@ -52,16 +61,19 @@ function getMimeType(fileName) {
     ".webm": "audio/webm",
   };
 
-  return types[ext] || "application/octet-stream";
+  return (
+    types[ext] ||
+    "application/octet-stream"
+  );
 }
 
 function getMusicDir() {
-  ensureMusicDir();
+  ensureStorage();
   return MUSIC_DIR;
 }
 
 function listAudioFiles() {
-  ensureMusicDir();
+  ensureStorage();
 
   return fs
     .readdirSync(MUSIC_DIR, {
@@ -84,7 +96,8 @@ function listAudioFiles() {
         file: entry.name,
         path: fullPath,
         size: stat.size,
-        modified_at: stat.mtime.toISOString(),
+        modified_at:
+          stat.mtime.toISOString(),
         mime: getMimeType(entry.name),
       };
     })
@@ -96,15 +109,19 @@ function listAudioFiles() {
 }
 
 function findAudioFile(fileName) {
-  ensureMusicDir();
+  ensureStorage();
 
   if (!fileName) {
     return null;
   }
 
   const requested = safeName(
-    path.basename(fileName)
+    path.basename(String(fileName))
   );
+
+  if (!isAudioFile(requested)) {
+    return null;
+  }
 
   const fullPath = path.join(
     MUSIC_DIR,
@@ -113,8 +130,7 @@ function findAudioFile(fileName) {
 
   if (
     fs.existsSync(fullPath) &&
-    fs.statSync(fullPath).isFile() &&
-    isAudioFile(fullPath)
+    fs.statSync(fullPath).isFile()
   ) {
     return {
       file: requested,
@@ -138,12 +154,14 @@ function makeTrackFromFile(fileName) {
     path.extname(file.file)
   );
 
+  const id = crypto
+    .createHash("sha1")
+    .update(file.file)
+    .digest("hex")
+    .slice(0, 16);
+
   return {
-    id: crypto
-      .createHash("sha1")
-      .update(file.file)
-      .digest("hex")
-      .slice(0, 16),
+    id,
 
     title: baseName,
 
@@ -171,6 +189,8 @@ function makeTrackFromFile(fileName) {
 }
 
 function getTracks() {
+  ensureStorage();
+
   return listAudioFiles()
     .map((item) =>
       makeTrackFromFile(item.file)
@@ -185,7 +205,8 @@ function resolveAudio(req, res) {
       req.params.filename ||
       req.params.name;
 
-    const audio = findAudioFile(fileName);
+    const audio =
+      findAudioFile(fileName);
 
     if (!audio) {
       return res.status(404).json({
@@ -194,7 +215,9 @@ function resolveAudio(req, res) {
       });
     }
 
-    const stat = fs.statSync(audio.path);
+    const stat = fs.statSync(
+      audio.path
+    );
 
     const range = req.headers.range;
 
@@ -219,9 +242,25 @@ function resolveAudio(req, res) {
         stat.size
       );
 
-      return fs.createReadStream(
-        audio.path
-      ).pipe(res);
+      const stream =
+        fs.createReadStream(
+          audio.path
+        );
+
+      stream.on("error", (error) => {
+        console.error(
+          "Audio stream error:",
+          error
+        );
+
+        if (!res.headersSent) {
+          res.status(500).end();
+        } else {
+          res.destroy();
+        }
+      });
+
+      return stream.pipe(res);
     }
 
     const match =
@@ -230,20 +269,36 @@ function resolveAudio(req, res) {
       );
 
     if (!match) {
-      res.status(416).end();
-      return;
+      res.setHeader(
+        "Content-Range",
+        `bytes */${stat.size}`
+      );
+
+      return res
+        .status(416)
+        .end();
     }
 
-    const start = match[1]
+    let start = match[1]
       ? Number(match[1])
       : 0;
 
-    const end = match[2]
+    let end = match[2]
       ? Number(match[2])
       : stat.size - 1;
 
+    if (!Number.isFinite(start)) {
+      start = 0;
+    }
+
+    if (!Number.isFinite(end)) {
+      end = stat.size - 1;
+    }
+
     if (
       start < 0 ||
+      end < 0 ||
+      start >= stat.size ||
       end >= stat.size ||
       start > end
     ) {
@@ -252,8 +307,9 @@ function resolveAudio(req, res) {
         `bytes */${stat.size}`
       );
 
-      res.status(416).end();
-      return;
+      return res
+        .status(416)
+        .end();
     }
 
     const chunkSize =
@@ -271,13 +327,29 @@ function resolveAudio(req, res) {
       chunkSize
     );
 
-    fs.createReadStream(
-      audio.path,
-      {
-        start,
-        end,
+    const stream =
+      fs.createReadStream(
+        audio.path,
+        {
+          start,
+          end,
+        }
+      );
+
+    stream.on("error", (error) => {
+      console.error(
+        "Audio range stream error:",
+        error
+      );
+
+      if (!res.headersSent) {
+        res.status(500).end();
+      } else {
+        res.destroy();
       }
-    ).pipe(res);
+    });
+
+    return stream.pipe(res);
   } catch (error) {
     console.error(
       "Audio streaming error:",
@@ -285,23 +357,26 @@ function resolveAudio(req, res) {
     );
 
     if (!res.headersSent) {
-      res.status(500).json({
+      return res.status(500).json({
         ok: false,
         error:
           "Ошибка воспроизведения аудио",
       });
     }
+
+    res.destroy();
   }
 }
 
 function registerMusicRoutes(app) {
-  ensureMusicDir();
+  ensureStorage();
 
   app.get(
     "/api/music",
     (req, res) => {
       try {
-        const tracks = getTracks();
+        const tracks =
+          getTracks();
 
         res.json({
           ok: true,
@@ -309,7 +384,10 @@ function registerMusicRoutes(app) {
           count: tracks.length,
         });
       } catch (error) {
-        console.error(error);
+        console.error(
+          "GET /api/music:",
+          error
+        );
 
         res.status(500).json({
           ok: false,
@@ -324,7 +402,8 @@ function registerMusicRoutes(app) {
     "/api/music/tracks",
     (req, res) => {
       try {
-        const tracks = getTracks();
+        const tracks =
+          getTracks();
 
         res.json({
           ok: true,
@@ -332,7 +411,10 @@ function registerMusicRoutes(app) {
           count: tracks.length,
         });
       } catch (error) {
-        console.error(error);
+        console.error(
+          "GET /api/music/tracks:",
+          error
+        );
 
         res.status(500).json({
           ok: false,
@@ -347,22 +429,22 @@ function registerMusicRoutes(app) {
     "/api/music/audio/:file",
     resolveAudio
   );
-
-  app.get(
-    "/api/music/audio/:filename",
-    resolveAudio
-  );
 }
 
 module.exports = {
   MUSIC_DIR,
   AUDIO_EXTENSIONS,
+
+  ensureStorage,
   ensureMusicDir,
+
   getMusicDir,
   listAudioFiles,
   findAudioFile,
+
   makeTrackFromFile,
   getTracks,
+
   resolveAudio,
   registerMusicRoutes,
 };
