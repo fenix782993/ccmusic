@@ -1,73 +1,279 @@
 "use strict";
 
 const express = require("express");
+const path = require("path");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
-const { Pool } = require("pg");
 const cookieParser = require("cookie-parser");
+const { Pool } = require("pg");
+
+const {
+  ensureStorage,
+  MUSIC_DIR,
+  COVERS_DIR,
+  createMusicMiddleware,
+  createCoverMiddleware,
+  normalizeTrack,
+  saveAudioBuffer,
+  saveCoverBuffer,
+  deleteAudio,
+  deleteCover,
+  audioExists,
+  storageInfo
+} = require("./music");
 
 const app = express();
 
 const PORT = Number(process.env.PORT || 10000);
-const DATABASE_URL = process.env.DATABASE_URL;
+
+const DATABASE_URL =
+  process.env.DATABASE_URL || "";
 
 if (!DATABASE_URL) {
-  console.error("❌ DATABASE_URL is not configured");
-  process.exit(1);
+  console.error(
+    "❌ DATABASE_URL is not configured."
+  );
 }
 
 const pool = new Pool({
   connectionString: DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+  ssl:
+    process.env.NODE_ENV === "production"
+      ? { rejectUnauthorized: false }
+      : false,
   max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 15000
 });
 
 app.disable("x-powered-by");
 
 app.use(
   express.json({
-    limit: "5mb",
+    limit: "20mb"
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "20mb"
   })
 );
 
 app.use(cookieParser());
 
+ensureStorage();
+
+/* =========================================================
+   HELPERS
+========================================================= */
+
+async function q(text, params = []) {
+  return pool.query(text, params);
+}
+
+function makeToken() {
+  return crypto
+    .randomBytes(48)
+    .toString("hex");
+}
+
+function makeCaptcha() {
+  const chars =
+    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+  let result = "";
+
+  for (let i = 0; i < 6; i++) {
+    result +=
+      chars[
+        crypto.randomInt(0, chars.length)
+      ];
+  }
+
+  return result;
+}
+
+function safeUser(user) {
+  if (!user) {
+    return null;
+  }
+
+  const {
+    password_hash,
+    ...safe
+  } = user;
+
+  return safe;
+}
+
+function normalizeEmail(email) {
+  return String(email || "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeUsername(username) {
+  return String(username || "")
+    .trim()
+    .replace(/\s+/g, "_")
+    .slice(0, 64);
+}
+
+function isValidUsername(username) {
+  return /^[a-zA-Zа-яА-Я0-9_.-]{2,64}$/.test(
+    username
+  );
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    email
+  );
+}
+
+function publicTrack(track) {
+  return normalizeTrack(track);
+}
+
+function cookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax",
+    secure:
+      process.env.NODE_ENV === "production",
+    maxAge:
+      30 * 24 * 60 * 60 * 1000,
+    path: "/"
+  };
+}
+
+function setSessionCookie(res, token) {
+  res.cookie(
+    "fenix_session",
+    token,
+    cookieOptions()
+  );
+}
+
+async function getSessionToken(req) {
+  const cookieToken =
+    req.cookies?.fenix_session;
+
+  if (cookieToken) {
+    return cookieToken;
+  }
+
+  const authorization =
+    req.headers.authorization || "";
+
+  if (
+    authorization
+      .toLowerCase()
+      .startsWith("bearer ")
+  ) {
+    return authorization.slice(7).trim();
+  }
+
+  return null;
+}
+
+async function currentUser(req) {
+  const token =
+    await getSessionToken(req);
+
+  if (!token) {
+    return null;
+  }
+
+  const result = await q(
+    `
+      SELECT
+        u.*
+      FROM sessions s
+      INNER JOIN users u
+        ON u.id = s.user_id
+      WHERE
+        s.token = $1
+        AND s.expires_at > NOW()
+      LIMIT 1
+    `,
+    [token]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function requireUser(
+  req,
+  res,
+  next
+) {
+  try {
+    const user =
+      await currentUser(req);
+
+    if (!user) {
+      return res.status(401).json({
+        ok: false,
+        error:
+          "Требуется авторизация"
+      });
+    }
+
+    req.user = user;
+
+    next();
+  } catch (error) {
+    console.error(
+      "AUTH MIDDLEWARE ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      ok: false,
+      error:
+        "Ошибка проверки авторизации"
+    });
+  }
+}
+
+function validateTrackId(id) {
+  return /^\d+$/.test(
+    String(id || "")
+  );
+}
+
 /* =========================================================
    DATABASE
 ========================================================= */
 
-async function query(text, params = []) {
-  return pool.query(text, params);
-}
-
-async function initDatabase() {
-  console.log("Initializing PostgreSQL...");
-
+async function createTables() {
   /*
-   IMPORTANT:
-   users.id = BIGINT
-   sessions.user_id = BIGINT
+   * ВАЖНО:
+   * Все связанные ID здесь BIGINT.
+   *
+   * Это предотвращает прошлую ошибку:
+   *
+   * uuid vs bigint
+   *
+   * sessions.user_id -> users.id
+   */
 
-   Это специально сделано одинаковыми типами,
-   чтобы не было ошибки uuid/bigint.
-  */
-
-  await query(`
+  await q(`
     CREATE TABLE IF NOT EXISTS users (
       id BIGSERIAL PRIMARY KEY,
       username VARCHAR(64) NOT NULL UNIQUE,
       email VARCHAR(255) NOT NULL UNIQUE,
       password_hash TEXT NOT NULL,
       bio TEXT NOT NULL DEFAULT '',
+      avatar_url TEXT NOT NULL DEFAULT '',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
-  await query(`
+  await q(`
     CREATE TABLE IF NOT EXISTS tracks (
       id BIGSERIAL PRIMARY KEY,
       title TEXT NOT NULL,
@@ -75,13 +281,15 @@ async function initDatabase() {
       album_name TEXT NOT NULL DEFAULT '',
       cover_url TEXT NOT NULL DEFAULT '',
       audio_url TEXT NOT NULL DEFAULT '',
+      audio_filename TEXT,
+      cover_filename TEXT,
       duration INTEGER NOT NULL DEFAULT 0,
       plays_count BIGINT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
-  await query(`
+  await q(`
     CREATE TABLE IF NOT EXISTS favorites (
       user_id BIGINT NOT NULL,
       track_id BIGINT NOT NULL,
@@ -101,7 +309,7 @@ async function initDatabase() {
     )
   `);
 
-  await query(`
+  await q(`
     CREATE TABLE IF NOT EXISTS history (
       id BIGSERIAL PRIMARY KEY,
       user_id BIGINT NOT NULL,
@@ -120,11 +328,12 @@ async function initDatabase() {
     )
   `);
 
-  await query(`
+  await q(`
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
       user_id BIGINT NOT NULL,
       expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
       CONSTRAINT sessions_user_fk
         FOREIGN KEY (user_id)
@@ -133,557 +342,861 @@ async function initDatabase() {
     )
   `);
 
-  await query(`
+  await q(`
     CREATE TABLE IF NOT EXISTS captchas (
       id TEXT PRIMARY KEY,
       answer TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
   /*
-   Старые базы могут иметь таблицы без новых колонок.
-   Добавляем их безопасно.
-  */
+   * Настройки пользователя.
+   */
 
-  await query(`
-    ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS bio TEXT NOT NULL DEFAULT ''
+  await q(`
+    CREATE TABLE IF NOT EXISTS user_settings (
+      user_id BIGINT PRIMARY KEY,
+
+      theme TEXT NOT NULL DEFAULT 'dark',
+      quality TEXT NOT NULL DEFAULT 'high',
+
+      autoplay BOOLEAN NOT NULL DEFAULT true,
+      auto_next BOOLEAN NOT NULL DEFAULT true,
+      notifications BOOLEAN NOT NULL DEFAULT true,
+
+      language TEXT NOT NULL DEFAULT 'ru',
+
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+      CONSTRAINT settings_user_fk
+        FOREIGN KEY (user_id)
+        REFERENCES users(id)
+        ON DELETE CASCADE
+    )
   `);
+}
 
-  await query(`
-    ALTER TABLE tracks
-    ADD COLUMN IF NOT EXISTS title TEXT NOT NULL DEFAULT 'Unknown'
-  `);
+async function ensureColumn(
+  table,
+  column,
+  definition
+) {
+  /*
+   * Имена здесь захардкожены внутри нашего
+   * кода, поэтому используются только наши
+   * значения.
+   */
 
-  await query(`
-    ALTER TABLE tracks
-    ADD COLUMN IF NOT EXISTS artist_name TEXT NOT NULL DEFAULT 'Unknown'
-  `);
+  await q(
+    `
+      ALTER TABLE ${table}
+      ADD COLUMN IF NOT EXISTS ${column}
+      ${definition}
+    `
+  );
+}
 
-  await query(`
-    ALTER TABLE tracks
-    ADD COLUMN IF NOT EXISTS album_name TEXT NOT NULL DEFAULT ''
-  `);
+async function migrateDatabase() {
+  /*
+   * Миграции для старой БД.
+   */
 
-  await query(`
-    ALTER TABLE tracks
-    ADD COLUMN IF NOT EXISTS cover_url TEXT NOT NULL DEFAULT ''
-  `);
+  await ensureColumn(
+    "users",
+    "bio",
+    "TEXT NOT NULL DEFAULT ''"
+  );
 
-  await query(`
-    ALTER TABLE tracks
-    ADD COLUMN IF NOT EXISTS audio_url TEXT NOT NULL DEFAULT ''
-  `);
+  await ensureColumn(
+    "users",
+    "avatar_url",
+    "TEXT NOT NULL DEFAULT ''"
+  );
 
-  await query(`
-    ALTER TABLE tracks
-    ADD COLUMN IF NOT EXISTS duration INTEGER NOT NULL DEFAULT 0
-  `);
+  await ensureColumn(
+    "tracks",
+    "artist_name",
+    "TEXT NOT NULL DEFAULT 'Unknown'"
+  );
 
-  await query(`
-    ALTER TABLE tracks
-    ADD COLUMN IF NOT EXISTS plays_count BIGINT NOT NULL DEFAULT 0
+  await ensureColumn(
+    "tracks",
+    "album_name",
+    "TEXT NOT NULL DEFAULT ''"
+  );
+
+  await ensureColumn(
+    "tracks",
+    "cover_url",
+    "TEXT NOT NULL DEFAULT ''"
+  );
+
+  await ensureColumn(
+    "tracks",
+    "audio_url",
+    "TEXT NOT NULL DEFAULT ''"
+  );
+
+  await ensureColumn(
+    "tracks",
+    "audio_filename",
+    "TEXT"
+  );
+
+  await ensureColumn(
+    "tracks",
+    "cover_filename",
+    "TEXT"
+  );
+
+  await ensureColumn(
+    "tracks",
+    "duration",
+    "INTEGER NOT NULL DEFAULT 0"
+  );
+
+  await ensureColumn(
+    "tracks",
+    "plays_count",
+    "BIGINT NOT NULL DEFAULT 0"
+  );
+
+  /*
+   * Удаляем старые тестовые треки
+   * только если они имеют наши тестовые
+   * названия.
+   */
+
+  await q(`
+    DELETE FROM tracks
+    WHERE title IN (
+      'Fenix Intro',
+      'Night Drive',
+      'Neon Dreams'
+    )
+    AND (
+      audio_url = ''
+      OR audio_url IS NULL
+    )
   `);
 
   /*
-   Если tracks уже существовала с несовместимым типом id,
-   новые FK выше могут быть невозможны.
-   Для чистого нового проекта это не возникает.
-  */
+   * Чистим просроченные сессии/CAPTCHA.
+   */
 
-  const countResult = await query(`
-    SELECT COUNT(*)::int AS count
-    FROM tracks
+  await q(`
+    DELETE FROM sessions
+    WHERE expires_at < NOW()
   `);
 
-  const trackCount = Number(countResult.rows[0].count);
+  await q(`
+    DELETE FROM captchas
+    WHERE expires_at < NOW()
+  `);
+}
 
-  if (trackCount === 0) {
-    console.log("Adding demo tracks...");
+async function initDatabase() {
+  console.log(
+    "Connecting to PostgreSQL..."
+  );
 
-    await query(`
-      INSERT INTO tracks
-        (title, artist_name, album_name, cover_url, audio_url, duration)
-      VALUES
-        (
-          'Fenix Intro',
-          'Fenix Music',
-          'Fenix',
-          'https://placehold.co/700x700/18181b/ffffff?text=FX',
-          '',
-          0
-        ),
-        (
-          'Night Drive',
-          'Fenix Music',
-          'Fenix',
-          'https://placehold.co/700x700/18181b/ffffff?text=NIGHT',
-          '',
-          0
-        ),
-        (
-          'Neon Dreams',
-          'Fenix Music',
-          'Fenix',
-          'https://placehold.co/700x700/18181b/ffffff?text=NEON',
-          '',
-          0
-        )
-    `);
-  }
+  await q("SELECT NOW()");
 
-  console.log("PostgreSQL initialized.");
+  await createTables();
+
+  await migrateDatabase();
+
+  console.log(
+    "PostgreSQL database initialized."
+  );
 }
 
 /* =========================================================
-   HELPERS
+   BASIC ROUTES
 ========================================================= */
 
-function createToken() {
-  return crypto.randomBytes(48).toString("hex");
-}
-
-function createCaptcha() {
-  return crypto
-    .randomBytes(4)
-    .toString("hex")
-    .toUpperCase();
-}
-
-function safeUser(user) {
-  if (!user) {
-    return null;
-  }
-
-  const {
-    password_hash,
-    ...result
-  } = user;
-
-  return result;
-}
-
-async function getCurrentUser(req) {
-  try {
-    const token = req.cookies.fenix_session;
-
-    if (!token) {
-      return null;
-    }
-
-    const result = await query(
-      `
-        SELECT
-          u.id,
-          u.username,
-          u.email,
-          u.bio,
-          u.created_at
-        FROM sessions s
-        JOIN users u
-          ON u.id = s.user_id
-        WHERE s.token = $1
-          AND s.expires_at > NOW()
-        LIMIT 1
-      `,
-      [token]
+app.get("/", async (req, res) => {
+  const frontendPath =
+    path.join(
+      __dirname,
+      "..",
+      "frontend",
+      "build",
+      "index.html"
     );
 
-    return result.rows[0] || null;
-  } catch (error) {
-    console.error("getCurrentUser:", error.message);
-    return null;
+  try {
+    await require("fs").promises.access(
+      frontendPath
+    );
+
+    return res.sendFile(frontendPath);
+  } catch {
+    return res.status(200).send(`
+      <!doctype html>
+      <html lang="ru">
+        <head>
+          <meta charset="utf-8">
+          <meta
+            name="viewport"
+            content="width=device-width,initial-scale=1"
+          >
+          <title>Fenix Music</title>
+          <style>
+            body {
+              margin: 0;
+              min-height: 100vh;
+              background: #09090b;
+              color: #fff;
+              font-family: Arial, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+
+            main {
+              text-align: center;
+              padding: 30px;
+            }
+
+            h1 {
+              font-size: 42px;
+              margin-bottom: 10px;
+            }
+
+            p {
+              color: #a1a1aa;
+            }
+          </style>
+        </head>
+        <body>
+          <main>
+            <h1>FENIX MUSIC</h1>
+            <p>
+              Backend работает.
+              Frontend ещё не собран.
+            </p>
+          </main>
+        </body>
+      </html>
+    `);
   }
-}
-
-async function requireUser(req, res, next) {
-  const user = await getCurrentUser(req);
-
-  if (!user) {
-    return res.status(401).json({
-      ok: false,
-      error: "Требуется авторизация",
-    });
-  }
-
-  req.user = user;
-  next();
-}
-
-/* =========================================================
-   API
-========================================================= */
+});
 
 app.get("/api", (req, res) => {
   res.json({
     ok: true,
     service: "Fenix Music Backend",
-    version: "2.0.0",
+    version: "3.0.0",
     status: "online",
     api: "/api",
     health: "/api/health",
     tracks: "/api/tracks",
+    auth: {
+      me: "/api/auth/me",
+      captcha: "/api/auth/captcha",
+      register: "/api/auth/register",
+      login: "/api/auth/login",
+      logout: "/api/auth/logout"
+    }
   });
 });
 
-app.get("/api/health", async (req, res) => {
-  try {
-    await query("SELECT 1");
+app.get(
+  "/api/health",
+  async (req, res) => {
+    try {
+      await q("SELECT 1");
 
-    res.json({
-      ok: true,
-      status: "healthy",
-      database: "online",
-      service: "Fenix Music Backend",
-    });
-  } catch (error) {
-    console.error("Health:", error);
-
-    res.status(500).json({
-      ok: false,
-      status: "error",
-      database: "offline",
-      error: error.message,
-    });
-  }
-});
-
-/* =========================================================
-   AUTH ME
-========================================================= */
-
-app.get("/api/auth/me", async (req, res) => {
-  const user = await getCurrentUser(req);
-
-  res.json({
-    ok: true,
-    user: safeUser(user),
-  });
-});
-
-/* =========================================================
-   CAPTCHA
-========================================================= */
-
-app.get("/api/auth/captcha", async (req, res) => {
-  try {
-    const id = crypto.randomUUID();
-    const answer = createCaptcha();
-
-    await query(
-      `
-        INSERT INTO captchas
-          (id, answer, expires_at)
-        VALUES
-          ($1, $2, NOW() + INTERVAL '10 minutes')
-      `,
-      [id, answer]
-    );
-
-    res.json({
-      ok: true,
-      id,
-      text: answer,
-      captcha: answer,
-      captcha_id: id,
-    });
-  } catch (error) {
-    console.error("Captcha:", error);
-
-    res.status(500).json({
-      ok: false,
-      error: "Не удалось создать CAPTCHA",
-    });
-  }
-});
-
-/* =========================================================
-   REGISTER
-========================================================= */
-
-app.post("/api/auth/register", async (req, res) => {
-  try {
-    const {
-      username,
-      email,
-      password,
-      captcha,
-      captcha_id,
-    } = req.body || {};
-
-    if (!username || !email || !password) {
-      return res.status(400).json({
-        ok: false,
-        error: "Заполните все поля",
+      res.json({
+        ok: true,
+        status: "healthy",
+        database: "online",
+        timestamp:
+          new Date().toISOString()
       });
-    }
-
-    const cleanUsername = String(username).trim();
-    const cleanEmail = String(email).trim().toLowerCase();
-
-    if (cleanUsername.length < 3) {
-      return res.status(400).json({
-        ok: false,
-        error: "Username должен содержать минимум 3 символа",
-      });
-    }
-
-    if (String(password).length < 6) {
-      return res.status(400).json({
-        ok: false,
-        error: "Пароль должен содержать минимум 6 символов",
-      });
-    }
-
-    if (!captcha_id || !captcha) {
-      return res.status(400).json({
-        ok: false,
-        error: "CAPTCHA обязательна",
-      });
-    }
-
-    const captchaResult = await query(
-      `
-        SELECT *
-        FROM captchas
-        WHERE id = $1
-          AND expires_at > NOW()
-        LIMIT 1
-      `,
-      [captcha_id]
-    );
-
-    if (
-      !captchaResult.rows[0] ||
-      String(captchaResult.rows[0].answer).toUpperCase() !==
-        String(captcha).trim().toUpperCase()
-    ) {
-      return res.status(400).json({
-        ok: false,
-        error: "Неверная CAPTCHA",
-      });
-    }
-
-    const exists = await query(
-      `
-        SELECT id
-        FROM users
-        WHERE LOWER(email) = LOWER($1)
-           OR LOWER(username) = LOWER($2)
-        LIMIT 1
-      `,
-      [cleanEmail, cleanUsername]
-    );
-
-    if (exists.rows.length > 0) {
-      return res.status(409).json({
-        ok: false,
-        error: "Username или email уже используется",
-      });
-    }
-
-    const passwordHash = await bcrypt.hash(
-      String(password),
-      12
-    );
-
-    const userResult = await query(
-      `
-        INSERT INTO users
-          (username, email, password_hash)
-        VALUES
-          ($1, $2, $3)
-        RETURNING
-          id,
-          username,
-          email,
-          bio,
-          created_at
-      `,
-      [
-        cleanUsername,
-        cleanEmail,
-        passwordHash,
-      ]
-    );
-
-    const user = userResult.rows[0];
-
-    await query(
-      "DELETE FROM captchas WHERE id = $1",
-      [captcha_id]
-    );
-
-    const sessionToken = createToken();
-
-    await query(
-      `
-        INSERT INTO sessions
-          (token, user_id, expires_at)
-        VALUES
-          ($1, $2, NOW() + INTERVAL '30 days')
-      `,
-      [sessionToken, user.id]
-    );
-
-    res.cookie(
-      "fenix_session",
-      sessionToken,
-      {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        path: "/",
-      }
-    );
-
-    res.status(201).json({
-      ok: true,
-      user: safeUser(user),
-      token: sessionToken,
-    });
-  } catch (error) {
-    console.error("REGISTER:", error);
-
-    if (error.code === "23505") {
-      return res.status(409).json({
-        ok: false,
-        error: "Username или email уже используется",
-      });
-    }
-
-    res.status(500).json({
-      ok: false,
-      error: "Ошибка регистрации",
-    });
-  }
-});
-
-/* =========================================================
-   LOGIN
-========================================================= */
-
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const {
-      login,
-      email,
-      username,
-      password,
-    } = req.body || {};
-
-    const key = String(
-      login || email || username || ""
-    ).trim();
-
-    if (!key || !password) {
-      return res.status(400).json({
-        ok: false,
-        error: "Введите логин и пароль",
-      });
-    }
-
-    const result = await query(
-      `
-        SELECT *
-        FROM users
-        WHERE LOWER(email) = LOWER($1)
-           OR LOWER(username) = LOWER($1)
-        LIMIT 1
-      `,
-      [key]
-    );
-
-    const user = result.rows[0];
-
-    if (
-      !user ||
-      !(await bcrypt.compare(
-        String(password),
-        user.password_hash
-      ))
-    ) {
-      return res.status(401).json({
-        ok: false,
-        error: "Неверный логин или пароль",
-      });
-    }
-
-    const sessionToken = createToken();
-
-    await query(
-      `
-        INSERT INTO sessions
-          (token, user_id, expires_at)
-        VALUES
-          ($1, $2, NOW() + INTERVAL '30 days')
-      `,
-      [sessionToken, user.id]
-    );
-
-    res.cookie(
-      "fenix_session",
-      sessionToken,
-      {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        path: "/",
-      }
-    );
-
-    res.json({
-      ok: true,
-      user: safeUser(user),
-      token: sessionToken,
-    });
-  } catch (error) {
-    console.error("LOGIN:", error);
-
-    res.status(500).json({
-      ok: false,
-      error: "Ошибка входа",
-    });
-  }
-});
-
-/* =========================================================
-   LOGOUT
-========================================================= */
-
-app.post("/api/auth/logout", async (req, res) => {
-  try {
-    const token = req.cookies.fenix_session;
-
-    if (token) {
-      await query(
-        "DELETE FROM sessions WHERE token = $1",
-        [token]
+    } catch (error) {
+      console.error(
+        "HEALTH ERROR:",
+        error
       );
+
+      res.status(500).json({
+        ok: false,
+        status: "error",
+        database: "offline",
+        error: error.message
+      });
     }
-
-    res.clearCookie("fenix_session", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-    });
-
-    res.json({
-      ok: true,
-    });
-  } catch (error) {
-    console.error("LOGOUT:", error);
-
-    res.status(500).json({
-      ok: false,
-      error: "Ошибка выхода",
-    });
   }
-});
+);
+
+/* =========================================================
+   STORAGE
+========================================================= */
+
+app.use(
+  "/media/music",
+  createMusicMiddleware()
+);
+
+app.use(
+  "/media/covers",
+  createCoverMiddleware()
+);
+
+app.get(
+  "/api/storage",
+  async (req, res) => {
+    try {
+      const info =
+        await storageInfo();
+
+      res.json({
+        ok: true,
+        storage: info,
+        musicDirectory: MUSIC_DIR,
+        coversDirectory: COVERS_DIR
+      });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error: error.message
+      });
+    }
+  }
+);
+
+/* =========================================================
+   AUTH / CAPTCHA
+========================================================= */
+
+app.get(
+  "/api/auth/captcha",
+  async (req, res) => {
+    try {
+      const id =
+        crypto.randomUUID();
+
+      const answer =
+        makeCaptcha();
+
+      await q(
+        `
+          INSERT INTO captchas
+            (id, answer, expires_at)
+          VALUES
+            ($1, $2, NOW() + INTERVAL '10 minutes')
+        `,
+        [id, answer]
+      );
+
+      res.json({
+        ok: true,
+        id,
+        text: answer,
+        expires_in: 600
+      });
+    } catch (error) {
+      console.error(
+        "CAPTCHA ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось создать CAPTCHA"
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/auth/me",
+  async (req, res) => {
+    try {
+      const user =
+        await currentUser(req);
+
+      if (!user) {
+        return res.json({
+          ok: true,
+          user: null
+        });
+      }
+
+      const settings =
+        await q(
+          `
+            SELECT
+              theme,
+              quality,
+              autoplay,
+              auto_next AS "autoNext",
+              notifications,
+              language
+            FROM user_settings
+            WHERE user_id = $1
+          `,
+          [user.id]
+        );
+
+      res.json({
+        ok: true,
+        user: safeUser(user),
+        settings:
+          settings.rows[0] || {
+            theme: "dark",
+            quality: "high",
+            autoplay: true,
+            autoNext: true,
+            notifications: true,
+            language: "ru"
+          }
+      });
+    } catch (error) {
+      console.error(
+        "ME ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить аккаунт"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/auth/register",
+  async (req, res) => {
+    const client =
+      await pool.connect();
+
+    try {
+      const {
+        username,
+        email,
+        password,
+        captcha,
+        captcha_id
+      } = req.body || {};
+
+      const cleanUsername =
+        normalizeUsername(username);
+
+      const cleanEmail =
+        normalizeEmail(email);
+
+      if (
+        !cleanUsername ||
+        !cleanEmail ||
+        !password
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Заполните все поля"
+        });
+      }
+
+      if (
+        !isValidUsername(
+          cleanUsername
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Некорректный username"
+        });
+      }
+
+      if (
+        !isValidEmail(cleanEmail)
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Некорректный email"
+        });
+      }
+
+      if (
+        String(password).length < 6
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Пароль должен содержать минимум 6 символов"
+        });
+      }
+
+      if (
+        !captcha_id ||
+        !captcha
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Введите CAPTCHA"
+        });
+      }
+
+      const captchaResult =
+        await client.query(
+          `
+            SELECT *
+            FROM captchas
+            WHERE
+              id = $1
+              AND expires_at > NOW()
+            LIMIT 1
+          `,
+          [captcha_id]
+        );
+
+      if (
+        !captchaResult.rows[0] ||
+        String(
+          captchaResult.rows[0].answer
+        ).toUpperCase() !==
+          String(captcha)
+            .trim()
+            .toUpperCase()
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Неверная CAPTCHA"
+        });
+      }
+
+      const exists =
+        await client.query(
+          `
+            SELECT id
+            FROM users
+            WHERE
+              LOWER(email) = LOWER($1)
+              OR LOWER(username) = LOWER($2)
+            LIMIT 1
+          `,
+          [
+            cleanEmail,
+            cleanUsername
+          ]
+        );
+
+      if (exists.rows.length) {
+        return res.status(409).json({
+          ok: false,
+          error:
+            "Username или email уже используется"
+        });
+      }
+
+      const passwordHash =
+        await bcrypt.hash(
+          String(password),
+          12
+        );
+
+      await client.query(
+        "BEGIN"
+      );
+
+      const userResult =
+        await client.query(
+          `
+            INSERT INTO users
+              (
+                username,
+                email,
+                password_hash
+              )
+            VALUES
+              ($1, $2, $3)
+            RETURNING *
+          `,
+          [
+            cleanUsername,
+            cleanEmail,
+            passwordHash
+          ]
+        );
+
+      const user =
+        userResult.rows[0];
+
+      const sessionToken =
+        makeToken();
+
+      await client.query(
+        `
+          INSERT INTO sessions
+            (
+              token,
+              user_id,
+              expires_at
+            )
+          VALUES
+            (
+              $1,
+              $2,
+              NOW() + INTERVAL '30 days'
+            )
+        `,
+        [
+          sessionToken,
+          user.id
+        ]
+      );
+
+      await client.query(
+        `
+          INSERT INTO user_settings
+            (user_id)
+          VALUES
+            ($1)
+          ON CONFLICT (user_id)
+          DO NOTHING
+        `,
+        [user.id]
+      );
+
+      await client.query(
+        `
+          DELETE FROM captchas
+          WHERE id = $1
+        `,
+        [captcha_id]
+      );
+
+      await client.query(
+        "COMMIT"
+      );
+
+      setSessionCookie(
+        res,
+        sessionToken
+      );
+
+      return res.status(201).json({
+        ok: true,
+        user: safeUser(user),
+        token: sessionToken
+      });
+    } catch (error) {
+      try {
+        await client.query(
+          "ROLLBACK"
+        );
+      } catch {}
+
+      console.error(
+        "REGISTER ERROR:",
+        error
+      );
+
+      if (
+        error.code === "23505"
+      ) {
+        return res.status(409).json({
+          ok: false,
+          error:
+            "Username или email уже используется"
+        });
+      }
+
+      return res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка регистрации"
+      });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+app.post(
+  "/api/auth/login",
+  async (req, res) => {
+    try {
+      const {
+        login,
+        email,
+        username,
+        password
+      } = req.body || {};
+
+      const key =
+        String(
+          login ||
+          email ||
+          username ||
+          ""
+        ).trim();
+
+      if (!key || !password) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Введите логин и пароль"
+        });
+      }
+
+      const result =
+        await q(
+          `
+            SELECT *
+            FROM users
+            WHERE
+              LOWER(email) = LOWER($1)
+              OR LOWER(username) = LOWER($1)
+            LIMIT 1
+          `,
+          [key]
+        );
+
+      const user =
+        result.rows[0];
+
+      if (!user) {
+        return res.status(401).json({
+          ok: false,
+          error:
+            "Неверный логин или пароль"
+        });
+      }
+
+      const valid =
+        await bcrypt.compare(
+          String(password),
+          user.password_hash
+        );
+
+      if (!valid) {
+        return res.status(401).json({
+          ok: false,
+          error:
+            "Неверный логин или пароль"
+        });
+      }
+
+      const sessionToken =
+        makeToken();
+
+      await q(
+        `
+          INSERT INTO sessions
+            (
+              token,
+              user_id,
+              expires_at
+            )
+          VALUES
+            (
+              $1,
+              $2,
+              NOW() + INTERVAL '30 days'
+            )
+        `,
+        [
+          sessionToken,
+          user.id
+        ]
+      );
+
+      await q(
+        `
+          INSERT INTO user_settings
+            (user_id)
+          VALUES
+            ($1)
+          ON CONFLICT (user_id)
+          DO NOTHING
+        `,
+        [user.id]
+      );
+
+      setSessionCookie(
+        res,
+        sessionToken
+      );
+
+      res.json({
+        ok: true,
+        user: safeUser(user),
+        token: sessionToken
+      });
+    } catch (error) {
+      console.error(
+        "LOGIN ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка входа"
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/auth/logout",
+  async (req, res) => {
+    try {
+      const token =
+        await getSessionToken(req);
+
+      if (token) {
+        await q(
+          `
+            DELETE FROM sessions
+            WHERE token = $1
+          `,
+          [token]
+        );
+      }
+
+      res.clearCookie(
+        "fenix_session",
+        {
+          httpOnly: true,
+          sameSite: "lax",
+          secure:
+            process.env.NODE_ENV ===
+            "production",
+          path: "/"
+        }
+      );
+
+      res.json({
+        ok: true
+      });
+    } catch (error) {
+      console.error(
+        "LOGOUT ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка выхода"
+      });
+    }
+  }
+);
 
 /* =========================================================
    PROFILE
@@ -696,64 +1209,246 @@ app.put(
     try {
       const {
         username,
-        bio,
+        bio
       } = req.body || {};
 
-      const cleanUsername =
-        username === undefined
-          ? req.user.username
-          : String(username).trim();
+      let cleanUsername =
+        normalizeUsername(
+          username
+        );
 
-      const cleanBio =
-        bio === undefined
-          ? req.user.bio
-          : String(bio);
+      if (!cleanUsername) {
+        cleanUsername =
+          req.user.username;
+      }
 
-      if (cleanUsername.length < 3) {
+      if (
+        !isValidUsername(
+          cleanUsername
+        )
+      ) {
         return res.status(400).json({
           ok: false,
-          error: "Username слишком короткий",
+          error:
+            "Некорректный username"
         });
       }
 
-      const result = await query(
-        `
-          UPDATE users
-          SET
-            username = $1,
-            bio = $2
-          WHERE id = $3
-          RETURNING
-            id,
-            username,
-            email,
-            bio,
-            created_at
-        `,
-        [
-          cleanUsername,
-          cleanBio,
-          req.user.id,
-        ]
-      );
+      const result =
+        await q(
+          `
+            UPDATE users
+            SET
+              username = $1,
+              bio = COALESCE($2, bio)
+            WHERE id = $3
+            RETURNING *
+          `,
+          [
+            cleanUsername,
+            bio == null
+              ? null
+              : String(bio).slice(
+                  0,
+                  1000
+                ),
+            req.user.id
+          ]
+        );
 
       res.json({
         ok: true,
-        user: result.rows[0],
+        user: safeUser(
+          result.rows[0]
+        )
       });
     } catch (error) {
-      console.error("PROFILE:", error);
+      console.error(
+        "PROFILE ERROR:",
+        error
+      );
 
-      if (error.code === "23505") {
+      if (
+        error.code === "23505"
+      ) {
         return res.status(409).json({
           ok: false,
-          error: "Этот username уже занят",
+          error:
+            "Этот username уже занят"
         });
       }
 
       res.status(500).json({
         ok: false,
-        error: "Не удалось сохранить профиль",
+        error:
+          "Не удалось сохранить профиль"
+      });
+    }
+  }
+);
+
+/* =========================================================
+   SETTINGS
+========================================================= */
+
+app.get(
+  "/api/settings",
+  requireUser,
+  async (req, res) => {
+    try {
+      const result =
+        await q(
+          `
+            SELECT
+              theme,
+              quality,
+              autoplay,
+              auto_next AS "autoNext",
+              notifications,
+              language
+            FROM user_settings
+            WHERE user_id = $1
+          `,
+          [req.user.id]
+        );
+
+      res.json({
+        ok: true,
+        settings:
+          result.rows[0] || {
+            theme: "dark",
+            quality: "high",
+            autoplay: true,
+            autoNext: true,
+            notifications: true,
+            language: "ru"
+          }
+      });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось получить настройки"
+      });
+    }
+  }
+);
+
+app.put(
+  "/api/settings",
+  requireUser,
+  async (req, res) => {
+    try {
+      const {
+        theme,
+        quality,
+        autoplay,
+        autoNext,
+        notifications,
+        language
+      } = req.body || {};
+
+      const result =
+        await q(
+          `
+            INSERT INTO user_settings
+              (
+                user_id,
+                theme,
+                quality,
+                autoplay,
+                auto_next,
+                notifications,
+                language,
+                updated_at
+              )
+            VALUES
+              (
+                $1,
+                COALESCE($2, 'dark'),
+                COALESCE($3, 'high'),
+                COALESCE($4, true),
+                COALESCE($5, true),
+                COALESCE($6, true),
+                COALESCE($7, 'ru'),
+                NOW()
+              )
+            ON CONFLICT (user_id)
+            DO UPDATE SET
+              theme =
+                COALESCE(
+                  EXCLUDED.theme,
+                  user_settings.theme
+                ),
+              quality =
+                COALESCE(
+                  EXCLUDED.quality,
+                  user_settings.quality
+                ),
+              autoplay =
+                COALESCE(
+                  EXCLUDED.autoplay,
+                  user_settings.autoplay
+                ),
+              auto_next =
+                COALESCE(
+                  EXCLUDED.auto_next,
+                  user_settings.auto_next
+                ),
+              notifications =
+                COALESCE(
+                  EXCLUDED.notifications,
+                  user_settings.notifications
+                ),
+              language =
+                COALESCE(
+                  EXCLUDED.language,
+                  user_settings.language
+                ),
+              updated_at = NOW()
+            RETURNING
+              theme,
+              quality,
+              autoplay,
+              auto_next AS "autoNext",
+              notifications,
+              language
+          `,
+          [
+            req.user.id,
+            theme || "dark",
+            quality || "high",
+            typeof autoplay ===
+            "boolean"
+              ? autoplay
+              : true,
+            typeof autoNext ===
+            "boolean"
+              ? autoNext
+              : true,
+            typeof notifications ===
+            "boolean"
+              ? notifications
+              : true,
+            language || "ru"
+          ]
+        );
+
+      res.json({
+        ok: true,
+        settings:
+          result.rows[0]
+      });
+    } catch (error) {
+      console.error(
+        "SETTINGS ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось сохранить настройки"
       });
     }
   }
@@ -763,154 +1458,255 @@ app.put(
    TRACKS
 ========================================================= */
 
-app.get("/api/tracks", async (req, res) => {
-  try {
-    const result = await query(`
-      SELECT
-        id,
-        title,
-        artist_name,
-        album_name,
-        cover_url,
-        audio_url,
-        duration,
-        plays_count,
-        created_at
-      FROM tracks
-      ORDER BY id DESC
-    `);
-
-    res.json({
-      ok: true,
-      tracks: result.rows,
-    });
-  } catch (error) {
-    console.error("TRACKS:", error);
-
-    res.status(500).json({
-      ok: false,
-      error: "Не удалось загрузить треки",
-      tracks: [],
-    });
-  }
-});
-
-app.get("/api/tracks/:id", async (req, res) => {
-  try {
-    const result = await query(
-      `
-        SELECT *
-        FROM tracks
-        WHERE id = $1
-        LIMIT 1
-      `,
-      [req.params.id]
-    );
-
-    if (!result.rows[0]) {
-      return res.status(404).json({
-        ok: false,
-        error: "Трек не найден",
-      });
-    }
-
-    res.json({
-      ok: true,
-      track: result.rows[0],
-    });
-  } catch (error) {
-    console.error("TRACK:", error);
-
-    res.status(500).json({
-      ok: false,
-      error: "Ошибка загрузки трека",
-    });
-  }
-});
-
-/* =========================================================
-   AUDIO
-========================================================= */
-
 app.get(
-  "/api/tracks/:id/audio",
+  "/api/tracks",
   async (req, res) => {
     try {
-      const result = await query(
-        `
-          SELECT audio_url
-          FROM tracks
-          WHERE id = $1
-          LIMIT 1
-        `,
-        [req.params.id]
-      );
+      const result =
+        await q(
+          `
+            SELECT
+              id,
+              title,
+              artist_name,
+              album_name,
+              cover_url,
+              audio_url,
+              audio_filename,
+              cover_filename,
+              duration,
+              plays_count,
+              created_at
+            FROM tracks
+            ORDER BY created_at DESC, id DESC
+          `
+        );
 
-      if (!result.rows[0]) {
-        return res.status(404).json({
-          ok: false,
-          error: "Трек не найден",
-        });
-      }
-
-      const audioUrl =
-        result.rows[0].audio_url;
-
-      if (!audioUrl) {
-        return res.status(404).json({
-          ok: false,
-          error: "У трека нет audio_url",
-        });
-      }
-
-      res.redirect(audioUrl);
+      res.json({
+        ok: true,
+        tracks:
+          result.rows.map(
+            publicTrack
+          )
+      });
     } catch (error) {
-      console.error("AUDIO:", error);
+      console.error(
+        "TRACKS ERROR:",
+        error
+      );
 
       res.status(500).json({
         ok: false,
-        error: "Ошибка загрузки аудио",
+        error:
+          "Не удалось получить треки"
       });
     }
   }
 );
 
-/* =========================================================
-   PLAY
-========================================================= */
+app.get(
+  "/api/tracks/:id",
+  async (req, res) => {
+    try {
+      if (
+        !validateTrackId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Некорректный ID трека"
+        });
+      }
+
+      const result =
+        await q(
+          `
+            SELECT *
+            FROM tracks
+            WHERE id = $1
+            LIMIT 1
+          `,
+          [req.params.id]
+        );
+
+      if (!result.rows[0]) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Трек не найден"
+        });
+      }
+
+      res.json({
+        ok: true,
+        track:
+          publicTrack(
+            result.rows[0]
+          )
+      });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка получения трека"
+      });
+    }
+  }
+);
+
+/*
+ * Реальный audio endpoint.
+ *
+ * Если audio_filename существует
+ * локально — отдаём файл через redirect
+ * на /media/music/...
+ *
+ * Если старый трек имеет внешний
+ * audio_url — используем его.
+ */
+
+app.get(
+  "/api/tracks/:id/audio",
+  async (req, res) => {
+    try {
+      if (
+        !validateTrackId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Некорректный ID трека"
+        });
+      }
+
+      const result =
+        await q(
+          `
+            SELECT
+              id,
+              audio_url,
+              audio_filename
+            FROM tracks
+            WHERE id = $1
+            LIMIT 1
+          `,
+          [req.params.id]
+        );
+
+      const track =
+        result.rows[0];
+
+      if (!track) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Трек не найден"
+        });
+      }
+
+      if (
+        track.audio_filename &&
+        (await audioExists(
+          track.audio_filename
+        ))
+      ) {
+        return res.redirect(
+          `/media/music/${encodeURIComponent(
+            path.basename(
+              track.audio_filename
+            )
+          )}`
+        );
+      }
+
+      if (track.audio_url) {
+        return res.redirect(
+          track.audio_url
+        );
+      }
+
+      return res.status(404).json({
+        ok: false,
+        error:
+          "У трека нет аудиофайла"
+      });
+    } catch (error) {
+      console.error(
+        "AUDIO ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Ошибка воспроизведения"
+      });
+    }
+  }
+);
 
 app.post(
   "/api/tracks/:id/play",
   async (req, res) => {
     try {
-      const result = await query(
-        `
-          UPDATE tracks
-          SET plays_count = plays_count + 1
-          WHERE id = $1
-          RETURNING id, plays_count
-        `,
-        [req.params.id]
-      );
+      if (
+        !validateTrackId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Некорректный ID трека"
+        });
+      }
+
+      const result =
+        await q(
+          `
+            UPDATE tracks
+            SET
+              plays_count =
+                COALESCE(
+                  plays_count,
+                  0
+                ) + 1
+            WHERE id = $1
+            RETURNING plays_count
+          `,
+          [req.params.id]
+        );
 
       if (!result.rows[0]) {
         return res.status(404).json({
           ok: false,
-          error: "Трек не найден",
+          error:
+            "Трек не найден"
         });
       }
 
       res.json({
         ok: true,
         plays_count:
-          result.rows[0].plays_count,
+          Number(
+            result.rows[0]
+              .plays_count
+          )
       });
     } catch (error) {
-      console.error("PLAY:", error);
+      console.error(
+        "PLAY ERROR:",
+        error
+      );
 
       res.status(500).json({
         ok: false,
-        error: "Не удалось засчитать прослушивание",
+        error:
+          "Не удалось засчитать прослушивание"
       });
     }
   }
@@ -925,30 +1721,33 @@ app.get(
   requireUser,
   async (req, res) => {
     try {
-      const result = await query(
-        `
-          SELECT
-            t.*
-          FROM favorites f
-          JOIN tracks t
-            ON t.id = f.track_id
-          WHERE f.user_id = $1
-          ORDER BY f.created_at DESC
-        `,
-        [req.user.id]
-      );
+      const result =
+        await q(
+          `
+            SELECT
+              t.*
+            FROM favorites f
+            INNER JOIN tracks t
+              ON t.id = f.track_id
+            WHERE f.user_id = $1
+            ORDER BY
+              f.created_at DESC
+          `,
+          [req.user.id]
+        );
 
       res.json({
         ok: true,
-        tracks: result.rows,
+        tracks:
+          result.rows.map(
+            publicTrack
+          )
       });
     } catch (error) {
-      console.error("FAVORITES GET:", error);
-
       res.status(500).json({
         ok: false,
-        error: "Не удалось загрузить избранное",
-        tracks: [],
+        error:
+          "Не удалось получить избранное"
       });
     }
   }
@@ -960,49 +1759,68 @@ app.post(
   async (req, res) => {
     try {
       const trackId =
-        req.body && req.body.track_id;
+        req.body?.track_id;
 
-      if (!trackId) {
+      if (
+        !validateTrackId(trackId)
+      ) {
         return res.status(400).json({
           ok: false,
-          error: "track_id обязателен",
+          error:
+            "Некорректный track_id"
         });
       }
 
-      const track = await query(
-        "SELECT id FROM tracks WHERE id = $1",
-        [trackId]
-      );
+      const track =
+        await q(
+          `
+            SELECT id
+            FROM tracks
+            WHERE id = $1
+          `,
+          [trackId]
+        );
 
       if (!track.rows[0]) {
         return res.status(404).json({
           ok: false,
-          error: "Трек не найден",
+          error:
+            "Трек не найден"
         });
       }
 
-      await query(
+      await q(
         `
           INSERT INTO favorites
-            (user_id, track_id)
+            (
+              user_id,
+              track_id
+            )
           VALUES
             ($1, $2)
           ON CONFLICT
             (user_id, track_id)
           DO NOTHING
         `,
-        [req.user.id, trackId]
+        [
+          req.user.id,
+          trackId
+        ]
       );
 
       res.json({
-        ok: true,
+        ok: true
       });
     } catch (error) {
-      console.error("FAVORITES POST:", error);
+      console.error(
+        "FAVORITE ADD ERROR:",
+        error
+      );
 
       res.status(500).json({
         ok: false,
-        error: "Не удалось добавить в избранное",
+        error:
+          "Не удалось добавить в избранное"
       });
     }
   }
@@ -1013,27 +1831,39 @@ app.delete(
   requireUser,
   async (req, res) => {
     try {
-      await query(
+      if (
+        !validateTrackId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Некорректный ID трека"
+        });
+      }
+
+      await q(
         `
           DELETE FROM favorites
-          WHERE user_id = $1
+          WHERE
+            user_id = $1
             AND track_id = $2
         `,
         [
           req.user.id,
-          req.params.id,
+          req.params.id
         ]
       );
 
       res.json({
-        ok: true,
+        ok: true
       });
     } catch (error) {
-      console.error("FAVORITES DELETE:", error);
-
       res.status(500).json({
         ok: false,
-        error: "Не удалось удалить из избранного",
+        error:
+          "Не удалось удалить из избранного"
       });
     }
   }
@@ -1048,32 +1878,35 @@ app.get(
   requireUser,
   async (req, res) => {
     try {
-      const result = await query(
-        `
-          SELECT
-            t.*,
-            h.played_at
-          FROM history h
-          JOIN tracks t
-            ON t.id = h.track_id
-          WHERE h.user_id = $1
-          ORDER BY h.played_at DESC
-          LIMIT 100
-        `,
-        [req.user.id]
-      );
+      const result =
+        await q(
+          `
+            SELECT
+              t.*,
+              h.played_at
+            FROM history h
+            INNER JOIN tracks t
+              ON t.id = h.track_id
+            WHERE h.user_id = $1
+            ORDER BY
+              h.played_at DESC
+            LIMIT 200
+          `,
+          [req.user.id]
+        );
 
       res.json({
         ok: true,
-        tracks: result.rows,
+        tracks:
+          result.rows.map(
+            publicTrack
+          )
       });
     } catch (error) {
-      console.error("HISTORY GET:", error);
-
       res.status(500).json({
         ok: false,
-        error: "Не удалось загрузить историю",
-        tracks: [],
+        error:
+          "Не удалось получить историю"
       });
     }
   }
@@ -1085,1321 +1918,721 @@ app.post(
   async (req, res) => {
     try {
       const trackId =
-        req.body && req.body.track_id;
+        req.body?.track_id;
 
-      if (!trackId) {
+      if (
+        !validateTrackId(trackId)
+      ) {
         return res.status(400).json({
           ok: false,
-          error: "track_id обязателен",
+          error:
+            "Некорректный track_id"
         });
       }
 
-      const track = await query(
-        "SELECT id FROM tracks WHERE id = $1",
-        [trackId]
-      );
+      const track =
+        await q(
+          `
+            SELECT id
+            FROM tracks
+            WHERE id = $1
+          `,
+          [trackId]
+        );
 
       if (!track.rows[0]) {
         return res.status(404).json({
           ok: false,
-          error: "Трек не найден",
+          error:
+            "Трек не найден"
         });
       }
 
-      await query(
+      await q(
         `
           INSERT INTO history
-            (user_id, track_id)
+            (
+              user_id,
+              track_id
+            )
           VALUES
             ($1, $2)
         `,
-        [req.user.id, trackId]
+        [
+          req.user.id,
+          trackId
+        ]
       );
 
-      await query(
+      await q(
         `
           UPDATE tracks
-          SET plays_count = plays_count + 1
+          SET
+            plays_count =
+              COALESCE(
+                plays_count,
+                0
+              ) + 1
           WHERE id = $1
         `,
         [trackId]
       );
 
       res.json({
-        ok: true,
+        ok: true
       });
     } catch (error) {
-      console.error("HISTORY POST:", error);
+      console.error(
+        "HISTORY ERROR:",
+        error
+      );
 
       res.status(500).json({
         ok: false,
-        error: "Не удалось сохранить историю",
+        error:
+          "Не удалось сохранить историю"
       });
     }
   }
 );
 
 /* =========================================================
-   WEBSITE
-   НИКАКОГО App.js / React / frontend/build НЕ НУЖНО
+   BOT / TRACK UPLOAD API
 ========================================================= */
 
-const HTML = `<!doctype html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<meta name="theme-color" content="#09090b">
-<title>Fenix Music</title>
+/*
+ * Этот endpoint предназначен для нашего
+ * Telegram-бота.
+ *
+ * Бот сможет отправить:
+ *
+ * multipart/form-data
+ *
+ * audio
+ * cover
+ *
+ * title
+ * artist_name
+ * album_name
+ * duration
+ * admin_key
+ *
+ * Для multipart нужен multer.
+ *
+ * Мы подключаем его лениво здесь,
+ * чтобы основной backend не падал,
+ * если пакет ещё не установлен.
+ */
 
-<style>
-*{
-  box-sizing:border-box;
+let multer;
+
+try {
+  multer = require("multer");
+} catch {
+  multer = null;
 }
 
-html,body{
-  margin:0;
-  padding:0;
-  min-height:100%;
-  background:#09090b;
-  color:#fff;
-  font-family:Inter,-apple-system,BlinkMacSystemFont,
-  "Segoe UI",Roboto,Arial,sans-serif;
-}
+if (multer) {
+  const upload = multer({
+    storage:
+      multer.memoryStorage(),
+    limits: {
+      fileSize:
+        100 * 1024 * 1024
+    }
+  });
 
-body{
-  min-height:100vh;
-}
+  app.post(
+    "/api/admin/tracks/upload",
+    upload.fields([
+      {
+        name: "audio",
+        maxCount: 1
+      },
+      {
+        name: "cover",
+        maxCount: 1
+      }
+    ]),
+    async (req, res) => {
+      try {
+        const adminKey =
+          process.env.BOT_UPLOAD_KEY;
 
-button,
-input,
-textarea,
-select{
-  font:inherit;
-}
+        if (
+          !adminKey ||
+          req.body?.admin_key !==
+            adminKey
+        ) {
+          return res.status(403).json({
+            ok: false,
+            error:
+              "Недействительный ключ загрузки"
+          });
+        }
 
-button{
-  cursor:pointer;
-}
+        const audio =
+          req.files?.audio?.[0];
 
-button:disabled{
-  opacity:.5;
-  cursor:not-allowed;
-}
+        const cover =
+          req.files?.cover?.[0];
 
-.app{
-  min-height:100vh;
-  padding:25px;
-  padding-bottom:110px;
-}
+        if (!audio) {
+          return res.status(400).json({
+            ok: false,
+            error:
+              "Аудиофайл не найден"
+          });
+        }
 
-.nav{
-  max-width:1200px;
-  margin:0 auto 30px;
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-}
+        const audioFile =
+          await saveAudioBuffer(
+            audio.buffer,
+            audio.originalname
+          );
 
-.nav button{
-  background:#18181b;
-  border:1px solid #27272a;
-  color:#fff;
-  padding:11px 17px;
-  border-radius:12px;
-}
+        let coverFile = null;
 
-.nav button:hover{
-  background:#27272a;
-}
+        try {
+          if (cover) {
+            coverFile =
+              await saveCoverBuffer(
+                cover.buffer,
+                cover.originalname
+              );
+          }
 
-.nav button.active{
-  background:#dc2626;
-  border-color:#dc2626;
-}
+          const title =
+            String(
+              req.body?.title ||
+                "Без названия"
+            )
+              .trim()
+              .slice(0, 255);
 
-.page{
-  max-width:1200px;
-  margin:auto;
-}
+          const artistName =
+            String(
+              req.body?.artist_name ||
+                "Unknown"
+            )
+              .trim()
+              .slice(0, 255);
 
-.hero{
-  padding:35px 0;
-}
+          const albumName =
+            String(
+              req.body?.album_name ||
+                ""
+            )
+              .trim()
+              .slice(0, 255);
 
-.eyebrow{
-  display:inline-block;
-  color:#a1a1aa;
-  font-size:12px;
-  font-weight:700;
-  letter-spacing:2px;
-}
+          const duration =
+            Math.max(
+              0,
+              Number.parseInt(
+                req.body?.duration,
+                10
+              ) || 0
+            );
 
-h1{
-  font-size:42px;
-  margin:8px 0;
-}
+          const result =
+            await q(
+              `
+                INSERT INTO tracks
+                  (
+                    title,
+                    artist_name,
+                    album_name,
+                    cover_url,
+                    audio_url,
+                    audio_filename,
+                    cover_filename,
+                    duration
+                  )
+                VALUES
+                  (
+                    $1,
+                    $2,
+                    $3,
+                    $4,
+                    $5,
+                    $6,
+                    $7,
+                    $8
+                  )
+                RETURNING *
+              `,
+              [
+                title,
+                artistName,
+                albumName,
+                coverFile
+                  ? coverFile.url
+                  : "",
+                audioFile.url,
+                audioFile.filename,
+                coverFile
+                  ? coverFile.filename
+                  : null,
+                duration
+              ]
+            );
 
-h2{
-  font-size:28px;
-}
+          res.status(201).json({
+            ok: true,
+            track:
+              publicTrack(
+                result.rows[0]
+              )
+          });
+        } catch (error) {
+          await deleteAudio(
+            audioFile.filename
+          );
 
-.muted{
-  color:#a1a1aa;
-}
+          if (coverFile) {
+            await deleteCover(
+              coverFile.filename
+            );
+          }
 
-.grid{
-  display:grid;
-  grid-template-columns:
-    repeat(auto-fill,minmax(190px,1fr));
-  gap:18px;
-}
+          throw error;
+        }
+      } catch (error) {
+        console.error(
+          "BOT UPLOAD ERROR:",
+          error
+        );
 
-.card{
-  background:#111113;
-  border:1px solid #27272a;
-  border-radius:18px;
-  padding:14px;
-  transition:.2s;
-}
-
-.card:hover{
-  transform:translateY(-2px);
-  border-color:#3f3f46;
-}
-
-.cover{
-  width:100%;
-  aspect-ratio:1;
-  object-fit:cover;
-  border-radius:13px;
-  background:#18181b;
-}
-
-.card h3{
-  margin:13px 0 5px;
-}
-
-.card p{
-  margin:0 0 14px;
-}
-
-.primary{
-  background:#dc2626!important;
-  border-color:#dc2626!important;
-  color:white!important;
-}
-
-.card button,
-.form button,
-.player button,
-.profile button{
-  border:1px solid #27272a;
-  background:#18181b;
-  color:#fff;
-  padding:10px 14px;
-  border-radius:10px;
-}
-
-.form{
-  max-width:500px;
-  background:#111113;
-  border:1px solid #27272a;
-  padding:25px;
-  border-radius:20px;
-}
-
-.form input,
-.form textarea,
-.form select{
-  width:100%;
-  padding:13px;
-  margin:8px 0 15px;
-  background:#09090b;
-  color:#fff;
-  border:1px solid #27272a;
-  border-radius:11px;
-  outline:none;
-}
-
-.form textarea{
-  min-height:120px;
-  resize:vertical;
-}
-
-.form input:focus,
-.form textarea:focus{
-  border-color:#dc2626;
-}
-
-.profile{
-  display:grid;
-  grid-template-columns:120px 1fr;
-  gap:25px;
-  margin-bottom:30px;
-}
-
-.avatar{
-  width:120px;
-  height:120px;
-  border-radius:50%;
-  background:#dc2626;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  font-size:35px;
-  font-weight:800;
-}
-
-.stat-grid{
-  display:grid;
-  grid-template-columns:
-    repeat(3,1fr);
-  gap:15px;
-  margin:25px 0;
-}
-
-.stat{
-  background:#111113;
-  border:1px solid #27272a;
-  padding:20px;
-  border-radius:16px;
-}
-
-.stat strong{
-  display:block;
-  font-size:28px;
-}
-
-.player{
-  position:fixed;
-  z-index:20;
-  left:0;
-  right:0;
-  bottom:0;
-  min-height:75px;
-  padding:12px 20px;
-  background:rgba(17,17,19,.96);
-  backdrop-filter:blur(15px);
-  border-top:1px solid #27272a;
-  display:flex;
-  align-items:center;
-  gap:15px;
-}
-
-.player-info{
-  flex:1;
-  min-width:0;
-}
-
-.player-info strong,
-.player-info span{
-  display:block;
-  overflow:hidden;
-  white-space:nowrap;
-  text-overflow:ellipsis;
-}
-
-.player-controls{
-  display:flex;
-  gap:7px;
-}
-
-.player-controls button{
-  border-radius:50%;
-  width:42px;
-  height:42px;
-  padding:0;
-}
-
-.empty{
-  padding:40px;
-  text-align:center;
-  color:#a1a1aa;
-  border:1px dashed #27272a;
-  border-radius:18px;
-}
-
-.error{
-  color:#f87171;
-  background:#2b1111;
-  border:1px solid #7f1d1d;
-  padding:12px;
-  border-radius:10px;
-  margin:10px 0;
-}
-
-.success{
-  color:#86efac;
-}
-
-@media(max-width:700px){
-  .app{
-    padding:15px;
-    padding-bottom:120px;
-  }
-
-  h1{
-    font-size:32px;
-  }
-
-  .grid{
-    grid-template-columns:
-      repeat(2,minmax(0,1fr));
-    gap:10px;
-  }
-
-  .profile{
-    grid-template-columns:80px 1fr;
-  }
-
-  .avatar{
-    width:80px;
-    height:80px;
-    font-size:25px;
-  }
-
-  .stat-grid{
-    grid-template-columns:1fr;
-  }
-
-  .player{
-    padding:10px;
-  }
-
-  .player-controls button{
-    width:38px;
-    height:38px;
-  }
-}
-</style>
-</head>
-
-<body>
-
-<div id="root"></div>
-
-<script>
-"use strict";
-
-const root = document.getElementById("root");
-
-let tracks = [];
-let user = null;
-let currentTrack = null;
-let audio = new Audio();
-
-audio.volume = 1;
-
-function esc(value){
-  return String(value ?? "")
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;");
-}
-
-async function api(url, options = {}){
-  const response = await fetch(
-    "/api" + url,
-    {
-      credentials:"include",
-      ...options,
-      headers:{
-        "Content-Type":"application/json",
-        ...(options.headers || {})
+        res.status(500).json({
+          ok: false,
+          error:
+            "Не удалось загрузить трек"
+        });
       }
     }
   );
-
-  const data =
-    await response.json().catch(() => ({}));
-
-  if(!response.ok){
-    throw new Error(
-      data.error ||
-      data.message ||
-      "Ошибка запроса"
-    );
-  }
-
-  return data;
 }
-
-async function load(){
-  try{
-    const tracksData =
-      await api("/tracks");
-
-    tracks =
-      Array.isArray(tracksData.tracks)
-        ? tracksData.tracks
-        : [];
-  }catch(error){
-    console.error(error);
-    tracks = [];
-  }
-
-  try{
-    const me =
-      await api("/auth/me");
-
-    user = me.user || null;
-  }catch(error){
-    user = null;
-  }
-
-  render("home");
-}
-
-function render(page){
-  root.innerHTML = \`
-    <div class="app">
-
-      <nav class="nav">
-        <button
-          class="\${page==="home"?"active":""}"
-          onclick="render('home')">
-          Главная
-        </button>
-
-        <button
-          class="\${page==="favorites"?"active":""}"
-          onclick="render('favorites')">
-          Избранное
-        </button>
-
-        <button
-          class="\${page==="history"?"active":""}"
-          onclick="render('history')">
-          История
-        </button>
-
-        <button
-          class="\${page==="profile"?"active":""}"
-          onclick="render('profile')">
-          Профиль
-        </button>
-
-        <button
-          class="\${page==="settings"?"active":""}"
-          onclick="render('settings')">
-          Настройки
-        </button>
-      </nav>
-
-      <main class="page" id="page"></main>
-
-    </div>
-  \`;
-
-  const pageElement =
-    document.getElementById("page");
-
-  if(page==="home"){
-    home(pageElement);
-  }
-
-  if(page==="favorites"){
-    favorites(pageElement);
-  }
-
-  if(page==="history"){
-    history(pageElement);
-  }
-
-  if(page==="profile"){
-    profile(pageElement);
-  }
-
-  if(page==="settings"){
-    settings(pageElement);
-  }
-
-  renderPlayer();
-}
-
-function home(el){
-  el.innerHTML = \`
-    <section class="hero">
-      <span class="eyebrow">
-        FENIX MUSIC
-      </span>
-
-      <h1>
-        Музыка начинается здесь
-      </h1>
-
-      <p class="muted">
-        Твоя музыкальная вселенная.
-      </p>
-    </section>
-
-    <h2>Музыка</h2>
-
-    <div class="grid">
-      \${tracks.length
-        ? tracks.map(trackCard).join("")
-        : '<div class="empty">Треков пока нет.</div>'
-      }
-    </div>
-  \`;
-}
-
-function trackCard(track){
-  const cover =
-    track.cover_url ||
-    "https://placehold.co/700x700/18181b/ffffff?text=FX";
-
-  return \`
-    <article class="card">
-
-      <img
-        class="cover"
-        src="\${esc(cover)}"
-        alt=""
-      >
-
-      <h3>
-        \${esc(track.title)}
-      </h3>
-
-      <p class="muted">
-        \${esc(track.artist_name || "Unknown")}
-      </p>
-
-      <button
-        class="primary"
-        onclick="playTrack(\${Number(track.id)})">
-        ▶ Слушать
-      </button>
-
-      <button
-        onclick="addFavorite(\${Number(track.id)})">
-        ♥
-      </button>
-
-    </article>
-  \`;
-}
-
-async function playTrack(id){
-  const track =
-    tracks.find(
-      x => Number(x.id) === Number(id)
-    );
-
-  if(!track){
-    return;
-  }
-
-  currentTrack = track;
-
-  const source =
-    track.audio_url ||
-    "/api/tracks/" + id + "/audio";
-
-  audio.src = source;
-
-  try{
-    await audio.play();
-  }catch(error){
-    console.warn(
-      "Автовоспроизведение заблокировано браузером"
-    );
-  }
-
-  try{
-    await api(
-      "/history",
-      {
-        method:"POST",
-        body:JSON.stringify({
-          track_id:id
-        })
-      }
-    );
-  }catch(error){
-    console.warn(error);
-  }
-
-  renderPlayer();
-}
-
-function renderPlayer(){
-  const old =
-    document.querySelector(".player");
-
-  if(old){
-    old.remove();
-  }
-
-  if(!currentTrack){
-    return;
-  }
-
-  document.body.insertAdjacentHTML(
-    "beforeend",
-    \`
-      <footer class="player">
-
-        <div class="player-info">
-          <strong>
-            \${esc(currentTrack.title)}
-          </strong>
-
-          <span class="muted">
-            \${esc(currentTrack.artist_name || "")}
-          </span>
-        </div>
-
-        <div class="player-controls">
-
-          <button
-            onclick="previousTrack()">
-            ◀
-          </button>
-
-          <button
-            class="primary"
-            onclick="toggleAudio()">
-            ▶
-          </button>
-
-          <button
-            onclick="nextTrack()">
-            ▶
-          </button>
-
-        </div>
-
-      </footer>
-    \`
-  );
-}
-
-function toggleAudio(){
-  if(audio.paused){
-    audio.play().catch(() => {});
-  }else{
-    audio.pause();
-  }
-}
-
-function nextTrack(){
-  if(!currentTrack || !tracks.length){
-    return;
-  }
-
-  const index =
-    tracks.findIndex(
-      x => Number(x.id) === Number(currentTrack.id)
-    );
-
-  const next =
-    tracks[(index + 1) % tracks.length];
-
-  if(next){
-    playTrack(next.id);
-  }
-}
-
-function previousTrack(){
-  if(!currentTrack || !tracks.length){
-    return;
-  }
-
-  const index =
-    tracks.findIndex(
-      x => Number(x.id) === Number(currentTrack.id)
-    );
-
-  const previous =
-    tracks[
-      (index - 1 + tracks.length) %
-      tracks.length
-    ];
-
-  if(previous){
-    playTrack(previous.id);
-  }
-}
-
-async function addFavorite(id){
-  try{
-    await api(
-      "/favorites",
-      {
-        method:"POST",
-        body:JSON.stringify({
-          track_id:id
-        })
-      }
-    );
-
-    alert("Добавлено в избранное");
-  }catch(error){
-    alert(error.message);
-  }
-}
-
-async function favorites(el){
-  if(!user){
-    el.innerHTML = \`
-      <h1>Избранное</h1>
-      <div class="empty">
-        Войди в аккаунт,
-        чтобы использовать избранное.
-      </div>
-    \`;
-    return;
-  }
-
-  try{
-    const data =
-      await api("/favorites");
-
-    const list =
-      data.tracks || [];
-
-    el.innerHTML = \`
-      <h1>Избранное</h1>
-
-      <div class="grid">
-        \${list.length
-          ? list.map(trackCard).join("")
-          : '<div class="empty">Избранное пусто.</div>'
-        }
-      </div>
-    \`;
-  }catch(error){
-    el.innerHTML =
-      '<div class="error">' +
-      esc(error.message) +
-      '</div>';
-  }
-}
-
-async function history(el){
-  if(!user){
-    el.innerHTML = \`
-      <h1>История</h1>
-      <div class="empty">
-        Войди в аккаунт,
-        чтобы увидеть историю.
-      </div>
-    \`;
-    return;
-  }
-
-  try{
-    const data =
-      await api("/history");
-
-    const list =
-      data.tracks || [];
-
-    el.innerHTML = \`
-      <h1>История</h1>
-
-      <div class="grid">
-        \${list.length
-          ? list.map(trackCard).join("")
-          : '<div class="empty">История пуста.</div>'
-        }
-      </div>
-    \`;
-  }catch(error){
-    el.innerHTML =
-      '<div class="error">' +
-      esc(error.message) +
-      '</div>';
-  }
-}
-
-function profile(el){
-  if(!user){
-    el.innerHTML = \`
-      <div class="form">
-
-        <span class="eyebrow">
-          FENIX MUSIC
-        </span>
-
-        <h1>Войти</h1>
-
-        <input
-          id="loginInput"
-          placeholder="Email или username"
-        >
-
-        <input
-          id="loginPassword"
-          type="password"
-          placeholder="Пароль"
-        >
-
-        <button
-          class="primary"
-          onclick="login()">
-          Войти
-        </button>
-
-        <hr>
-
-        <h2>Создать аккаунт</h2>
-
-        <input
-          id="registerUsername"
-          placeholder="Username"
-        >
-
-        <input
-          id="registerEmail"
-          type="email"
-          placeholder="Email"
-        >
-
-        <input
-          id="registerPassword"
-          type="password"
-          placeholder="Пароль"
-        >
-
-        <button
-          class="primary"
-          onclick="register()">
-          Создать аккаунт
-        </button>
-
-      </div>
-    \`;
-
-    return;
-  }
-
-  const username =
-    user.username || "FX";
-
-  const initials =
-    username
-      .slice(0,2)
-      .toUpperCase();
-
-  el.innerHTML = \`
-    <div class="profile">
-
-      <div class="avatar">
-        \${esc(initials)}
-      </div>
-
-      <div>
-        <span class="eyebrow">
-          PROFILE
-        </span>
-
-        <h1>
-          \${esc(username)}
-        </h1>
-
-        <p class="muted">
-          \${esc(user.email || "")}
-        </p>
-      </div>
-
-    </div>
-
-    <div class="stat-grid">
-
-      <div class="stat">
-        <strong>
-          —
-        </strong>
-        <span class="muted">
-          прослушиваний
-        </span>
-      </div>
-
-      <div class="stat">
-        <strong>
-          —
-        </strong>
-        <span class="muted">
-          избранных
-        </span>
-      </div>
-
-      <div class="stat">
-        <strong>
-          FX
-        </strong>
-        <span class="muted">
-          Fenix Music
-        </span>
-      </div>
-
-    </div>
-
-    <div class="form">
-
-      <h2>
-        Редактирование профиля
-      </h2>
-
-      <input
-        id="profileUsername"
-        value="\${esc(user.username || "")}"
-        placeholder="Username"
-      >
-
-      <textarea
-        id="profileBio"
-        placeholder="Расскажи о себе"
-      >\${esc(user.bio || "")}</textarea>
-
-      <button
-        class="primary"
-        onclick="saveProfile()">
-        Сохранить
-      </button>
-
-      <button
-        onclick="logout()">
-        Выйти
-      </button>
-
-    </div>
-  \`;
-}
-
-async function login(){
-  const loginValue =
-    document.getElementById("loginInput").value;
-
-  const password =
-    document.getElementById("loginPassword").value;
-
-  try{
-    const data =
-      await api(
-        "/auth/login",
-        {
-          method:"POST",
-          body:JSON.stringify({
-            login:loginValue,
-            email:loginValue,
-            password
-          })
-        }
-      );
-
-    user = data.user;
-
-    render("profile");
-  }catch(error){
-    alert(error.message);
-  }
-}
-
-async function register(){
-  const username =
-    document.getElementById(
-      "registerUsername"
-    ).value;
-
-  const email =
-    document.getElementById(
-      "registerEmail"
-    ).value;
-
-  const password =
-    document.getElementById(
-      "registerPassword"
-    ).value;
-
-  try{
-    const captcha =
-      await api("/auth/captcha");
-
-    const answer =
-      prompt(
-        "Введите CAPTCHA: " +
-        captcha.text
-      );
-
-    if(answer === null){
-      return;
-    }
-
-    const data =
-      await api(
-        "/auth/register",
-        {
-          method:"POST",
-          body:JSON.stringify({
-            username,
-            email,
-            password,
-            captcha:answer,
-            captcha_id:captcha.id
-          })
-        }
-      );
-
-    user = data.user;
-
-    render("profile");
-  }catch(error){
-    alert(error.message);
-  }
-}
-
-async function saveProfile(){
-  const username =
-    document.getElementById(
-      "profileUsername"
-    ).value;
-
-  const bio =
-    document.getElementById(
-      "profileBio"
-    ).value;
-
-  try{
-    const data =
-      await api(
-        "/auth/profile",
-        {
-          method:"PUT",
-          body:JSON.stringify({
-            username,
-            bio
-          })
-        }
-      );
-
-    user = data.user;
-
-    render("profile");
-  }catch(error){
-    alert(error.message);
-  }
-}
-
-async function logout(){
-  try{
-    await api(
-      "/auth/logout",
-      {
-        method:"POST"
-      }
-    );
-  }catch(error){
-    console.warn(error);
-  }
-
-  user = null;
-  currentTrack = null;
-  audio.pause();
-
-  render("profile");
-}
-
-function settings(el){
-  el.innerHTML = \`
-    <h1>Настройки</h1>
-
-    <div class="form">
-
-      <h2>Внешний вид</h2>
-
-      <p>
-        Тема:
-        <strong>Тёмная</strong>
-      </p>
-
-      <p>
-        Интерфейс:
-        <strong>Fenix Music</strong>
-      </p>
-
-      <h2>Звук</h2>
-
-      <p>
-        Качество:
-        <strong>Высокое</strong>
-      </p>
-
-      <p>
-        Автоплей:
-        <strong class="success">
-          Включён
-        </strong>
-      </p>
-
-      <p>
-        Автоматический переход:
-        <strong class="success">
-          Включён
-        </strong>
-      </p>
-
-    </div>
-  \`;
-}
-
-load();
-
-</script>
-
-</body>
-</html>`;
 
 /* =========================================================
-   WEBSITE ROUTE
+   ADMIN TRACK DELETE
 ========================================================= */
 
-/*
-   ВАЖНО:
-   Сайт отдаётся прямо из index.js.
+app.delete(
+  "/api/admin/tracks/:id",
+  async (req, res) => {
+    try {
+      const adminKey =
+        process.env.BOT_UPLOAD_KEY;
 
-   Поэтому:
-   frontend/build/index.html
-   App.js
-   React
+      if (
+        !adminKey ||
+        req.headers["x-bot-key"] !==
+          adminKey
+      ) {
+        return res.status(403).json({
+          ok: false,
+          error:
+            "Доступ запрещён"
+        });
+      }
 
-   НЕ НУЖНЫ.
-*/
+      if (
+        !validateTrackId(
+          req.params.id
+        )
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error:
+            "Некорректный ID"
+        });
+      }
 
-app.get("/", (req, res) => {
-  res
-    .status(200)
-    .type("html")
-    .send(HTML);
-});
+      const result =
+        await q(
+          `
+            DELETE FROM tracks
+            WHERE id = $1
+            RETURNING
+              id,
+              audio_filename,
+              cover_filename
+          `,
+          [req.params.id]
+        );
 
-/*
-   Дополнительные frontend routes.
-*/
+      const track =
+        result.rows[0];
 
-app.get(
-  ["/home", "/favorites", "/history", "/profile", "/settings"],
-  (req, res) => {
-    res
-      .status(200)
-      .type("html")
-      .send(HTML);
+      if (!track) {
+        return res.status(404).json({
+          ok: false,
+          error:
+            "Трек не найден"
+        });
+      }
+
+      if (track.audio_filename) {
+        await deleteAudio(
+          track.audio_filename
+        );
+      }
+
+      if (track.cover_filename) {
+        await deleteCover(
+          track.cover_filename
+        );
+      }
+
+      res.json({
+        ok: true,
+        deleted:
+          String(track.id)
+      });
+    } catch (error) {
+      console.error(
+        "ADMIN DELETE ERROR:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось удалить трек"
+      });
+    }
   }
 );
 
 /* =========================================================
-   API 404
+   404 API
 ========================================================= */
 
-app.use("/api", (req, res) => {
-  res.status(404).json({
-    ok: false,
-    error: "API route not found",
-    path: req.path,
-  });
-});
+app.use(
+  "/api",
+  (req, res) => {
+    res.status(404).json({
+      ok: false,
+      error:
+        "API route not found",
+      method: req.method,
+      path: req.originalUrl
+    });
+  }
+);
 
 /* =========================================================
-   GLOBAL ERROR
+   FRONTEND
 ========================================================= */
 
-app.use((error, req, res, next) => {
-  console.error("GLOBAL ERROR:", error);
+const frontendBuild =
+  path.join(
+    __dirname,
+    "..",
+    "frontend",
+    "build"
+  );
 
-  if (res.headersSent) {
-    return next(error);
+const frontendIndex =
+  path.join(
+    frontendBuild,
+    "index.html"
+  );
+
+app.use(
+  express.static(
+    frontendBuild,
+    {
+      index: false,
+      maxAge:
+        process.env.NODE_ENV ===
+        "production"
+          ? "1h"
+          : 0
+    }
+  )
+);
+
+/*
+ * Express 5:
+ * Используем {*path}, а не старый "*",
+ * чтобы не получить path-to-regexp error.
+ */
+
+app.get(
+  "/{*path}",
+  (req, res) => {
+    if (
+      req.path.startsWith("/api") ||
+      req.path.startsWith("/media")
+    ) {
+      return res.status(404).send(
+        "Not Found"
+      );
+    }
+
+    res.sendFile(
+      frontendIndex,
+      (error) => {
+        if (error) {
+          console.error(
+            "FRONTEND ERROR:",
+            error.message
+          );
+
+          res.status(200).send(`
+            <!doctype html>
+            <html lang="ru">
+              <head>
+                <meta charset="utf-8">
+                <meta
+                  name="viewport"
+                  content="width=device-width,initial-scale=1"
+                >
+                <title>Fenix Music</title>
+                <style>
+                  * {
+                    box-sizing: border-box;
+                  }
+
+                  html,
+                  body {
+                    margin: 0;
+                    min-height: 100%;
+                  }
+
+                  body {
+                    min-height: 100vh;
+                    background:
+                      radial-gradient(
+                        circle at top,
+                        #18181b,
+                        #09090b 55%
+                      );
+                    color: white;
+                    font-family:
+                      Arial,
+                      sans-serif;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                  }
+
+                  .box {
+                    width: min(
+                      90%,
+                      560px
+                    );
+                    text-align: center;
+                    padding: 40px;
+                    border: 1px solid
+                      rgba(
+                        255,
+                        255,
+                        255,
+                        .08
+                      );
+                    border-radius: 24px;
+                    background:
+                      rgba(
+                        24,
+                        24,
+                        27,
+                        .8
+                      );
+                  }
+
+                  h1 {
+                    margin: 0 0 12px;
+                    font-size: 42px;
+                  }
+
+                  p {
+                    color:
+                      #a1a1aa;
+                    line-height: 1.6;
+                  }
+
+                  code {
+                    color:
+                      #f87171;
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="box">
+                  <h1>
+                    FENIX MUSIC
+                  </h1>
+
+                  <p>
+                    Backend запущен,
+                    но frontend ещё
+                    не собран.
+                  </p>
+
+                  <p>
+                    Выполни
+                    <code>
+                      npm run build
+                    </code>
+                    перед запуском.
+                  </p>
+                </div>
+              </body>
+            </html>
+          `);
+        }
+      }
+    );
   }
+);
 
-  res.status(500).json({
-    ok: false,
-    error: "Internal server error",
-  });
-});
+/* =========================================================
+   ERROR HANDLER
+========================================================= */
+
+app.use(
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
+    console.error(
+      "UNHANDLED ERROR:",
+      error
+    );
+
+    if (
+      res.headersSent
+    ) {
+      return next(error);
+    }
+
+    res.status(500).json({
+      ok: false,
+      error:
+        "Внутренняя ошибка сервера"
+    });
+  }
+);
 
 /* =========================================================
    START
 ========================================================= */
 
 async function start() {
-  try {
-    console.log("");
-    console.log("========================================");
-    console.log("🔥 FENIX MUSIC BACKEND");
-    console.log("========================================");
+  console.log("");
+  console.log(
+    "========================================"
+  );
+  console.log(
+    "       FENIX MUSIC BACKEND 3.0"
+  );
+  console.log(
+    "========================================"
+  );
 
-    console.log("Connecting to PostgreSQL...");
+  await initDatabase();
 
-    await initDatabase();
+  app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+      console.log("");
+      console.log(
+        "========================================"
+      );
+      console.log(
+        "🔥 FENIX MUSIC BACKEND ONLINE"
+      );
+      console.log(
+        `🌐 PORT: ${PORT}`
+      );
+      console.log(
+        `🎵 API: /api`
+      );
+      console.log(
+        `❤️ TRACKS: /api/tracks`
+      );
+      console.log(
+        `🔐 AUTH: /api/auth`
+      );
+      console.log(
+        `🎧 MEDIA: /media/music`
+      );
+      console.log(
+        `🖼️ COVERS: /media/covers`
+      );
+      console.log(
+        "========================================"
+      );
+      console.log("");
+    }
+  );
+}
 
-    app.listen(
-      PORT,
-      "0.0.0.0",
-      () => {
-        console.log("");
-        console.log("========================================");
-        console.log("✅ FENIX MUSIC ONLINE");
-        console.log("========================================");
-        console.log(
-          "PORT:",
-          PORT
-        );
-        console.log(
-          "API:",
-          "/api"
-        );
-        console.log(
-          "HEALTH:",
-          "/api/health"
-        );
-        console.log(
-          "TRACKS:",
-          "/api/tracks"
-        );
-        console.log(
-          "SITE:",
-          "/"
-        );
-        console.log("========================================");
-        console.log("");
-      }
-    );
-  } catch (error) {
+start().catch(
+  async (error) => {
     console.error("");
-    console.error("========================================");
-    console.error("❌ FENIX MUSIC BACKEND FAILED TO START");
-    console.error("========================================");
-    console.error(error);
-    console.error("========================================");
+    console.error(
+      "========================================"
+    );
+    console.error(
+      "❌ FENIX MUSIC BACKEND FAILED TO START"
+    );
+    console.error(
+      "========================================"
+    );
+    console.error(
+      error
+    );
+    console.error(
+      "========================================"
+    );
+
+    try {
+      await pool.end();
+    } catch {}
 
     process.exit(1);
   }
-}
+);
 
 process.on(
   "SIGTERM",
   async () => {
-    console.log("SIGTERM received");
+    console.log(
+      "SIGTERM received."
+    );
 
-    await pool.end();
-
-    process.exit(0);
+    try {
+      await pool.end();
+    } finally {
+      process.exit(0);
+    }
   }
 );
 
 process.on(
   "SIGINT",
   async () => {
-    console.log("SIGINT received");
+    console.log(
+      "SIGINT received."
+    );
 
-    await pool.end();
-
-    process.exit(0);
+    try {
+      await pool.end();
+    } finally {
+      process.exit(0);
+    }
   }
 );
 
-start();
+module.exports = {
+  app,
+  pool,
+  initDatabase
+};
