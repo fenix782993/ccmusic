@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -18,9 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
-
 from pydantic import BaseModel, EmailStr
-
 from sqlalchemy import (
     create_engine,
     Column,
@@ -37,7 +36,6 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
-
 from jose import jwt
 from passlib.context import CryptContext
 
@@ -55,30 +53,31 @@ PROJECT_DIR = BASE_DIR.parent
 FRONTEND_DIST = PROJECT_DIR / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 
+# ------------------------------------------------------------
+# MEDIA
+# ------------------------------------------------------------
+
 MEDIA_DIR = Path(
     os.getenv(
         "MEDIA_DIR",
-        str(BASE_DIR / "media")
+        str(BASE_DIR / "media"),
     )
 )
 
-# Основная папка, куда пользователь кладёт музыку
 AUDIO_DIR = MEDIA_DIR / "audio"
-
-# Папка для обложек
 COVER_DIR = MEDIA_DIR / "covers"
-
-# Старая папка оставлена для совместимости
 MUSIC_DIR = MEDIA_DIR / "music"
+UPLOADS_DIR = MEDIA_DIR / "uploads"
 
 for directory in (
     AUDIO_DIR,
     COVER_DIR,
     MUSIC_DIR,
+    UPLOADS_DIR,
 ):
     directory.mkdir(
         parents=True,
-        exist_ok=True
+        exist_ok=True,
     )
 
 
@@ -88,14 +87,14 @@ for directory in (
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    f"sqlite:///{BASE_DIR / 'fenix_music.db'}"
+    f"sqlite:///{BASE_DIR / 'fenix_music.db'}",
 )
 
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace(
         "postgres://",
         "postgresql://",
-        1
+        1,
     )
 
 if (
@@ -105,7 +104,7 @@ if (
     DATABASE_URL = DATABASE_URL.replace(
         "postgresql://",
         "postgresql+psycopg2://",
-        1
+        1,
     )
 
 engine = create_engine(
@@ -133,7 +132,7 @@ Base = declarative_base()
 
 SECRET_KEY = os.getenv(
     "JWT_SECRET",
-    "CHANGE_THIS_SECRET_IN_PRODUCTION"
+    "CHANGE_THIS_SECRET_IN_PRODUCTION",
 )
 
 ALGORITHM = "HS256"
@@ -141,27 +140,27 @@ ALGORITHM = "HS256"
 ACCESS_MINUTES = int(
     os.getenv(
         "ACCESS_MINUTES",
-        "10080"
+        "10080",
     )
 )
 
 ADMIN_EMAIL = os.getenv(
     "ADMIN_EMAIL",
-    "admin@fenixmusic.local"
+    "admin@fenixmusic.local",
 )
 
 ADMIN_PASSWORD = os.getenv(
     "ADMIN_PASSWORD",
-    "change-me-now"
+    "change-me-now",
 )
 
 pwd = CryptContext(
     schemes=["bcrypt"],
-    deprecated="auto"
+    deprecated="auto",
 )
 
 bearer = HTTPBearer(
-    auto_error=False
+    auto_error=False,
 )
 
 
@@ -174,53 +173,53 @@ class User(Base):
 
     id = Column(
         Integer,
-        primary_key=True
+        primary_key=True,
     )
 
     email = Column(
         String(255),
         unique=True,
         nullable=False,
-        index=True
+        index=True,
     )
 
     username = Column(
         String(80),
         unique=True,
         nullable=False,
-        index=True
+        index=True,
     )
 
     password_hash = Column(
         String(255),
-        nullable=False
+        nullable=False,
     )
 
     avatar_url = Column(
-        String(500)
+        String(500),
     )
 
     is_admin = Column(
         Boolean,
         default=False,
-        nullable=False
+        nullable=False,
     )
 
     created_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc),
     )
 
     likes = relationship(
         "Like",
         cascade="all, delete-orphan",
-        backref="user"
+        backref="user",
     )
 
     playlists = relationship(
         "Playlist",
         cascade="all, delete-orphan",
-        backref="user"
+        backref="user",
     )
 
 
@@ -229,54 +228,54 @@ class Track(Base):
 
     id = Column(
         Integer,
-        primary_key=True
+        primary_key=True,
     )
 
     title = Column(
         String(255),
         nullable=False,
-        index=True
+        index=True,
     )
 
     artist = Column(
         String(255),
         nullable=False,
-        index=True
+        index=True,
     )
 
     album = Column(
         String(255),
         nullable=False,
-        index=True
+        index=True,
     )
 
     genre = Column(
         String(100),
-        default="Unknown"
+        default="Unknown",
     )
 
     duration = Column(
         Integer,
-        default=0
+        default=0,
     )
 
     cover_url = Column(
-        String(500)
+        String(500),
     )
 
     audio_path = Column(
-        String(500)
+        String(500),
     )
 
     plays = Column(
         Integer,
         default=0,
-        nullable=False
+        nullable=False,
     )
 
     created_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc),
     )
 
 
@@ -285,37 +284,37 @@ class Like(Base):
 
     id = Column(
         Integer,
-        primary_key=True
+        primary_key=True,
     )
 
     user_id = Column(
         Integer,
         ForeignKey(
             "users.id",
-            ondelete="CASCADE"
+            ondelete="CASCADE",
         ),
-        nullable=False
+        nullable=False,
     )
 
     track_id = Column(
         Integer,
         ForeignKey(
             "tracks.id",
-            ondelete="CASCADE"
+            ondelete="CASCADE",
         ),
-        nullable=False
+        nullable=False,
     )
 
     created_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc),
     )
 
     __table_args__ = (
         UniqueConstraint(
             "user_id",
             "track_id",
-            name="uq_user_track_like"
+            name="uq_user_track_like",
         ),
     )
 
@@ -325,31 +324,31 @@ class History(Base):
 
     id = Column(
         Integer,
-        primary_key=True
+        primary_key=True,
     )
 
     user_id = Column(
         Integer,
         ForeignKey(
             "users.id",
-            ondelete="CASCADE"
+            ondelete="CASCADE",
         ),
-        nullable=False
+        nullable=False,
     )
 
     track_id = Column(
         Integer,
         ForeignKey(
             "tracks.id",
-            ondelete="CASCADE"
+            ondelete="CASCADE",
         ),
-        nullable=False
+        nullable=False,
     )
 
     played_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
-        index=True
+        index=True,
     )
 
 
@@ -358,40 +357,40 @@ class Playlist(Base):
 
     id = Column(
         Integer,
-        primary_key=True
+        primary_key=True,
     )
 
     user_id = Column(
         Integer,
         ForeignKey(
             "users.id",
-            ondelete="CASCADE"
+            ondelete="CASCADE",
         ),
-        nullable=False
+        nullable=False,
     )
 
     name = Column(
         String(255),
-        nullable=False
+        nullable=False,
     )
 
     description = Column(
         Text,
-        default=""
+        default="",
     )
 
     cover_url = Column(
-        String(500)
+        String(500),
     )
 
     is_public = Column(
         Boolean,
-        default=True
+        default=True,
     )
 
     created_at = Column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc),
     )
 
 
@@ -400,43 +399,43 @@ class PlaylistTrack(Base):
 
     id = Column(
         Integer,
-        primary_key=True
+        primary_key=True,
     )
 
     playlist_id = Column(
         Integer,
         ForeignKey(
             "playlists.id",
-            ondelete="CASCADE"
+            ondelete="CASCADE",
         ),
-        nullable=False
+        nullable=False,
     )
 
     track_id = Column(
         Integer,
         ForeignKey(
             "tracks.id",
-            ondelete="CASCADE"
+            ondelete="CASCADE",
         ),
-        nullable=False
+        nullable=False,
     )
 
     position = Column(
         Integer,
-        default=0
+        default=0,
     )
 
     __table_args__ = (
         UniqueConstraint(
             "playlist_id",
             "track_id",
-            name="uq_playlist_track"
+            name="uq_playlist_track",
         ),
     )
 
 
 # ============================================================
-# DATABASE MIGRATIONS
+# DATABASE MIGRATION
 # ============================================================
 
 def table_exists(name):
@@ -449,8 +448,8 @@ def table_exists(name):
 def columns(name):
     try:
         return {
-            c["name"]
-            for c in inspect(engine).get_columns(name)
+            column["name"]
+            for column in inspect(engine).get_columns(name)
         }
     except Exception:
         return set()
@@ -458,44 +457,46 @@ def columns(name):
 
 def add_col(
     table,
-    col,
-    pg,
-    sqlite
+    column,
+    pg_type,
+    sqlite_type,
 ):
     if not table_exists(table):
         return
 
-    if col in columns(table):
+    if column in columns(table):
         return
 
     ddl = (
-        pg
+        pg_type
         if engine.dialect.name == "postgresql"
-        else sqlite
+        else sqlite_type
     )
 
-    sql = (
-        f'ALTER TABLE "{table}" ADD COLUMN '
-        + (
-            "IF NOT EXISTS "
-            if engine.dialect.name == "postgresql"
-            else ""
+    if engine.dialect.name == "postgresql":
+        sql = (
+            f'ALTER TABLE "{table}" '
+            f'ADD COLUMN IF NOT EXISTS '
+            f'"{column}" {ddl}'
         )
-        + f'"{col}" {ddl}'
-    )
+    else:
+        sql = (
+            f'ALTER TABLE "{table}" '
+            f'ADD COLUMN "{column}" {ddl}'
+        )
 
     try:
         with engine.begin() as conn:
             conn.execute(text(sql))
 
         print(
-            f"[MIGRATION] {table}.{col} added"
+            f"[MIGRATION] {table}.{column} added"
         )
 
-    except Exception as e:
+    except Exception as exc:
         print(
             f"[MIGRATION WARNING] "
-            f"{table}.{col}: {e}"
+            f"{table}.{column}: {exc}"
         )
 
 
@@ -511,132 +512,106 @@ def migrate_database():
             (
                 "avatar_url",
                 "VARCHAR(500)",
-                "VARCHAR(500)"
+                "VARCHAR(500)",
             ),
             (
                 "is_admin",
                 "BOOLEAN NOT NULL DEFAULT FALSE",
-                "BOOLEAN NOT NULL DEFAULT 0"
+                "BOOLEAN NOT NULL DEFAULT 0",
             ),
             (
                 "created_at",
                 "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-                "DATETIME DEFAULT CURRENT_TIMESTAMP"
+                "DATETIME DEFAULT CURRENT_TIMESTAMP",
             ),
         ],
-
         "tracks": [
             (
                 "genre",
                 "VARCHAR(100) DEFAULT 'Unknown'",
-                "VARCHAR(100) DEFAULT 'Unknown'"
+                "VARCHAR(100) DEFAULT 'Unknown'",
             ),
             (
                 "duration",
                 "INTEGER DEFAULT 0",
-                "INTEGER DEFAULT 0"
+                "INTEGER DEFAULT 0",
             ),
             (
                 "cover_url",
                 "VARCHAR(500)",
-                "VARCHAR(500)"
+                "VARCHAR(500)",
             ),
             (
                 "audio_path",
                 "VARCHAR(500)",
-                "VARCHAR(500)"
+                "VARCHAR(500)",
             ),
             (
                 "plays",
                 "INTEGER NOT NULL DEFAULT 0",
-                "INTEGER NOT NULL DEFAULT 0"
+                "INTEGER NOT NULL DEFAULT 0",
             ),
             (
                 "created_at",
                 "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-                "DATETIME DEFAULT CURRENT_TIMESTAMP"
+                "DATETIME DEFAULT CURRENT_TIMESTAMP",
             ),
         ],
-
         "likes": [
             (
                 "created_at",
                 "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-                "DATETIME DEFAULT CURRENT_TIMESTAMP"
-            )
+                "DATETIME DEFAULT CURRENT_TIMESTAMP",
+            ),
         ],
-
         "history": [
             (
                 "played_at",
                 "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-                "DATETIME DEFAULT CURRENT_TIMESTAMP"
-            )
+                "DATETIME DEFAULT CURRENT_TIMESTAMP",
+            ),
         ],
-
         "playlists": [
             (
                 "description",
                 "TEXT",
-                "TEXT"
+                "TEXT",
             ),
             (
                 "cover_url",
                 "VARCHAR(500)",
-                "VARCHAR(500)"
+                "VARCHAR(500)",
             ),
             (
                 "is_public",
                 "BOOLEAN DEFAULT TRUE",
-                "BOOLEAN DEFAULT 1"
+                "BOOLEAN DEFAULT 1",
             ),
             (
                 "created_at",
                 "TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
-                "DATETIME DEFAULT CURRENT_TIMESTAMP"
+                "DATETIME DEFAULT CURRENT_TIMESTAMP",
             ),
         ],
-
         "playlist_tracks": [
             (
                 "position",
                 "INTEGER DEFAULT 0",
-                "INTEGER DEFAULT 0"
-            )
+                "INTEGER DEFAULT 0",
+            ),
         ],
     }
 
     for table, items in specs.items():
-        for col, pg, sqlite in items:
+        for column, pg_type, sqlite_type in items:
             add_col(
                 table,
-                col,
-                pg,
-                sqlite
+                column,
+                pg_type,
+                sqlite_type,
             )
 
-    if engine.dialect.name == "postgresql":
-
-        queries = [
-            "UPDATE tracks SET genre='Unknown' WHERE genre IS NULL",
-            "UPDATE tracks SET duration=0 WHERE duration IS NULL",
-            "UPDATE tracks SET plays=0 WHERE plays IS NULL",
-            "UPDATE users SET is_admin=FALSE WHERE is_admin IS NULL",
-            "UPDATE playlists SET is_public=TRUE WHERE is_public IS NULL",
-            "UPDATE playlist_tracks SET position=0 WHERE position IS NULL",
-        ]
-
-        for query in queries:
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text(query))
-            except Exception:
-                pass
-
-    print(
-        "DATABASE MIGRATION COMPLETE"
-    )
-
+    print("DATABASE MIGRATION COMPLETE")
     print("=" * 68)
 
 
@@ -644,21 +619,21 @@ migrate_database()
 
 
 # ============================================================
-# FASTAPI
+# APP
 # ============================================================
 
 app = FastAPI(
     title=APP_NAME,
-    version=APP_VERSION
+    version=APP_VERSION,
 )
 
 origins = [
-    x.strip()
-    for x in os.getenv(
+    item.strip()
+    for item in os.getenv(
         "CORS_ORIGINS",
-        "*"
+        "*",
     ).split(",")
-    if x.strip()
+    if item.strip()
 ]
 
 app.add_middleware(
@@ -671,7 +646,7 @@ app.add_middleware(
 
 
 # ============================================================
-# DB DEPENDENCY
+# HELPERS
 # ============================================================
 
 def get_db():
@@ -679,127 +654,125 @@ def get_db():
 
     try:
         yield db
-
     finally:
         db.close()
 
 
-# ============================================================
-# AUTH HELPERS
-# ============================================================
-
 def token_for(user):
     now = datetime.now(timezone.utc)
 
+    payload = {
+        "sub": str(user.id),
+        "iat": now,
+        "exp": now + timedelta(
+            minutes=ACCESS_MINUTES
+        ),
+    }
+
     return jwt.encode(
-        {
-            "sub": str(user.id),
-            "iat": now,
-            "exp": now + timedelta(
-                minutes=ACCESS_MINUTES
-            ),
-        },
+        payload,
         SECRET_KEY,
         algorithm=ALGORITHM,
     )
 
 
 def current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer),
+    credentials: HTTPAuthorizationCredentials = Depends(
+        bearer
+    ),
     db: Session = Depends(get_db),
 ):
     if not credentials:
         raise HTTPException(
             401,
-            "Authorization required"
+            "Authorization required",
         )
 
     try:
         payload = jwt.decode(
             credentials.credentials,
             SECRET_KEY,
-            algorithms=[ALGORITHM]
+            algorithms=[ALGORITHM],
         )
 
-        uid = int(payload["sub"])
+        user_id = int(
+            payload["sub"]
+        )
 
     except Exception:
         raise HTTPException(
             401,
-            "Invalid or expired token"
+            "Invalid or expired token",
         )
 
     user = db.get(
         User,
-        uid
+        user_id,
     )
 
     if not user:
         raise HTTPException(
             401,
-            "User not found"
+            "User not found",
         )
 
     return user
 
 
 def admin_user(
-    user=Depends(current_user)
+    user=Depends(current_user),
 ):
     if not user.is_admin:
         raise HTTPException(
             403,
-            "Admin access required"
+            "Admin access required",
         )
 
     return user
 
 
-# ============================================================
-# JSON HELPERS
-# ============================================================
-
-def user_json(u):
+def user_json(user):
     return {
-        "id": u.id,
-        "email": u.email,
-        "username": u.username,
-        "avatar_url": u.avatar_url,
-        "is_admin": bool(u.is_admin),
-        "created_at": u.created_at,
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "avatar_url": user.avatar_url,
+        "is_admin": bool(user.is_admin),
+        "created_at": user.created_at,
     }
 
 
-def track_json(t):
+def track_json(track):
     duration = int(
-        t.duration or 0
+        track.duration or 0
     )
 
     return {
-        "id": t.id,
-        "title": t.title,
-        "artist": t.artist,
-        "album": t.album,
-        "genre": t.genre or "Unknown",
+        "id": track.id,
+        "title": track.title,
+        "artist": track.artist,
+        "album": track.album,
+        "genre": track.genre or "Unknown",
         "duration": duration,
         "duration_label": (
             f"{duration // 60}:"
             f"{duration % 60:02d}"
         ),
-        "cover_url": t.cover_url,
+        "cover_url": track.cover_url,
         "audio_url": (
-            f"/api/tracks/{t.id}/stream"
-            if t.audio_path
+            f"/api/tracks/"
+            f"{track.id}/stream"
+            if track.audio_path
             else None
         ),
         "plays": int(
-            t.plays or 0
+            track.plays or 0
         ),
     }
 
 
 # ============================================================
-# PYDANTIC MODELS
+# SCHEMAS
 # ============================================================
 
 class Register(BaseModel):
@@ -846,49 +819,124 @@ AUDIO_EXTS = {
     ".opus",
 }
 
-COVER_EXTS = {
+IMAGE_EXTS = {
     ".jpg",
     ".jpeg",
     ".png",
     ".webp",
 }
 
+# Главное:
+# audio = основная папка
+# music = совместимость со старой структурой
+# uploads = persistent storage на Render
+
+SCAN_DIRS = (
+    AUDIO_DIR,
+    MUSIC_DIR,
+    UPLOADS_DIR,
+)
+
+SCAN_INTERVAL = int(
+    os.getenv(
+        "MUSIC_SCAN_INTERVAL",
+        "15",
+    )
+)
+
+_last_scan_at = 0.0
+
 
 def clean_name(value):
     return re.sub(
         r"\s+",
         " ",
-        str(value or "").strip()
+        str(value or "").strip(),
     )
 
 
 def filename_meta(path):
-    stem = path.stem
+    stem = path.stem.strip()
+
+    parts = re.split(
+        r"\s+-\s+|\s+—\s+|\s+–\s+",
+        stem,
+        maxsplit=1,
+    )
 
     parts = [
-        clean_name(x)
-        for x in re.split(
-            r"\s+-\s+| - | — | – ",
-            stem,
-            maxsplit=1
-        )
+        clean_name(item)
+        for item in parts
     ]
 
     if len(parts) == 2:
-        artist = parts[0] or "Unknown Artist"
-        title = parts[1] or stem
+        artist = (
+            parts[0]
+            or "Unknown Artist"
+        )
+
+        title = (
+            parts[1]
+            or stem
+        )
 
         return (
             title,
             artist,
-            "Singles"
+            "Singles",
         )
 
     return (
-        clean_name(stem) or "Untitled",
+        clean_name(stem)
+        or "Untitled",
         "Unknown Artist",
-        "Singles"
+        "Singles",
     )
+
+
+def get_audio_files():
+    files = []
+    seen = set()
+
+    for directory in SCAN_DIRS:
+        if not directory.exists():
+            continue
+
+        try:
+            candidates = directory.rglob("*")
+        except Exception as exc:
+            print(
+                f"[SCAN] "
+                f"directory warning "
+                f"{directory}: {exc}"
+            )
+            continue
+
+        for path in candidates:
+            try:
+                if not path.is_file():
+                    continue
+
+                if (
+                    path.suffix.lower()
+                    not in AUDIO_EXTS
+                ):
+                    continue
+
+                resolved = str(
+                    path.resolve()
+                ).lower()
+
+                if resolved in seen:
+                    continue
+
+                seen.add(resolved)
+                files.append(path)
+
+            except Exception:
+                continue
+
+    return files
 
 
 def safe_relative_path(path):
@@ -899,198 +947,212 @@ def safe_relative_path(path):
             )
         ).replace("\\", "/")
 
-    except Exception:
-        return str(path).replace(
-            "\\",
-            "/"
-        )
+    except ValueError:
+        return str(path)
 
 
-def find_sidecar_cover(audio_path):
-    """
-    Ищет обложку рядом с песней.
+def resolve_audio_path(audio_path):
+    if not audio_path:
+        return None
 
-    Например:
+    path = Path(audio_path)
 
-    song.mp3
-    song.jpg
+    if path.is_absolute():
+        return path
 
-    song.mp3
-    song.png
+    return BASE_DIR / path
 
-    song.mp3
-    song.webp
-    """
 
-    for extension in COVER_EXTS:
-
-        candidate = (
-            audio_path.with_suffix(extension)
-        )
-
-        if candidate.exists():
-            return candidate
-
-    # Дополнительно ищем файл с тем же stem,
-    # если расширение отличается регистром.
-
+def path_is_inside_media(path):
     try:
-        for candidate in audio_path.parent.iterdir():
+        resolved = path.resolve()
 
-            if not candidate.is_file():
-                continue
+        for directory in SCAN_DIRS:
+            try:
+                resolved.relative_to(
+                    directory.resolve()
+                )
+                return True
+            except ValueError:
+                pass
 
-            if candidate.suffix.lower() not in COVER_EXTS:
-                continue
-
-            if candidate.stem.lower() == audio_path.stem.lower():
-                return candidate
+        return False
 
     except Exception:
-        pass
+        return False
+
+
+def find_sidecar_cover(path):
+    # song.mp3 -> song.jpg
+    # song.mp3 -> song.jpeg
+    # song.mp3 -> song.png
+    # song.mp3 -> song.webp
+
+    candidates = []
+
+    for extension in IMAGE_EXTS:
+        candidates.append(
+            path.with_suffix(extension)
+        )
+
+    # Также поддерживаем:
+    # cover.jpg
+    # folder.jpg
+    # front.jpg
+    # album.jpg
+
+    for name in (
+        "cover.jpg",
+        "cover.jpeg",
+        "cover.png",
+        "cover.webp",
+        "folder.jpg",
+        "folder.jpeg",
+        "folder.png",
+        "folder.webp",
+        "front.jpg",
+        "front.jpeg",
+        "front.png",
+        "front.webp",
+        "album.jpg",
+        "album.jpeg",
+        "album.png",
+        "album.webp",
+    ):
+        candidates.append(
+            path.parent / name
+        )
+
+    for candidate in candidates:
+        if (
+            candidate.exists()
+            and candidate.is_file()
+        ):
+            return candidate
 
     return None
 
 
-def save_cover_bytes(
-    data,
-    source_name
-):
-    extension = (
-        Path(source_name).suffix.lower()
-    )
-
-    if extension not in COVER_EXTS:
-        extension = ".jpg"
-
-    filename = (
-        f"{uuid.uuid4().hex}"
-        f"{extension}"
-    )
-
-    destination = COVER_DIR / filename
-
-    destination.write_bytes(data)
-
-    return (
-        f"/api/media/covers/{filename}"
-    )
-
-
-def copy_sidecar_cover(
-    audio_path,
-    existing_cover_url=None
-):
-    cover_path = find_sidecar_cover(
-        audio_path
-    )
-
-    if not cover_path:
-        return existing_cover_url
-
+def extract_embedded_cover(path):
     try:
-        # Стабильное имя на основе полного пути.
-        cover_name = (
-            f"{uuid.uuid5("
-            f"uuid.NAMESPACE_URL,"
-            f"str(audio_path.resolve())"
-            f")}"
-            f"{cover_path.suffix.lower()}"
-        )
-
-        destination = (
-            COVER_DIR / cover_name
-        )
-
-        if not destination.exists():
-
-            destination.write_bytes(
-                cover_path.read_bytes()
-            )
-
-        return (
-            f"/api/media/covers/"
-            f"{cover_name}"
-        )
-
-    except Exception as e:
-
-        print(
-            "[COVER WARNING]",
-            cover_path,
-            e
-        )
-
-        return existing_cover_url
-
-
-def extract_embedded_cover(audio_path):
-    try:
-
         from mutagen import File as MutagenFile
 
-        raw = MutagenFile(
-            str(audio_path)
+        audio = MutagenFile(
+            str(path)
         )
 
-        if not raw:
+        if not audio:
             return None
 
         pictures = getattr(
-            raw,
+            audio,
             "pictures",
-            None
+            None,
         )
 
         if pictures:
-            picture = pictures[0]
+            return pictures[0].data
 
-            extension = ".jpg"
+        # M4A / MP4
+        if getattr(
+            audio,
+            "tags",
+            None,
+        ):
+            covr = audio.tags.get(
+                "covr"
+            )
 
-            mime = (
-                getattr(
-                    picture,
-                    "mime",
-                    ""
+            if covr:
+                return bytes(
+                    covr[0]
                 )
-                or ""
-            ).lower()
 
-            if "png" in mime:
-                extension = ".png"
+    except Exception as exc:
+        print(
+            f"[COVER] "
+            f"embedded warning "
+            f"{path.name}: {exc}"
+        )
 
-            elif "webp" in mime:
-                extension = ".webp"
+    return None
 
-            filename = (
-                f"{uuid.uuid5("
-                f"uuid.NAMESPACE_URL,"
-                f"str(audio_path.resolve())"
-                f")}"
-                f"{extension}"
+
+def cover_for_track(path):
+    # --------------------------------------------------------
+    # 1. Separate cover рядом с MP3
+    # --------------------------------------------------------
+
+    sidecar = find_sidecar_cover(
+        path
+    )
+
+    if sidecar:
+        try:
+            cover_id = uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                str(path.resolve()),
             )
 
-            destination = (
-                COVER_DIR / filename
+            target = (
+                COVER_DIR
+                / f"{cover_id}"
+                f"{sidecar.suffix.lower()}"
             )
 
-            if not destination.exists():
-                destination.write_bytes(
-                    picture.data
+            if not target.exists():
+                target.write_bytes(
+                    sidecar.read_bytes()
                 )
 
             return (
                 f"/api/media/covers/"
-                f"{filename}"
+                f"{target.name}"
             )
 
-    except Exception as e:
+        except Exception as exc:
+            print(
+                f"[COVER] "
+                f"sidecar warning "
+                f"{path.name}: {exc}"
+            )
 
-        print(
-            "[EMBEDDED COVER WARNING]",
-            audio_path.name,
-            e
-        )
+    # --------------------------------------------------------
+    # 2. Embedded cover внутри MP3
+    # --------------------------------------------------------
+
+    embedded = extract_embedded_cover(
+        path
+    )
+
+    if embedded:
+        try:
+            cover_id = uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                str(path.resolve()),
+            )
+
+            target = (
+                COVER_DIR
+                / f"{cover_id}.jpg"
+            )
+
+            if not target.exists():
+                target.write_bytes(
+                    embedded
+                )
+
+            return (
+                f"/api/media/covers/"
+                f"{target.name}"
+            )
+
+        except Exception as exc:
+            print(
+                f"[COVER] "
+                f"embedded save warning "
+                f"{path.name}: {exc}"
+            )
 
     return None
 
@@ -1104,16 +1166,14 @@ def read_audio_metadata(path):
     duration = 0
 
     try:
-
         from mutagen import File as MutagenFile
 
         audio = MutagenFile(
             str(path),
-            easy=True
+            easy=True,
         )
 
         if audio:
-
             title = clean_name(
                 (
                     audio.get("title")
@@ -1146,187 +1206,134 @@ def read_audio_metadata(path):
                 getattr(
                     audio.info,
                     "length",
-                    0
+                    0,
                 )
                 or 0
             )
 
-    except Exception as e:
-
+    except Exception as exc:
         print(
-            "[METADATA WARNING]",
-            path.name,
-            e
+            f"[SCAN] "
+            f"metadata warning "
+            f"{path.name}: {exc}"
         )
 
-    # Сначала отдельная обложка рядом.
-    cover_url = copy_sidecar_cover(
+    return (
+        title,
+        artist,
+        album,
+        genre,
+        duration,
+    )
+
+
+def find_existing_track(
+    db,
+    path,
+):
+    absolute = str(
+        path.resolve()
+    )
+
+    relative = safe_relative_path(
         path
     )
 
-    # Если отдельной нет — пробуем встроенную.
-    if not cover_url:
-        cover_url = extract_embedded_cover(
-            path
-        )
+    raw = str(path)
 
-    return {
-        "title": title or "Untitled",
-        "artist": artist or "Unknown Artist",
-        "album": album or "Singles",
-        "genre": genre or "Unknown",
-        "duration": max(
-            0,
-            int(duration or 0)
-        ),
-        "cover_url": cover_url,
-    }
+    return (
+        db.query(Track)
+        .filter(
+            or_(
+                Track.audio_path == raw,
+                Track.audio_path == absolute,
+                Track.audio_path == relative,
+            )
+        )
+        .first()
+    )
 
 
 def scan_music_folder(db=None):
-    """
-    Автоматически сканирует:
-
-    backend/media/audio/
-    backend/media/music/
-
-    Основная папка:
-    backend/media/audio/
-    """
-
     own_db = db is None
 
-    if db is None:
+    if own_db:
         db = SessionLocal()
+
+    files = get_audio_files()
 
     imported = 0
     updated = 0
 
     try:
-
-        folders = []
-
-        for folder in (
-            AUDIO_DIR,
-            MUSIC_DIR,
-        ):
-            if folder.exists():
-                folders.append(folder)
-
-        files = []
-
-        seen_files = set()
-
-        for folder in folders:
-
-            for path in folder.rglob("*"):
-
-                if not path.is_file():
-                    continue
-
-                if path.suffix.lower() not in AUDIO_EXTS:
-                    continue
-
-                try:
-                    real_path = str(
-                        path.resolve()
-                    )
-                except Exception:
-                    real_path = str(path)
-
-                if real_path in seen_files:
-                    continue
-
-                seen_files.add(real_path)
-                files.append(path)
-
         for path in files:
+            existing = find_existing_track(
+                db,
+                path,
+            )
 
-            absolute_path = str(
+            (
+                title,
+                artist,
+                album,
+                genre,
+                duration,
+            ) = read_audio_metadata(path)
+
+            cover_url = cover_for_track(
+                path
+            )
+
+            audio_path = str(
                 path.resolve()
             )
 
-            relative_path = safe_relative_path(
-                path
-            )
-
-            # Ищем существующий трек
-            # сначала по абсолютному пути,
-            # потом по относительному.
-            existing = (
-                db.query(Track)
-                .filter(
-                    Track.audio_path == absolute_path
-                )
-                .first()
-            )
-
-            if not existing:
-
-                existing = (
-                    db.query(Track)
-                    .filter(
-                        Track.audio_path == relative_path
-                    )
-                    .first()
-                )
-
-            metadata = read_audio_metadata(
-                path
-            )
-
             if existing:
-
                 changed = False
 
-                if existing.audio_path != absolute_path:
-                    existing.audio_path = absolute_path
-                    changed = True
+                values = {
+                    "title": title,
+                    "artist": artist,
+                    "album": album,
+                    "genre": genre,
+                    "duration": duration,
+                    "cover_url": cover_url,
+                    "audio_path": audio_path,
+                }
 
-                fields = [
-                    "title",
-                    "artist",
-                    "album",
-                    "genre",
-                    "duration",
-                    "cover_url",
-                ]
-
-                for field in fields:
-
-                    value = metadata[field]
-
-                    if value is not None:
-                        if getattr(
+                for attribute, value in values.items():
+                    if (
+                        value is not None
+                        and getattr(
                             existing,
-                            field
-                        ) != value:
+                            attribute,
+                        ) != value
+                    ):
+                        setattr(
+                            existing,
+                            attribute,
+                            value,
+                        )
 
-                            setattr(
-                                existing,
-                                field,
-                                value
-                            )
-
-                            changed = True
+                        changed = True
 
                 if changed:
                     updated += 1
 
             else:
-
-                track = Track(
-                    title=metadata["title"],
-                    artist=metadata["artist"],
-                    album=metadata["album"],
-                    genre=metadata["genre"],
-                    duration=metadata["duration"],
-                    cover_url=metadata["cover_url"],
-                    audio_path=absolute_path,
-                    plays=0,
+                db.add(
+                    Track(
+                        title=title,
+                        artist=artist,
+                        album=album,
+                        genre=genre,
+                        duration=duration,
+                        cover_url=cover_url,
+                        audio_path=audio_path,
+                        plays=0,
+                    )
                 )
 
-                db.add(track)
                 imported += 1
 
         db.commit()
@@ -1335,32 +1342,53 @@ def scan_music_folder(db=None):
             "files": len(files),
             "imported": imported,
             "updated": updated,
-            "folders": [
-                str(x)
-                for x in folders
+            "directories": [
+                str(directory)
+                for directory in SCAN_DIRS
             ],
         }
 
         print(
-            "[SCAN]",
-            result
+            "[SCAN] "
+            f"files={len(files)} "
+            f"imported={imported} "
+            f"updated={updated}"
         )
 
         return result
 
     except Exception:
-
         db.rollback()
         raise
 
     finally:
-
         if own_db:
             db.close()
 
 
+def auto_scan_if_needed():
+    global _last_scan_at
+
+    now = time.time()
+
+    if (
+        now - _last_scan_at
+        < SCAN_INTERVAL
+    ):
+        return
+
+    _last_scan_at = now
+
+    try:
+        scan_music_folder()
+    except Exception as exc:
+        print(
+            f"[AUTO SCAN ERROR] {exc}"
+        )
+
+
 # ============================================================
-# API ROOT / HEALTH
+# API
 # ============================================================
 
 @app.get("/api")
@@ -1374,25 +1402,6 @@ def api_root():
 
 @app.get("/api/health")
 def health():
-
-    audio_files = [
-        p
-        for p in AUDIO_DIR.rglob("*")
-        if (
-            p.is_file()
-            and p.suffix.lower() in AUDIO_EXTS
-        )
-    ]
-
-    music_files = [
-        p
-        for p in MUSIC_DIR.rglob("*")
-        if (
-            p.is_file()
-            and p.suffix.lower() in AUDIO_EXTS
-        )
-    ]
-
     return {
         "status": "ok",
         "name": APP_NAME,
@@ -1401,8 +1410,12 @@ def health():
         "frontend": FRONTEND_INDEX.exists(),
         "audio_folder": str(AUDIO_DIR),
         "music_folder": str(MUSIC_DIR),
-        "audio_files": len(audio_files),
-        "music_files": len(music_files),
+        "uploads_folder": str(UPLOADS_DIR),
+        "covers_folder": str(COVER_DIR),
+        "scan_directories": [
+            str(directory)
+            for directory in SCAN_DIRS
+        ],
         "time": datetime.now(
             timezone.utc
         ).isoformat(),
@@ -1416,9 +1429,8 @@ def health():
 @app.post("/api/auth/register")
 def register(
     body: Register,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-
     email = (
         str(body.email)
         .lower()
@@ -1430,13 +1442,13 @@ def register(
     if len(username) < 3:
         raise HTTPException(
             400,
-            "Username must contain at least 3 characters"
+            "Username must contain at least 3 characters",
         )
 
     if len(body.password) < 6:
         raise HTTPException(
             400,
-            "Password must contain at least 6 characters"
+            "Password must contain at least 6 characters",
         )
 
     exists = (
@@ -1444,7 +1456,7 @@ def register(
         .filter(
             or_(
                 User.email == email,
-                User.username == username
+                User.username == username,
             )
         )
         .first()
@@ -1453,7 +1465,7 @@ def register(
     if exists:
         raise HTTPException(
             409,
-            "Email or username already exists"
+            "Email or username already exists",
         )
 
     user = User(
@@ -1478,19 +1490,13 @@ def register(
 @app.post("/api/auth/login")
 def login(
     body: Login,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-
-    email = (
-        str(body.email)
-        .lower()
-        .strip()
-    )
-
     user = (
         db.query(User)
         .filter(
-            User.email == email
+            User.email
+            == str(body.email).lower().strip()
         )
         .first()
     )
@@ -1499,12 +1505,12 @@ def login(
         not user
         or not pwd.verify(
             body.password,
-            user.password_hash
+            user.password_hash,
         )
     ):
         raise HTTPException(
             401,
-            "Invalid email or password"
+            "Invalid email or password",
         )
 
     return {
@@ -1515,7 +1521,7 @@ def login(
 
 @app.get("/api/auth/me")
 def me(
-    user=Depends(current_user)
+    user=Depends(current_user),
 ):
     return user_json(user)
 
@@ -1526,22 +1532,20 @@ def update_me(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     if body.username is not None:
+        username = body.username.strip()
 
-        name = body.username.strip()
-
-        if len(name) < 3:
+        if len(username) < 3:
             raise HTTPException(
                 400,
-                "Username too short"
+                "Username too short",
             )
 
         exists = (
             db.query(User)
             .filter(
-                User.username == name,
-                User.id != user.id
+                User.username == username,
+                User.id != user.id,
             )
             .first()
         )
@@ -1549,10 +1553,10 @@ def update_me(
         if exists:
             raise HTTPException(
                 409,
-                "Username already exists"
+                "Username already exists",
             )
 
-        user.username = name
+        user.username = username
 
     if body.avatar_url is not None:
         user.avatar_url = body.avatar_url
@@ -1576,21 +1580,21 @@ def tracks(
     offset: int = 0,
     db: Session = Depends(get_db),
 ):
+    auto_scan_if_needed()
 
     limit = max(
         1,
-        min(limit, 500)
+        min(limit, 500),
     )
 
     offset = max(
         0,
-        offset
+        offset,
     )
 
     query = db.query(Track)
 
     if q:
-
         pattern = f"%{q}%"
 
         query = query.filter(
@@ -1611,39 +1615,35 @@ def tracks(
         query = query.order_by(
             func.random()
         )
-
     else:
         query = query.order_by(
             Track.created_at.desc(),
-            Track.id.desc()
+            Track.id.desc(),
         )
 
     return [
         track_json(track)
-        for track in (
-            query
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        for track in query
+        .offset(offset)
+        .limit(limit)
+        .all()
     ]
 
 
 @app.get("/api/tracks/{track_id}")
 def one_track(
     track_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-
     track = db.get(
         Track,
-        track_id
+        track_id,
     )
 
     if not track:
         raise HTTPException(
             404,
-            "Track not found"
+            "Track not found",
         )
 
     return track_json(track)
@@ -1652,31 +1652,40 @@ def one_track(
 @app.get("/api/tracks/{track_id}/stream")
 def stream(
     track_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-
     track = db.get(
         Track,
-        track_id
+        track_id,
     )
 
-    if not track or not track.audio_path:
+    if (
+        not track
+        or not track.audio_path
+    ):
         raise HTTPException(
             404,
-            "Audio file not found"
+            "Audio file not found",
         )
 
-    path = Path(
+    path = resolve_audio_path(
         track.audio_path
     )
 
-    if not path.is_absolute():
-        path = BASE_DIR / path
-
-    if not path.exists():
+    if (
+        not path
+        or not path.exists()
+        or not path.is_file()
+    ):
         raise HTTPException(
             404,
-            "Audio file missing"
+            "Audio file missing",
+        )
+
+    if not path_is_inside_media(path):
+        raise HTTPException(
+            403,
+            "Audio file is outside media directories",
         )
 
     track.plays = (
@@ -1695,14 +1704,14 @@ def stream(
         ".opus": "audio/ogg",
     }
 
-    mime = mime_types.get(
+    media_type = mime_types.get(
         path.suffix.lower(),
-        "audio/mpeg"
+        "application/octet-stream",
     )
 
     return FileResponse(
         path,
-        media_type=mime,
+        media_type=media_type,
         filename=path.name,
         headers={
             "Accept-Ranges": "bytes",
@@ -1711,15 +1720,12 @@ def stream(
     )
 
 
-# ============================================================
-# SEARCH / RECOMMENDATIONS
-# ============================================================
-
 @app.get("/api/search")
 def search(
     q: str = Query(min_length=1),
     db: Session = Depends(get_db),
 ):
+    auto_scan_if_needed()
 
     pattern = f"%{q}%"
 
@@ -1742,17 +1748,21 @@ def search(
 
     return {
         "tracks": [
-            track_json(t)
-            for t in found
+            track_json(track)
+            for track in found
         ],
-        "artists": sorted({
-            t.artist
-            for t in found
-        }),
-        "albums": sorted({
-            t.album
-            for t in found
-        }),
+        "artists": sorted(
+            {
+                track.artist
+                for track in found
+            }
+        ),
+        "albums": sorted(
+            {
+                track.album
+                for track in found
+            }
+        ),
         "playlists": [],
     }
 
@@ -1760,22 +1770,21 @@ def search(
 @app.get("/api/recommendations")
 def recommendations(
     limit: int = 30,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    auto_scan_if_needed()
 
     limit = max(
         1,
-        min(limit, 100)
+        min(limit, 100),
     )
 
     return [
-        track_json(t)
-        for t in (
-            db.query(Track)
-            .order_by(func.random())
-            .limit(limit)
-            .all()
-        )
+        track_json(track)
+        for track in db.query(Track)
+        .order_by(func.random())
+        .limit(limit)
+        .all()
     ]
 
 
@@ -1786,21 +1795,16 @@ def recommendations(
 @app.get("/api/library/likes")
 def likes(
     user=Depends(current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-
     ids = [
         row.track_id
-        for row in (
-            db.query(Like)
-            .filter_by(
-                user_id=user.id
-            )
-            .all()
-        )
+        for row in db.query(Like)
+        .filter_by(user_id=user.id)
+        .all()
     ]
 
-    tracks_found = (
+    tracks_list = (
         db.query(Track)
         .filter(
             Track.id.in_(ids)
@@ -1813,8 +1817,8 @@ def likes(
     return {
         "track_ids": ids,
         "tracks": [
-            track_json(t)
-            for t in tracks_found
+            track_json(track)
+            for track in tracks_list
         ],
     }
 
@@ -1826,36 +1830,33 @@ def like(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     if not db.get(
         Track,
-        track_id
+        track_id,
     ):
         raise HTTPException(
             404,
-            "Track not found"
+            "Track not found",
         )
 
     row = (
         db.query(Like)
         .filter_by(
             user_id=user.id,
-            track_id=track_id
+            track_id=track_id,
         )
         .first()
     )
 
     if body.liked and not row:
-
         db.add(
             Like(
                 user_id=user.id,
-                track_id=track_id
+                track_id=track_id,
             )
         )
 
     elif not body.liked and row:
-
         db.delete(row)
 
     db.commit()
@@ -1876,27 +1877,26 @@ def add_history(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     if not db.get(
         Track,
-        track_id
+        track_id,
     ):
         raise HTTPException(
             404,
-            "Track not found"
+            "Track not found",
         )
 
     db.add(
         History(
             user_id=user.id,
-            track_id=track_id
+            track_id=track_id,
         )
     )
 
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -1905,7 +1905,6 @@ def history(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     rows = (
         db.query(History)
         .filter_by(
@@ -1921,18 +1920,18 @@ def history(
     result = []
 
     for row in rows:
-
         track = db.get(
             Track,
-            row.track_id
+            row.track_id,
         )
 
         if track:
-
-            result.append({
-                "played_at": row.played_at,
-                "track": track_json(track),
-            })
+            result.append(
+                {
+                    "played_at": row.played_at,
+                    "track": track_json(track),
+                }
+            )
 
     return result
 
@@ -1946,7 +1945,6 @@ def playlists(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     rows = (
         db.query(Playlist)
         .filter_by(
@@ -1961,7 +1959,6 @@ def playlists(
     result = []
 
     for playlist in rows:
-
         links = (
             db.query(PlaylistTrack)
             .filter_by(
@@ -1976,10 +1973,9 @@ def playlists(
         playlist_tracks = []
 
         for link in links:
-
             track = db.get(
                 Track,
-                link.track_id
+                link.track_id,
             )
 
             if track:
@@ -1987,19 +1983,21 @@ def playlists(
                     track_json(track)
                 )
 
-        result.append({
-            "id": playlist.id,
-            "name": playlist.name,
-            "description": (
-                playlist.description
-                or ""
-            ),
-            "cover_url": playlist.cover_url,
-            "is_public": bool(
-                playlist.is_public
-            ),
-            "tracks": playlist_tracks,
-        })
+        result.append(
+            {
+                "id": playlist.id,
+                "name": playlist.name,
+                "description": (
+                    playlist.description
+                    or ""
+                ),
+                "cover_url": playlist.cover_url,
+                "is_public": bool(
+                    playlist.is_public
+                ),
+                "tracks": playlist_tracks,
+            }
+        )
 
     return result
 
@@ -2010,13 +2008,12 @@ def create_playlist(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     name = body.name.strip()
 
     if not name:
         raise HTTPException(
             400,
-            "Playlist name is required"
+            "Playlist name is required",
         )
 
     playlist = Playlist(
@@ -2044,12 +2041,11 @@ def delete_playlist(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     playlist = (
         db.query(Playlist)
         .filter_by(
             id=playlist_id,
-            user_id=user.id
+            user_id=user.id,
         )
         .first()
     )
@@ -2057,7 +2053,7 @@ def delete_playlist(
     if not playlist:
         raise HTTPException(
             404,
-            "Playlist not found"
+            "Playlist not found",
         )
 
     (
@@ -2074,51 +2070,47 @@ def delete_playlist(
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
-@app.post(
-    "/api/playlists/{playlist_id}/tracks"
-)
+@app.post("/api/playlists/{playlist_id}/tracks")
 def playlist_add(
     playlist_id: int,
     body: PlaylistTrackBody,
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     playlist = (
         db.query(Playlist)
         .filter_by(
             id=playlist_id,
-            user_id=user.id
+            user_id=user.id,
         )
         .first()
     )
 
     track = db.get(
         Track,
-        body.track_id
+        body.track_id,
     )
 
     if not playlist or not track:
         raise HTTPException(
             404,
-            "Playlist or track not found"
+            "Playlist or track not found",
         )
 
     exists = (
         db.query(PlaylistTrack)
         .filter_by(
             playlist_id=playlist_id,
-            track_id=track.id
+            track_id=track.id,
         )
         .first()
     )
 
     if not exists:
-
         position = (
             db.query(
                 func.count(
@@ -2136,14 +2128,14 @@ def playlist_add(
             PlaylistTrack(
                 playlist_id=playlist_id,
                 track_id=track.id,
-                position=int(position)
+                position=int(position),
             )
         )
 
         db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -2156,12 +2148,11 @@ def playlist_remove(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     playlist = (
         db.query(Playlist)
         .filter_by(
             id=playlist_id,
-            user_id=user.id
+            user_id=user.id,
         )
         .first()
     )
@@ -2170,7 +2161,7 @@ def playlist_remove(
         db.query(PlaylistTrack)
         .filter_by(
             playlist_id=playlist_id,
-            track_id=track_id
+            track_id=track_id,
         )
         .first()
     )
@@ -2178,37 +2169,40 @@ def playlist_remove(
     if not playlist or not row:
         raise HTTPException(
             404,
-            "Not found"
+            "Not found",
         )
 
     db.delete(row)
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
 # ============================================================
-# ARTISTS / ALBUMS
+# ARTISTS / ALBUMS / PROFILE
 # ============================================================
 
 @app.get("/api/artists")
 def artists(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    auto_scan_if_needed()
 
     rows = (
         db.query(
             Track.artist,
             func.sum(Track.plays),
-            func.count(Track.id)
+            func.count(Track.id),
         )
         .group_by(
             Track.artist
         )
         .order_by(
-            func.sum(Track.plays).desc()
+            func.sum(
+                Track.plays
+            ).desc()
         )
         .all()
     )
@@ -2219,9 +2213,7 @@ def artists(
             "plays": int(
                 plays or 0
             ),
-            "tracks": int(
-                count
-            ),
+            "tracks": int(count),
         }
         for artist, plays, count in rows
     ]
@@ -2229,21 +2221,24 @@ def artists(
 
 @app.get("/api/albums")
 def albums(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
+    auto_scan_if_needed()
 
     rows = (
         db.query(
             Track.album,
             Track.artist,
-            func.count(Track.id)
+            func.count(Track.id),
         )
         .group_by(
             Track.album,
-            Track.artist
+            Track.artist,
         )
         .order_by(
-            func.count(Track.id).desc()
+            func.count(
+                Track.id
+            ).desc()
         )
         .all()
     )
@@ -2258,16 +2253,11 @@ def albums(
     ]
 
 
-# ============================================================
-# PROFILE STATS
-# ============================================================
-
 @app.get("/api/profile/stats")
 def profile_stats(
     user=Depends(current_user),
     db: Session = Depends(get_db),
 ):
-
     liked = (
         db.query(Like)
         .filter_by(
@@ -2298,15 +2288,17 @@ def profile_stats(
                 func.sum(
                     Track.duration
                 ),
-                0
+                0,
             )
         )
         .join(
             History,
-            History.track_id == Track.id
+            History.track_id
+            == Track.id,
         )
         .filter(
-            History.user_id == user.id
+            History.user_id
+            == user.id
         )
         .scalar()
         or 0
@@ -2323,7 +2315,7 @@ def profile_stats(
 
 
 # ============================================================
-# ADMIN LIBRARY SCAN
+# ADMIN
 # ============================================================
 
 @app.post("/api/admin/library/scan")
@@ -2331,13 +2323,14 @@ def admin_scan(
     user=Depends(admin_user),
     db: Session = Depends(get_db),
 ):
+    global _last_scan_at
 
-    return scan_music_folder(db)
+    _last_scan_at = time.time()
 
+    return scan_music_folder(
+        db
+    )
 
-# ============================================================
-# ADMIN UPLOAD
-# ============================================================
 
 @app.post("/api/admin/tracks")
 async def upload_track(
@@ -2351,27 +2344,24 @@ async def upload_track(
     user=Depends(admin_user),
     db: Session = Depends(get_db),
 ):
-
     original_name = (
         audio.filename
         or "audio.mp3"
     )
 
-    safe = re.sub(
+    safe_name = re.sub(
         r"[^a-zA-Z0-9._-]",
         "_",
-        original_name
+        original_name,
     )
 
     path = (
         AUDIO_DIR
-        / f"{uuid.uuid4().hex}_{safe}"
+        / f"{uuid.uuid4().hex}_{safe_name}"
     )
 
-    with path.open("wb") as file:
-
+    with path.open("wb") as output:
         while True:
-
             chunk = await audio.read(
                 1024 * 1024
             )
@@ -2379,32 +2369,30 @@ async def upload_track(
             if not chunk:
                 break
 
-            file.write(chunk)
+            output.write(chunk)
 
     cover_url = None
 
     if cover:
-
-        cover_name = (
+        original_cover_name = (
             cover.filename
             or "cover.jpg"
         )
 
-        safe_cover = re.sub(
+        safe_cover_name = re.sub(
             r"[^a-zA-Z0-9._-]",
             "_",
-            cover_name
+            original_cover_name,
         )
 
         cover_path = (
             COVER_DIR
-            / f"{uuid.uuid4().hex}_{safe_cover}"
+            / f"{uuid.uuid4().hex}_"
+            f"{safe_cover_name}"
         )
 
-        with cover_path.open("wb") as file:
-
+        with cover_path.open("wb") as output:
             while True:
-
                 chunk = await cover.read(
                     1024 * 1024
                 )
@@ -2412,31 +2400,21 @@ async def upload_track(
                 if not chunk:
                     break
 
-                file.write(chunk)
+                output.write(chunk)
 
         cover_url = (
             f"/api/media/covers/"
             f"{cover_path.name}"
         )
 
-    else:
-
-        metadata = read_audio_metadata(
-            path
-        )
-
-        cover_url = metadata.get(
-            "cover_url"
-        )
-
     track = Track(
         title=title.strip(),
         artist=artist.strip(),
         album=album.strip(),
-        genre=genre.strip(),
+        genre=genre.strip() or "Unknown",
         duration=max(
             0,
-            duration
+            duration,
         ),
         cover_url=cover_url,
         audio_path=str(
@@ -2452,19 +2430,14 @@ async def upload_track(
     return track_json(track)
 
 
-# ============================================================
-# ADMIN USERS / STATS
-# ============================================================
-
 @app.get("/api/admin/users")
 def admin_users(
     user=Depends(admin_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-
     return [
-        user_json(u)
-        for u in (
+        user_json(item)
+        for item in (
             db.query(User)
             .order_by(
                 User.created_at.desc()
@@ -2478,26 +2451,9 @@ def admin_users(
 @app.get("/api/admin/stats")
 def admin_stats(
     user=Depends(admin_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-
-    audio_files = [
-        p
-        for p in AUDIO_DIR.rglob("*")
-        if (
-            p.is_file()
-            and p.suffix.lower() in AUDIO_EXTS
-        )
-    ]
-
-    music_files = [
-        p
-        for p in MUSIC_DIR.rglob("*")
-        if (
-            p.is_file()
-            and p.suffix.lower() in AUDIO_EXTS
-        )
-    ]
+    auto_scan_if_needed()
 
     return {
         "users": db.query(User).count(),
@@ -2505,31 +2461,25 @@ def admin_stats(
         "plays": int(
             db.query(
                 func.coalesce(
-                    func.sum(Track.plays),
-                    0
+                    func.sum(
+                        Track.plays
+                    ),
+                    0,
                 )
             ).scalar()
             or 0
         ),
-        "likes": db.query(Like).count(),
+        "likes": db.query(
+            Like
+        ).count(),
         "playlists": db.query(
             Playlist
         ).count(),
-        "audio_files": len(
-            audio_files
-        ),
         "music_files": len(
-            music_files
-        ),
-        "music_folder": str(
-            AUDIO_DIR
+            get_audio_files()
         ),
     }
 
-
-# ============================================================
-# ADMIN DELETE TRACK
-# ============================================================
 
 @app.delete("/api/admin/tracks/{track_id}")
 def admin_delete(
@@ -2537,33 +2487,53 @@ def admin_delete(
     user=Depends(admin_user),
     db: Session = Depends(get_db),
 ):
-
     track = db.get(
         Track,
-        track_id
+        track_id,
     )
 
     if not track:
         raise HTTPException(
             404,
-            "Track not found"
+            "Track not found",
         )
 
-    # Удаляем аудио
-    if track.audio_path:
+    audio_path = resolve_audio_path(
+        track.audio_path
+    )
 
+    if (
+        audio_path
+        and audio_path.exists()
+        and path_is_inside_media(
+            audio_path
+        )
+    ):
         try:
-
-            Path(
-                track.audio_path
-            ).unlink(
+            audio_path.unlink(
                 missing_ok=True
             )
-
         except Exception:
             pass
 
-    # Удаляем связанные записи
+    if track.cover_url:
+        cover_name = (
+            track.cover_url
+            .rsplit("/", 1)[-1]
+        )
+
+        cover_path = (
+            COVER_DIR
+            / Path(cover_name).name
+        )
+
+        try:
+            cover_path.unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
+
     (
         db.query(Like)
         .filter_by(
@@ -2598,7 +2568,7 @@ def admin_delete(
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -2607,38 +2577,35 @@ def admin_delete(
 # ============================================================
 
 @app.get("/api/media/covers/{filename}")
-def cover(
-    filename: str
-):
-
-    safe_name = Path(
+def cover(filename: str):
+    safe_filename = Path(
         filename
     ).name
 
     path = (
         COVER_DIR
-        / safe_name
+        / safe_filename
     )
 
-    if not path.exists():
+    if (
+        not path.exists()
+        or not path.is_file()
+    ):
         raise HTTPException(
             404,
-            "Cover not found"
+            "Cover not found",
         )
 
-    return FileResponse(
-        path
-    )
+    return FileResponse(path)
 
 
 # ============================================================
-# FRONTEND STATIC FILES
+# FRONTEND
 # ============================================================
 
 if (
     FRONTEND_DIST / "assets"
 ).exists():
-
     app.mount(
         "/assets",
         StaticFiles(
@@ -2652,10 +2619,9 @@ if (
 
 @app.get(
     "/",
-    include_in_schema=False
+    include_in_schema=False,
 )
 def frontend_root():
-
     if FRONTEND_INDEX.exists():
         return FileResponse(
             FRONTEND_INDEX
@@ -2667,50 +2633,45 @@ def frontend_root():
         "status": "online",
         "frontend": False,
         "message": (
-            "frontend/dist/index.html "
-            "not found"
+            "frontend/dist/"
+            "index.html not found"
         ),
     }
 
 
 @app.get(
     "/{full_path:path}",
-    include_in_schema=False
+    include_in_schema=False,
 )
-def spa(
-    full_path: str
-):
-
+def spa(full_path: str):
     if (
         full_path == "api"
         or full_path.startswith("api/")
     ):
         raise HTTPException(
             404,
-            "API route not found"
+            "API route not found",
         )
 
     if not FRONTEND_INDEX.exists():
         raise HTTPException(
             404,
-            "Frontend build not found"
+            "Frontend build not found",
         )
 
     requested = (
-        FRONTEND_DIST / full_path
+        FRONTEND_DIST
+        / full_path
     )
 
     try:
-
         requested.resolve().relative_to(
             FRONTEND_DIST.resolve()
         )
-
     except ValueError:
-
         raise HTTPException(
             404,
-            "Not found"
+            "Not found",
         )
 
     if (
@@ -2732,37 +2693,47 @@ def spa(
 
 @app.on_event("startup")
 def startup():
-
     print("=" * 68)
     print("FENIX MUSIC 6.1 STARTING")
     print(
-        f"Database: {engine.dialect.name}"
+        f"Database: "
+        f"{engine.dialect.name}"
     )
     print(
-        f"Frontend: {FRONTEND_INDEX.exists()}"
+        f"Frontend: "
+        f"{FRONTEND_INDEX.exists()}"
     )
     print(
-        f"Audio folder: {AUDIO_DIR}"
+        f"Audio folder: "
+        f"{AUDIO_DIR}"
     )
     print(
-        f"Music folder: {MUSIC_DIR}"
+        f"Music folder: "
+        f"{MUSIC_DIR}"
+    )
+    print(
+        f"Uploads folder: "
+        f"{UPLOADS_DIR}"
+    )
+    print(
+        f"Cover folder: "
+        f"{COVER_DIR}"
     )
     print("=" * 68)
 
     try:
-
         result = scan_music_folder()
 
         print(
-            "[STARTUP SCAN COMPLETE]",
-            result
+            "[STARTUP SCAN] "
+            f"files={result['files']} "
+            f"imported={result['imported']} "
+            f"updated={result['updated']}"
         )
 
-    except Exception as e:
-
+    except Exception as exc:
         print(
-            "[SCAN ERROR]",
-            repr(e)
+            f"[SCAN ERROR] {exc}"
         )
 
 
@@ -2771,7 +2742,6 @@ def startup():
 # ============================================================
 
 if __name__ == "__main__":
-
     import uvicorn
 
     uvicorn.run(
@@ -2780,7 +2750,7 @@ if __name__ == "__main__":
         port=int(
             os.getenv(
                 "PORT",
-                "8000"
+                "8000",
             )
         ),
         reload=False,
