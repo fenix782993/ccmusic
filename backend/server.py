@@ -15,9 +15,15 @@ from fastapi import (
     File,
     Form,
     Query,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, EmailStr
@@ -45,7 +51,7 @@ from passlib.context import CryptContext
 # APP
 # ============================================================
 
-APP_VERSION = "8.0.2"
+APP_VERSION = "8.0.3"
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
@@ -2228,11 +2234,77 @@ def get_track(
 # STREAM
 # ============================================================
 
-@app.get("/api/tracks/{track_id}/stream")
-def stream(
+AUDIO_MIME_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".opus": "audio/ogg",
+}
+
+
+def get_audio_mime(
+    path: Path,
+) -> str:
+
+    return AUDIO_MIME_TYPES.get(
+        path.suffix.lower(),
+        "application/octet-stream",
+    )
+
+
+def iter_file_range(
+    path: Path,
+    start: int,
+    end: int,
+    chunk_size: int = 1024 * 1024,
+):
+    """
+    Reads an audio file in chunks.
+
+    This is important for browser audio playback
+    because browsers use HTTP Range requests.
+    """
+
+    with path.open("rb") as file:
+
+        file.seek(start)
+
+        remaining = (
+            end - start + 1
+        )
+
+        while remaining > 0:
+
+            chunk = file.read(
+                min(
+                    chunk_size,
+                    remaining,
+                )
+            )
+
+            if not chunk:
+                break
+
+            remaining -= len(chunk)
+
+            yield chunk
+
+
+@app.get(
+    "/api/tracks/{track_id}/stream"
+)
+async def stream(
     track_id: int,
+    request: Request,
     db: Session = Depends(db_dep),
 ):
+
+    # --------------------------------------------------------
+    # TRACK
+    # --------------------------------------------------------
 
     track = db.get(
         Track,
@@ -2246,46 +2318,297 @@ def stream(
             detail="Track not found",
         )
 
+    # --------------------------------------------------------
+    # AUDIO FILE
+    # --------------------------------------------------------
+
     path = resolve_audio_path(
         track.audio_path
     )
 
     if not path:
 
+        print(
+            "[STREAM] Audio file not found: "
+            f"track_id={track_id} "
+            f"audio_path={track.audio_path}"
+        )
+
         raise HTTPException(
             status_code=404,
             detail="Audio file not found",
         )
 
-    track.plays = (
-        int(track.plays or 0)
-        + 1
-    )
+    # --------------------------------------------------------
+    # FILE SIZE
+    # --------------------------------------------------------
 
     try:
-        db.commit()
-    except Exception:
-        db.rollback()
 
-    extension = path.suffix.lower()
+        file_size = path.stat().st_size
 
-    mime = {
-        ".mp3": "audio/mpeg",
-        ".m4a": "audio/mp4",
-        ".aac": "audio/aac",
-        ".ogg": "audio/ogg",
-        ".wav": "audio/wav",
-        ".flac": "audio/flac",
-        ".opus": "audio/ogg",
-    }.get(
-        extension,
-        "application/octet-stream",
+    except Exception as exc:
+
+        print(
+            "[STREAM] Cannot stat file: "
+            f"{exc}"
+        )
+
+        raise HTTPException(
+            status_code=500,
+            detail="Cannot read audio file",
+        )
+
+    if file_size <= 0:
+
+        raise HTTPException(
+            status_code=404,
+            detail="Audio file is empty",
+        )
+
+    # --------------------------------------------------------
+    # MIME
+    # --------------------------------------------------------
+
+    mime = get_audio_mime(
+        path
     )
 
-    return FileResponse(
-        path,
+    # --------------------------------------------------------
+    # RANGE
+    # --------------------------------------------------------
+
+    range_header = request.headers.get(
+        "range"
+    )
+
+    # --------------------------------------------------------
+    # FULL FILE
+    # --------------------------------------------------------
+
+    if not range_header:
+
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(
+                file_size
+            ),
+            "Content-Disposition": (
+                f'inline; filename="{path.name}"'
+            ),
+            "Cache-Control": (
+                "public, max-age=3600"
+            ),
+        }
+
+        print(
+            "[STREAM] Full file: "
+            f"track_id={track_id} "
+            f"size={file_size} "
+            f"type={mime}"
+        )
+
+        return StreamingResponse(
+            iter_file_range(
+                path,
+                0,
+                file_size - 1,
+            ),
+            status_code=200,
+            media_type=mime,
+            headers=headers,
+        )
+
+    # --------------------------------------------------------
+    # RANGE HEADER VALIDATION
+    # --------------------------------------------------------
+
+    if not range_header.startswith(
+        "bytes="
+    ):
+
+        return Response(
+            status_code=416,
+            headers={
+                "Content-Range": (
+                    f"bytes */{file_size}"
+                ),
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    range_value = (
+        range_header[6:]
+        .strip()
+    )
+
+    # --------------------------------------------------------
+    # MULTIPLE RANGES
+    # --------------------------------------------------------
+
+    if "," in range_value:
+
+        range_value = (
+            range_value
+            .split(",", 1)[0]
+            .strip()
+        )
+
+    # --------------------------------------------------------
+    # PARSE RANGE
+    # --------------------------------------------------------
+
+    try:
+
+        start_text, end_text = (
+            range_value.split(
+                "-",
+                1,
+            )
+        )
+
+        # bytes=1000-2000
+        if start_text:
+
+            start = int(
+                start_text
+            )
+
+            # bytes=1000-2000
+            if end_text:
+
+                end = int(
+                    end_text
+                )
+
+            # bytes=1000-
+            else:
+
+                end = (
+                    file_size - 1
+                )
+
+        # bytes=-500000
+        else:
+
+            suffix_length = int(
+                end_text
+            )
+
+            if suffix_length <= 0:
+                raise ValueError
+
+            suffix_length = min(
+                suffix_length,
+                file_size,
+            )
+
+            start = (
+                file_size
+                - suffix_length
+            )
+
+            end = (
+                file_size - 1
+            )
+
+    except (
+        ValueError,
+        TypeError,
+    ):
+
+        return Response(
+            status_code=416,
+            headers={
+                "Content-Range": (
+                    f"bytes */{file_size}"
+                ),
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    # --------------------------------------------------------
+    # NORMALIZE RANGE
+    # --------------------------------------------------------
+
+    if start < 0:
+        start = 0
+
+    if start >= file_size:
+
+        return Response(
+            status_code=416,
+            headers={
+                "Content-Range": (
+                    f"bytes */{file_size}"
+                ),
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    end = min(
+        end,
+        file_size - 1,
+    )
+
+    if end < start:
+
+        return Response(
+            status_code=416,
+            headers={
+                "Content-Range": (
+                    f"bytes */{file_size}"
+                ),
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    # --------------------------------------------------------
+    # RANGE LENGTH
+    # --------------------------------------------------------
+
+    content_length = (
+        end - start + 1
+    )
+
+    # --------------------------------------------------------
+    # RANGE RESPONSE
+    # --------------------------------------------------------
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(
+            content_length
+        ),
+        "Content-Range": (
+            f"bytes "
+            f"{start}-{end}/"
+            f"{file_size}"
+        ),
+        "Content-Disposition": (
+            f'inline; filename="{path.name}"'
+        ),
+        "Cache-Control": (
+            "public, max-age=3600"
+        ),
+    }
+
+    print(
+        "[STREAM] Range: "
+        f"track_id={track_id} "
+        f"bytes={start}-{end}/"
+        f"{file_size}"
+    )
+
+    return StreamingResponse(
+        iter_file_range(
+            path,
+            start,
+            end,
+        ),
+        status_code=206,
         media_type=mime,
-        filename=path.name,
+        headers=headers,
     )
 
 
