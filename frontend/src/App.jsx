@@ -2135,3 +2135,4 @@ createRoot(rootElement).render(
     <App />
   </React.StrictMode>
 );
+export default App;
