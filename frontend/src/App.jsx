@@ -1,94 +1,154 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 const API_BASE = "https://ccmusice.onrender.com";
 
-const NAV_ITEMS = [
-  { id: "home", label: "Главная", icon: "⌂" },
-  { id: "recommendations", label: "Для вас", icon: "✦" },
-  { id: "new", label: "Новинки", icon: "◈" },
-  { id: "popular", label: "Популярное", icon: "🔥" },
-  { id: "mixes", label: "Миксы", icon: "♫" },
-  { id: "library", label: "Моя музыка", icon: "♡" },
-  { id: "history", label: "История", icon: "↶" },
-];
-
-const DEMO_TRACKS = [
+const FALLBACK_TRACKS = [
   {
     id: "demo-1",
     title: "Neon Dreams",
     artist_name: "Fenix Music",
     album_name: "Fenix Originals",
-    cover_url: "",
-    audio_url: "",
     duration: 218,
     plays_count: 12453,
+    audio_url: "",
+    cover_url: "",
   },
   {
     id: "demo-2",
     title: "Night Drive",
     artist_name: "Fenix Music",
     album_name: "Night Collection",
-    cover_url: "",
-    audio_url: "",
     duration: 194,
     plays_count: 9832,
+    audio_url: "",
+    cover_url: "",
   },
   {
     id: "demo-3",
     title: "After Dark",
     artist_name: "Fenix Music",
     album_name: "After Dark",
-    cover_url: "",
-    audio_url: "",
     duration: 231,
     plays_count: 8421,
+    audio_url: "",
+    cover_url: "",
   },
   {
     id: "demo-4",
     title: "Red Lights",
     artist_name: "Fenix Music",
     album_name: "Neon City",
-    cover_url: "",
-    audio_url: "",
     duration: 207,
     plays_count: 7314,
+    audio_url: "",
+    cover_url: "",
   },
   {
     id: "demo-5",
     title: "Midnight",
     artist_name: "Fenix Music",
     album_name: "Midnight",
-    cover_url: "",
-    audio_url: "",
     duration: 245,
     plays_count: 6211,
+    audio_url: "",
+    cover_url: "",
   },
   {
     id: "demo-6",
     title: "Electric Heart",
     artist_name: "Fenix Music",
     album_name: "Electric",
-    cover_url: "",
-    audio_url: "",
     duration: 201,
     plays_count: 5842,
+    audio_url: "",
+    cover_url: "",
+  },
+  {
+    id: "demo-7",
+    title: "Lost In The City",
+    artist_name: "Fenix Music",
+    album_name: "City Lights",
+    duration: 226,
+    plays_count: 5121,
+    audio_url: "",
+    cover_url: "",
+  },
+  {
+    id: "demo-8",
+    title: "Zero Gravity",
+    artist_name: "Fenix Music",
+    album_name: "Gravity",
+    duration: 238,
+    plays_count: 4877,
+    audio_url: "",
+    cover_url: "",
   },
 ];
 
-function apiUrl(url) {
-  if (!url) {
+const NAVIGATION = [
+  {
+    id: "home",
+    title: "Главная",
+    icon: "⌂",
+  },
+  {
+    id: "for-you",
+    title: "Для вас",
+    icon: "✦",
+  },
+  {
+    id: "new",
+    title: "Новинки",
+    icon: "◈",
+  },
+  {
+    id: "popular",
+    title: "Популярное",
+    icon: "🔥",
+  },
+  {
+    id: "mixes",
+    title: "Миксы",
+    icon: "♫",
+  },
+];
+
+const LIBRARY_NAV = [
+  {
+    id: "history",
+    title: "История",
+    icon: "↶",
+  },
+  {
+    id: "favorites",
+    title: "Избранное",
+    icon: "♡",
+  },
+];
+
+function apiUrl(value) {
+  if (!value) {
     return API_BASE;
   }
 
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url;
+  if (
+    value.startsWith("http://") ||
+    value.startsWith("https://")
+  ) {
+    return value;
   }
 
-  return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+  return `${API_BASE}${value.startsWith("/") ? "" : "/"}${value}`;
 }
 
-async function apiFetch(url, options = {}) {
-  const response = await fetch(apiUrl(url), {
+async function apiFetch(endpoint, options = {}) {
+  const response = await fetch(apiUrl(endpoint), {
     credentials: "include",
     ...options,
     headers: {
@@ -99,10 +159,10 @@ async function apiFetch(url, options = {}) {
 
   const text = await response.text();
 
-  let data = null;
+  let data = {};
 
   try {
-    data = text ? JSON.parse(text) : null;
+    data = text ? JSON.parse(text) : {};
   } catch {
     data = {
       ok: false,
@@ -112,8 +172,8 @@ async function apiFetch(url, options = {}) {
 
   if (!response.ok) {
     throw new Error(
-      data?.error ||
-        data?.message ||
+      data.error ||
+        data.message ||
         `Ошибка сервера: ${response.status}`
     );
   }
@@ -121,17 +181,17 @@ async function apiFetch(url, options = {}) {
   return data;
 }
 
-function formatTime(seconds) {
-  const value = Number(seconds);
+function formatTime(value) {
+  const seconds = Number(value);
 
-  if (!Number.isFinite(value) || value <= 0) {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
     return "0:00";
   }
 
-  const minutes = Math.floor(value / 60);
-  const secs = Math.floor(value % 60);
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.floor(seconds % 60);
 
-  return `${minutes}:${String(secs).padStart(2, "0")}`;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
 function formatNumber(value) {
@@ -144,42 +204,60 @@ function formatNumber(value) {
   return new Intl.NumberFormat("ru-RU").format(number);
 }
 
-function getInitials(name) {
-  return String(name || "F")
-    .trim()
+function getInitials(value) {
+  const text = String(value || "F").trim();
+
+  if (!text) {
+    return "F";
+  }
+
+  return text
+    .split(/\s+/)
     .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join("")
     .toUpperCase();
 }
 
-function createCaptchaFallback() {
-  return String(Math.floor(1000 + Math.random() * 9000));
+function randomCaptcha() {
+  return String(
+    Math.floor(1000 + Math.random() * 9000)
+  );
 }
 
-function Cover({ track, size = "normal", playing = false }) {
-  const title = track?.title || "Fenix Music";
+function Cover({
+  track,
+  size = "medium",
+  playing = false,
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  const cover =
+    track?.cover_url && !imageFailed
+      ? apiUrl(track.cover_url)
+      : "";
 
   return (
     <div
       className={`fm-cover fm-cover-${size} ${
-        playing ? "fm-cover-playing" : ""
+        playing ? "is-playing" : ""
       }`}
     >
-      {track?.cover_url ? (
+      {cover ? (
         <img
-          src={apiUrl(track.cover_url)}
-          alt={title}
-          onError={(event) => {
-            event.currentTarget.style.display = "none";
-          }}
+          src={cover}
+          alt={track?.title || "Fenix Music"}
+          onError={() => setImageFailed(true)}
         />
-      ) : null}
-
-      <div className="fm-cover-fallback">
-        <span>F</span>
-      </div>
+      ) : (
+        <div className="fm-cover-generated">
+          <div className="fm-cover-glow" />
+          <span>F</span>
+        </div>
+      )}
 
       {playing ? (
-        <div className="fm-cover-bars">
+        <div className="fm-cover-equalizer">
           <i />
           <i />
           <i />
@@ -190,27 +268,83 @@ function Cover({ track, size = "normal", playing = false }) {
   );
 }
 
-function Icon({ children }) {
-  return <span className="fm-icon">{children}</span>;
+function PlayButton({
+  track,
+  active,
+  playing,
+  onPlay,
+  large = false,
+}) {
+  return (
+    <button
+      type="button"
+      className={`fm-play-button ${
+        large ? "large" : ""
+      } ${active ? "active" : ""}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPlay(track);
+      }}
+      aria-label={
+        active && playing
+          ? "Пауза"
+          : "Воспроизвести"
+      }
+    >
+      {active && playing ? "Ⅱ" : "▶"}
+    </button>
+  );
 }
 
-function SectionTitle({ title, action, onAction }) {
+function TrackCard({
+  track,
+  currentTrack,
+  isPlaying,
+  onPlay,
+  onFavorite,
+  isFavorite,
+}) {
+  const active = currentTrack?.id === track.id;
+
   return (
-    <div className="fm-section-title">
-      <div>
-        <h2>{title}</h2>
+    <article className="fm-track-card">
+      <div className="fm-track-card-cover">
+        <Cover
+          track={track}
+          size="large"
+          playing={active && isPlaying}
+        />
+
+        <PlayButton
+          track={track}
+          active={active}
+          playing={isPlaying}
+          onPlay={onPlay}
+          large
+        />
       </div>
 
-      {action ? (
-        <button
-          className="fm-text-button"
-          type="button"
-          onClick={onAction}
-        >
-          {action}
-        </button>
-      ) : null}
-    </div>
+      <div className="fm-track-card-body">
+        <div className="fm-track-card-title">
+          {track.title}
+        </div>
+
+        <div className="fm-track-card-artist">
+          {track.artist_name || "Fenix Music"}
+        </div>
+      </div>
+
+      <button
+        type="button"
+        className={`fm-favorite-button ${
+          isFavorite ? "active" : ""
+        }`}
+        onClick={() => onFavorite(track)}
+        aria-label="Добавить в избранное"
+      >
+        {isFavorite ? "♥" : "♡"}
+      </button>
+    </article>
   );
 }
 
@@ -221,27 +355,32 @@ function TrackRow({
   isPlaying,
   onPlay,
   onFavorite,
-  favorite,
+  isFavorite,
 }) {
   const active = currentTrack?.id === track.id;
 
   return (
-    <div className={`fm-track-row ${active ? "active" : ""}`}>
-      <div className="fm-track-index">
+    <div
+      className={`fm-track-row ${
+        active ? "active" : ""
+      }`}
+      onDoubleClick={() => onPlay(track)}
+    >
+      <div className="fm-track-number">
         {active && isPlaying ? (
-          <div className="fm-mini-bars">
+          <div className="fm-row-equalizer">
             <i />
             <i />
             <i />
           </div>
         ) : (
-          <span>{index + 1}</span>
+          index + 1
         )}
       </div>
 
       <button
-        className="fm-track-main"
         type="button"
+        className="fm-track-row-main"
         onClick={() => onPlay(track)}
       >
         <Cover
@@ -250,118 +389,223 @@ function TrackRow({
           playing={active && isPlaying}
         />
 
-        <span className="fm-track-text">
+        <div className="fm-track-row-info">
           <strong>{track.title}</strong>
-          <small>
+          <span>
             {track.artist_name || "Fenix Music"}
-            {track.album_name
-              ? ` • ${track.album_name}`
-              : ""}
-          </small>
-        </span>
+          </span>
+        </div>
       </button>
 
-      <span className="fm-track-plays">
+      <div className="fm-track-row-album">
+        {track.album_name || "Single"}
+      </div>
+
+      <div className="fm-track-row-plays">
         {formatNumber(track.plays_count || 0)}
-      </span>
+      </div>
 
       <button
-        className={`fm-heart ${favorite ? "liked" : ""}`}
         type="button"
-        aria-label="Избранное"
+        className={`fm-row-heart ${
+          isFavorite ? "active" : ""
+        }`}
         onClick={() => onFavorite(track)}
       >
-        {favorite ? "♥" : "♡"}
+        {isFavorite ? "♥" : "♡"}
       </button>
 
-      <span className="fm-track-duration">
+      <span className="fm-track-row-duration">
         {formatTime(track.duration)}
       </span>
     </div>
   );
 }
 
-function TrackCard({
-  track,
+function SectionHeader({
+  title,
+  subtitle,
+  action,
+  onAction,
+}) {
+  return (
+    <div className="fm-section-header">
+      <div>
+        <h2>{title}</h2>
+
+        {subtitle ? (
+          <p>{subtitle}</p>
+        ) : null}
+      </div>
+
+      {action ? (
+        <button
+          type="button"
+          className="fm-section-action"
+          onClick={onAction}
+        >
+          {action}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SearchOverlay({
+  open,
+  query,
+  setQuery,
+  tracks,
   currentTrack,
   isPlaying,
   onPlay,
   onFavorite,
-  favorite,
+  isFavorite,
+  onClose,
 }) {
-  const active = currentTrack?.id === track.id;
+  const results = useMemo(() => {
+    const value = query.trim().toLowerCase();
+
+    if (!value) {
+      return tracks.slice(0, 8);
+    }
+
+    return tracks.filter((track) => {
+      const text = [
+        track.title,
+        track.artist_name,
+        track.album_name,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return text.includes(value);
+    });
+  }, [query, tracks]);
+
+  if (!open) {
+    return null;
+  }
 
   return (
-    <div className="fm-track-card">
-      <button
-        className="fm-card-cover-button"
-        type="button"
-        onClick={() => onPlay(track)}
-      >
-        <Cover
-          track={track}
-          size="large"
-          playing={active && isPlaying}
-        />
+    <div className="fm-search-overlay">
+      <div className="fm-search-panel">
+        <div className="fm-search-panel-header">
+          <div className="fm-search-panel-input">
+            <span>⌕</span>
 
-        <span className="fm-card-play">
-          {active && isPlaying ? "Ⅱ" : "▶"}
-        </span>
-      </button>
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) =>
+                setQuery(event.target.value)
+              }
+              placeholder="Что хочешь послушать?"
+            />
 
-      <div className="fm-card-info">
-        <strong>{track.title}</strong>
-        <span>{track.artist_name || "Fenix Music"}</span>
+            {query ? (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+              >
+                ×
+              </button>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            className="fm-search-close"
+            onClick={onClose}
+          >
+            Закрыть
+          </button>
+        </div>
+
+        <div className="fm-search-results">
+          <div className="fm-search-result-title">
+            {query
+              ? `Результаты для «${query}»`
+              : "Популярные треки"}
+          </div>
+
+          {results.length ? (
+            results.map((track, index) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                index={index}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onPlay={onPlay}
+                onFavorite={onFavorite}
+                isFavorite={isFavorite(track)}
+              />
+            ))
+          ) : (
+            <div className="fm-empty">
+              <div className="fm-empty-icon">
+                ⌕
+              </div>
+              <h3>Ничего не найдено</h3>
+              <p>
+                Попробуй другое название трека,
+                артиста или альбома.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
-
-      <button
-        className={`fm-card-heart ${
-          favorite ? "liked" : ""
-        }`}
-        type="button"
-        onClick={() => onFavorite(track)}
-      >
-        {favorite ? "♥" : "♡"}
-      </button>
     </div>
   );
 }
 
 function AuthModal({
   open,
-  onClose,
   mode,
-  setMode,
+  onClose,
+  onModeChange,
+  onSubmit,
+  loading,
+  error,
   captcha,
   captchaInput,
   setCaptchaInput,
   refreshCaptcha,
-  onSubmit,
-  authLoading,
-  authError,
 }) {
+  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [username, setUsername] = useState("");
 
   useEffect(() => {
     if (!open) {
+      setUsername("");
       setEmail("");
       setPassword("");
-      setUsername("");
-      setCaptchaInput("");
     }
-  }, [open, setCaptchaInput]);
+  }, [open]);
 
   if (!open) {
     return null;
   }
 
-  const register = mode === "register";
+  const registration = mode === "register";
+
+  function submit(event) {
+    event.preventDefault();
+
+    onSubmit({
+      username,
+      email,
+      password,
+      captcha: captchaInput,
+    });
+  }
 
   return (
     <div
-      className="fm-modal-backdrop"
+      className="fm-modal-layer"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) {
           onClose();
@@ -369,61 +613,67 @@ function AuthModal({
       }}
     >
       <div
-        className="fm-modal"
-        role="dialog"
-        aria-modal="true"
-        onMouseDown={(event) => {
-          event.stopPropagation();
-        }}
+        className="fm-auth-modal"
+        onMouseDown={(event) =>
+          event.stopPropagation()
+        }
       >
         <button
-          className="fm-modal-close"
           type="button"
+          className="fm-modal-close"
           onClick={onClose}
           aria-label="Закрыть"
         >
           ×
         </button>
 
-        <div className="fm-modal-header">
-          <div className="fm-logo-mark">F</div>
-          <h2>{register ? "Создать аккаунт" : "Вход"}</h2>
+        <div className="fm-auth-brand">
+          <div className="fm-auth-logo">F</div>
+
+          <div>
+            <strong>FENIX</strong>
+            <span>MUSIC</span>
+          </div>
+        </div>
+
+        <div className="fm-auth-heading">
+          <h2>
+            {registration
+              ? "Создать аккаунт"
+              : "С возвращением"}
+          </h2>
+
           <p>
-            {register
-              ? "Создай свой профиль в Fenix Music"
-              : "Войди в свой аккаунт Fenix Music"}
+            {registration
+              ? "Собери свою музыкальную коллекцию"
+              : "Войди и продолжи слушать музыку"}
           </p>
         </div>
 
         <form
           className="fm-auth-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-
-            onSubmit({
-              email,
-              password,
-              username,
-              captcha: captchaInput,
-            });
-          }}
+          onSubmit={submit}
         >
-          {register ? (
-            <label>
+          {registration ? (
+            <label className="fm-field">
               <span>Имя пользователя</span>
+
               <input
+                type="text"
                 value={username}
                 onChange={(event) =>
                   setUsername(event.target.value)
                 }
                 placeholder="FenixUser"
                 autoComplete="username"
+                required
               />
             </label>
           ) : null}
 
-          <label>
+          <label className="fm-field">
             <span>Email</span>
+
             <input
               type="email"
               value={email}
@@ -436,17 +686,18 @@ function AuthModal({
             />
           </label>
 
-          <label>
+          <label className="fm-field">
             <span>Пароль</span>
+
             <input
               type="password"
               value={password}
               onChange={(event) =>
                 setPassword(event.target.value)
               }
-              placeholder="••••••••"
+              placeholder="Введите пароль"
               autoComplete={
-                register
+                registration
                   ? "new-password"
                   : "current-password"
               }
@@ -455,30 +706,47 @@ function AuthModal({
           </label>
 
           <div className="fm-captcha">
-            <div className="fm-captcha-top">
-              <span>CAPTCHA</span>
+            <div className="fm-captcha-heading">
+              <div>
+                <strong>Проверка</strong>
+                <span>
+                  Введите 4 цифры с картинки
+                </span>
+              </div>
 
               <button
                 type="button"
                 onClick={refreshCaptcha}
-                className="fm-captcha-refresh"
+                title="Обновить CAPTCHA"
               >
-                Обновить
+                ↻
               </button>
             </div>
 
-            <div className="fm-captcha-box">
+            <div className="fm-captcha-display">
+              <div className="fm-captcha-noise">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </div>
+
               <strong>{captcha || "----"}</strong>
-              <span>Введите 4 цифры</span>
             </div>
 
             <input
+              className="fm-captcha-input"
               inputMode="numeric"
+              pattern="[0-9]{4}"
               maxLength={4}
               value={captchaInput}
               onChange={(event) =>
                 setCaptchaInput(
-                  event.target.value.replace(/\D/g, "")
+                  event.target.value.replace(
+                    /[^0-9]/g,
+                    ""
+                  )
                 )
               }
               placeholder="0000"
@@ -486,20 +754,20 @@ function AuthModal({
             />
           </div>
 
-          {authError ? (
-            <div className="fm-error">
-              {authError}
+          {error ? (
+            <div className="fm-auth-error">
+              {error}
             </div>
           ) : null}
 
           <button
-            className="fm-primary-button fm-auth-submit"
             type="submit"
-            disabled={authLoading}
+            className="fm-auth-submit"
+            disabled={loading}
           >
-            {authLoading
-              ? "Подождите..."
-              : register
+            {loading
+              ? "Проверяем..."
+              : registration
               ? "Создать аккаунт"
               : "Войти"}
           </button>
@@ -507,7 +775,7 @@ function AuthModal({
 
         <div className="fm-auth-switch">
           <span>
-            {register
+            {registration
               ? "Уже есть аккаунт?"
               : "Нет аккаунта?"}
           </span>
@@ -515,10 +783,14 @@ function AuthModal({
           <button
             type="button"
             onClick={() =>
-              setMode(register ? "login" : "register")
+              onModeChange(
+                registration ? "login" : "register"
+              )
             }
           >
-            {register ? "Войти" : "Регистрация"}
+            {registration
+              ? "Войти"
+              : "Зарегистрироваться"}
           </button>
         </div>
       </div>
@@ -526,124 +798,327 @@ function AuthModal({
   );
 }
 
-function Player({
-  track,
-  isPlaying,
-  onToggle,
-  onNext,
-  onPrevious,
-  progress,
-  duration,
-  volume,
-  setProgress,
-  setVolume,
-  favorite,
-  onFavorite,
+function QueuePanel({
+  open,
+  queue,
+  currentTrack,
+  onPlay,
+  onRemove,
+  onClose,
 }) {
-  const audioRef = useRef(null);
-
-  useEffect(() => {
-    if (!audioRef.current || !track?.audio_url) {
-      return;
-    }
-
-    audioRef.current.src = apiUrl(track.audio_url);
-    audioRef.current.load();
-
-    if (isPlaying) {
-      audioRef.current.play().catch(() => {});
-    }
-  }, [track]);
-
-  useEffect(() => {
-    if (!audioRef.current) {
-      return;
-    }
-
-    if (isPlaying && track?.audio_url) {
-      audioRef.current.play().catch(() => {});
-    } else {
-      audioRef.current.pause();
-    }
-  }, [isPlaying, track]);
-
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume / 100;
-    }
-  }, [volume]);
-
-  if (!track) {
+  if (!open) {
     return null;
   }
 
   return (
-    <>
-      <audio
-        ref={audioRef}
-        onTimeUpdate={(event) =>
-          setProgress(event.currentTarget.currentTime)
-        }
-        onLoadedMetadata={(event) => {
-          if (
-            Number.isFinite(
-              event.currentTarget.duration
-            )
-          ) {
-            setProgress(0);
-          }
-        }}
-        onEnded={onNext}
-      />
+    <div className="fm-queue-panel">
+      <div className="fm-queue-header">
+        <div>
+          <strong>Очередь</strong>
+          <span>{queue.length} треков</span>
+        </div>
 
-      <div className="fm-player">
-        <div className="fm-player-progress">
+        <button
+          type="button"
+          onClick={onClose}
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="fm-queue-list">
+        {queue.length === 0 ? (
+          <div className="fm-queue-empty">
+            Очередь пуста
+          </div>
+        ) : (
+          queue.map((track, index) => {
+            const active =
+              currentTrack?.id === track.id;
+
+            return (
+              <div
+                className={`fm-queue-item ${
+                  active ? "active" : ""
+                }`}
+                key={`${track.id}-${index}`}
+              >
+                <span>{index + 1}</span>
+
+                <button
+                  type="button"
+                  onClick={() => onPlay(track)}
+                >
+                  <Cover
+                    track={track}
+                    size="tiny"
+                    playing={active}
+                  />
+
+                  <div>
+                    <strong>{track.title}</strong>
+                    <small>
+                      {track.artist_name ||
+                        "Fenix Music"}
+                    </small>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onRemove(track)}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FullPlayer({
+  open,
+  track,
+  isPlaying,
+  progress,
+  duration,
+  volume,
+  shuffle,
+  repeat,
+  favorite,
+  onClose,
+  onToggle,
+  onPrevious,
+  onNext,
+  onSeek,
+  onVolume,
+  onShuffle,
+  onRepeat,
+  onFavorite,
+}) {
+  if (!open || !track) {
+    return null;
+  }
+
+  return (
+    <div className="fm-full-player">
+      <div className="fm-full-player-top">
+        <button
+          type="button"
+          onClick={onClose}
+          className="fm-full-player-close"
+        >
+          ↓
+        </button>
+
+        <span>СЕЙЧАС ИГРАЕТ</span>
+
+        <button
+          type="button"
+          onClick={onFavorite}
+          className={`fm-full-heart ${
+            favorite ? "active" : ""
+          }`}
+        >
+          {favorite ? "♥" : "♡"}
+        </button>
+      </div>
+
+      <div className="fm-full-player-content">
+        <div className="fm-full-cover">
+          <Cover
+            track={track}
+            size="huge"
+            playing={isPlaying}
+          />
+        </div>
+
+        <div className="fm-full-info">
+          <span>FENIX MUSIC</span>
+          <h2>{track.title}</h2>
+          <p>
+            {track.artist_name || "Fenix Music"}
+          </p>
+        </div>
+
+        <div className="fm-full-progress">
           <input
             type="range"
             min="0"
-            max={Math.max(duration || track.duration || 1, 1)}
+            max={Math.max(
+              duration || track.duration || 1,
+              1
+            )}
             step="0.1"
             value={Math.min(
               progress,
               duration || track.duration || 1
             )}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              setProgress(value);
-
-              if (audioRef.current) {
-                audioRef.current.currentTime = value;
-              }
-            }}
+            onChange={(event) =>
+              onSeek(Number(event.target.value))
+            }
           />
+
+          <div>
+            <span>{formatTime(progress)}</span>
+            <span>
+              {formatTime(
+                duration || track.duration
+              )}
+            </span>
+          </div>
         </div>
 
-        <div className="fm-player-content">
-          <div className="fm-player-track">
-            <Cover track={track} size="player" />
+        <div className="fm-full-controls">
+          <button
+            type="button"
+            className={shuffle ? "active" : ""}
+            onClick={onShuffle}
+          >
+            🔀
+          </button>
 
-            <div>
-              <strong>{track.title}</strong>
-              <span>
-                {track.artist_name || "Fenix Music"}
-              </span>
-            </div>
+          <button
+            type="button"
+            onClick={onPrevious}
+          >
+            ◀
+          </button>
+
+          <button
+            type="button"
+            className="fm-full-play"
+            onClick={onToggle}
+          >
+            {isPlaying ? "Ⅱ" : "▶"}
+          </button>
+
+          <button
+            type="button"
+            onClick={onNext}
+          >
+            ▶
+          </button>
+
+          <button
+            type="button"
+            className={repeat ? "active" : ""}
+            onClick={onRepeat}
+          >
+            🔁
+          </button>
+        </div>
+
+        <div className="fm-full-volume">
+          <span>🔊</span>
+
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={volume}
+            onChange={(event) =>
+              onVolume(Number(event.target.value))
+            }
+          />
+
+          <span>{volume}%</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlayerBar({
+  track,
+  isPlaying,
+  progress,
+  duration,
+  volume,
+  shuffle,
+  repeat,
+  favorite,
+  queueOpen,
+  onToggle,
+  onPrevious,
+  onNext,
+  onSeek,
+  onVolume,
+  onShuffle,
+  onRepeat,
+  onFavorite,
+  onQueue,
+  onFullPlayer,
+}) {
+  if (!track) {
+    return null;
+  }
+
+  return (
+    <div className="fm-player-bar">
+      <div className="fm-player-bar-progress">
+        <input
+          type="range"
+          min="0"
+          max={Math.max(
+            duration || track.duration || 1,
+            1
+          )}
+          step="0.1"
+          value={Math.min(
+            progress,
+            duration || track.duration || 1
+          )}
+          onChange={(event) =>
+            onSeek(Number(event.target.value))
+          }
+        />
+      </div>
+
+      <div className="fm-player-inner">
+        <button
+          type="button"
+          className="fm-player-track"
+          onClick={onFullPlayer}
+        >
+          <Cover
+            track={track}
+            size="player"
+            playing={isPlaying}
+          />
+
+          <div>
+            <strong>{track.title}</strong>
+            <span>
+              {track.artist_name || "Fenix Music"}
+            </span>
           </div>
+        </button>
 
-          <div className="fm-player-controls">
+        <div className="fm-player-center">
+          <div className="fm-player-main-controls">
+            <button
+              type="button"
+              className={shuffle ? "active" : ""}
+              onClick={onShuffle}
+            >
+              🔀
+            </button>
+
             <button
               type="button"
               onClick={onPrevious}
-              aria-label="Предыдущий"
             >
               ◀
             </button>
 
             <button
-              className="fm-player-play"
               type="button"
+              className="fm-player-main-play"
               onClick={onToggle}
-              aria-label="Воспроизведение"
             >
               {isPlaying ? "Ⅱ" : "▶"}
             </button>
@@ -651,34 +1126,853 @@ function Player({
             <button
               type="button"
               onClick={onNext}
-              aria-label="Следующий"
             >
               ▶
             </button>
+
+            <button
+              type="button"
+              className={repeat ? "active" : ""}
+              onClick={onRepeat}
+            >
+              🔁
+            </button>
           </div>
 
-          <div className="fm-player-right">
+          <div className="fm-player-time">
+            <span>{formatTime(progress)}</span>
+            <span>
+              {formatTime(
+                duration || track.duration
+              )}
+            </span>
+          </div>
+        </div>
+
+        <div className="fm-player-actions">
+          <button
+            type="button"
+            className={favorite ? "active" : ""}
+            onClick={onFavorite}
+          >
+            {favorite ? "♥" : "♡"}
+          </button>
+
+          <button
+            type="button"
+            className={
+              queueOpen ? "active" : ""
+            }
+            onClick={onQueue}
+          >
+            ☷
+          </button>
+
+          <span>🔊</span>
+
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={volume}
+            onChange={(event) =>
+              onVolume(Number(event.target.value))
+            }
+          />
+
+          <button
+            type="button"
+            onClick={onFullPlayer}
+          >
+            ⛶
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HomePage({
+  tracks,
+  currentTrack,
+  isPlaying,
+  favorites,
+  historyTracks,
+  popularTracks,
+  onPlay,
+  onFavorite,
+  goTo,
+}) {
+  return (
+    <>
+      <section className="fm-hero">
+        <div className="fm-hero-background">
+          <div className="fm-hero-circle circle-one" />
+          <div className="fm-hero-circle circle-two" />
+          <div className="fm-hero-grid" />
+        </div>
+
+        <div className="fm-hero-copy">
+          <span className="fm-eyebrow">
+            FENIX MUSIC
+          </span>
+
+          <h1>
+            Музыка
+            <br />
+            <em>без границ.</em>
+          </h1>
+
+          <p>
+            Открывай новые треки, создавай свою
+            коллекцию и слушай музыку, которая
+            подходит именно тебе.
+          </p>
+
+          <div className="fm-hero-buttons">
             <button
-              className={`fm-player-like ${
-                favorite ? "liked" : ""
-              }`}
               type="button"
-              onClick={() => onFavorite(track)}
+              className="fm-primary-button"
+              onClick={() =>
+                tracks[0] && onPlay(tracks[0])
+              }
             >
-              {favorite ? "♥" : "♡"}
+              ▶ Начать слушать
             </button>
 
-            <span className="fm-player-time">
-              {formatTime(progress)} /{" "}
-              {formatTime(duration || track.duration)}
-            </span>
+            <button
+              type="button"
+              className="fm-secondary-button"
+              onClick={() => goTo("for-you")}
+            >
+              ✦ Для вас
+            </button>
+          </div>
+        </div>
 
-            <span className="fm-volume-icon">
-              🔊
-            </span>
+        <div className="fm-hero-art">
+          <div className="fm-hero-disc">
+            <div className="fm-disc-center">
+              F
+            </div>
+          </div>
+
+          <div className="fm-floating-note note-one">
+            ♪
+          </div>
+          <div className="fm-floating-note note-two">
+            ♫
+          </div>
+          <div className="fm-floating-note note-three">
+            ♪
+          </div>
+        </div>
+      </section>
+
+      {historyTracks.length ? (
+        <section className="fm-section">
+          <SectionHeader
+            title="Продолжить слушать"
+            action="Показать всё"
+            onAction={() => goTo("history")}
+          />
+
+          <div className="fm-card-grid">
+            {historyTracks
+              .slice(0, 4)
+              .map((track) => (
+                <TrackCard
+                  key={track.id}
+                  track={track}
+                  currentTrack={currentTrack}
+                  isPlaying={isPlaying}
+                  onPlay={onPlay}
+                  onFavorite={onFavorite}
+                  isFavorite={favorites.includes(
+                    track.id
+                  )}
+                />
+              ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="fm-section">
+        <SectionHeader
+          title="Популярное"
+          subtitle="То, что сейчас слушают чаще всего"
+          action="Все треки"
+          onAction={() => goTo("popular")}
+        />
+
+        <div className="fm-card-grid">
+          {popularTracks
+            .slice(0, 6)
+            .map((track) => (
+              <TrackCard
+                key={track.id}
+                track={track}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onPlay={onPlay}
+                onFavorite={onFavorite}
+                isFavorite={favorites.includes(
+                  track.id
+                )}
+              />
+            ))}
+        </div>
+      </section>
+
+      <section className="fm-section">
+        <SectionHeader
+          title="Все треки"
+          subtitle={`${tracks.length} треков в каталоге`}
+        />
+
+        <div className="fm-track-list">
+          {tracks.map((track, index) => (
+            <TrackRow
+              key={track.id}
+              track={track}
+              index={index}
+              currentTrack={currentTrack}
+              isPlaying={isPlaying}
+              onPlay={onPlay}
+              onFavorite={onFavorite}
+              isFavorite={favorites.includes(
+                track.id
+              )}
+            />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function ForYouPage({
+  tracks,
+  currentTrack,
+  isPlaying,
+  favorites,
+  onPlay,
+  onFavorite,
+  goTo,
+}) {
+  const recommendations = tracks.slice(0, 8);
+
+  return (
+    <>
+      <div className="fm-page-heading">
+        <span className="fm-eyebrow">
+          ПЕРСОНАЛЬНО
+        </span>
+
+        <h1>Для вас</h1>
+
+        <p>
+          Музыка, подобранная под твой вкус.
+        </p>
+      </div>
+
+      <section className="fm-feature-grid">
+        <button
+          type="button"
+          className="fm-feature-card feature-red"
+          onClick={() =>
+            recommendations[0] &&
+            onPlay(recommendations[0])
+          }
+        >
+          <span>🔥</span>
+          <strong>Твой вечер</strong>
+          <small>
+            Музыка для спокойного вечера
+          </small>
+          <b>▶</b>
+        </button>
+
+        <button
+          type="button"
+          className="fm-feature-card feature-dark"
+          onClick={() => goTo("mixes")}
+        >
+          <span>✦</span>
+          <strong>Fenix Mix</strong>
+          <small>
+            Персональная подборка
+          </small>
+          <b>→</b>
+        </button>
+
+        <button
+          type="button"
+          className="fm-feature-card feature-purple"
+          onClick={() =>
+            recommendations[2] &&
+            onPlay(recommendations[2])
+          }
+        >
+          <span>🌙</span>
+          <strong>Night Vibes</strong>
+          <small>
+            Ночные треки
+          </small>
+          <b>▶</b>
+        </button>
+      </section>
+
+      <section className="fm-section">
+        <SectionHeader
+          title="Рекомендуем"
+          subtitle="На основе твоей активности"
+        />
+
+        <div className="fm-card-grid">
+          {recommendations.map((track) => (
+            <TrackCard
+              key={track.id}
+              track={track}
+              currentTrack={currentTrack}
+              isPlaying={isPlaying}
+              onPlay={onPlay}
+              onFavorite={onFavorite}
+              isFavorite={favorites.includes(
+                track.id
+              )}
+            />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function PopularPage({
+  tracks,
+  currentTrack,
+  isPlaying,
+  favorites,
+  onPlay,
+  onFavorite,
+}) {
+  const sorted = [...tracks].sort(
+    (a, b) =>
+      Number(b.plays_count || 0) -
+      Number(a.plays_count || 0)
+  );
+
+  return (
+    <>
+      <div className="fm-page-heading">
+        <span className="fm-eyebrow">
+          ТОП МУЗЫКИ
+        </span>
+
+        <h1>Популярное</h1>
+
+        <p>
+          Самые прослушиваемые треки Fenix Music.
+        </p>
+      </div>
+
+      <section className="fm-section">
+        <div className="fm-top-three">
+          {sorted.slice(0, 3).map((track, index) => (
+            <div
+              className={`fm-top-card place-${index + 1}`}
+              key={track.id}
+            >
+              <span className="fm-top-place">
+                #{index + 1}
+              </span>
+
+              <Cover
+                track={track}
+                size="large"
+                playing={
+                  currentTrack?.id === track.id &&
+                  isPlaying
+                }
+              />
+
+              <div>
+                <strong>{track.title}</strong>
+                <span>
+                  {track.artist_name ||
+                    "Fenix Music"}
+                </span>
+                <small>
+                  {formatNumber(
+                    track.plays_count || 0
+                  )}{" "}
+                  прослушиваний
+                </small>
+              </div>
+
+              <PlayButton
+                track={track}
+                active={
+                  currentTrack?.id === track.id
+                }
+                playing={isPlaying}
+                onPlay={onPlay}
+              />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="fm-section">
+        <SectionHeader title="Чарт Fenix Music" />
+
+        <div className="fm-track-list">
+          {sorted.map((track, index) => (
+            <TrackRow
+              key={track.id}
+              track={track}
+              index={index}
+              currentTrack={currentTrack}
+              isPlaying={isPlaying}
+              onPlay={onPlay}
+              onFavorite={onFavorite}
+              isFavorite={favorites.includes(
+                track.id
+              )}
+            />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function NewPage({
+  tracks,
+  currentTrack,
+  isPlaying,
+  favorites,
+  onPlay,
+  onFavorite,
+}) {
+  return (
+    <>
+      <div className="fm-page-heading">
+        <span className="fm-eyebrow">
+          СВЕЖИЕ РЕЛИЗЫ
+        </span>
+
+        <h1>Новинки</h1>
+
+        <p>
+          Новые треки и свежие музыкальные находки.
+        </p>
+      </div>
+
+      <section className="fm-new-release">
+        <div className="fm-new-release-art">
+          <Cover
+            track={tracks[0]}
+            size="huge"
+            playing={
+              currentTrack?.id === tracks[0]?.id &&
+              isPlaying
+            }
+          />
+        </div>
+
+        <div className="fm-new-release-copy">
+          <span>НОВЫЙ РЕЛИЗ</span>
+
+          <h2>
+            {tracks[0]?.title || "Fenix Music"}
+          </h2>
+
+          <p>
+            {tracks[0]?.artist_name ||
+              "Fenix Music"}
+          </p>
+
+          <button
+            type="button"
+            className="fm-primary-button"
+            onClick={() =>
+              tracks[0] && onPlay(tracks[0])
+            }
+          >
+            ▶ Слушать
+          </button>
+        </div>
+      </div>
+
+      <section className="fm-section">
+        <SectionHeader title="Свежие треки" />
+
+        <div className="fm-card-grid">
+          {tracks.map((track) => (
+            <TrackCard
+              key={track.id}
+              track={track}
+              currentTrack={currentTrack}
+              isPlaying={isPlaying}
+              onPlay={onPlay}
+              onFavorite={onFavorite}
+              isFavorite={favorites.includes(
+                track.id
+              )}
+            />
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function MixesPage({
+  tracks,
+  onPlay,
+}) {
+  const mixes = [
+    {
+      title: "Night Drive",
+      text: "Ночная поездка",
+      icon: "🌙",
+    },
+    {
+      title: "Energy",
+      text: "Максимум энергии",
+      icon: "⚡",
+    },
+    {
+      title: "Chill",
+      text: "Расслабленный вайб",
+      icon: "☁",
+    },
+    {
+      title: "Neon City",
+      text: "Огни большого города",
+      icon: "🌃",
+    },
+    {
+      title: "Focus",
+      text: "Концентрация",
+      icon: "◉",
+    },
+    {
+      title: "Late Night",
+      text: "После полуночи",
+      icon: "🌌",
+    },
+  ];
+
+  return (
+    <>
+      <div className="fm-page-heading">
+        <span className="fm-eyebrow">
+          ПОДБОРКИ
+        </span>
+
+        <h1>Миксы</h1>
+
+        <p>
+          Готовые подборки под любое настроение.
+        </p>
+      </div>
+
+      <div className="fm-mix-grid">
+        {mixes.map((mix, index) => (
+          <button
+            type="button"
+            className="fm-mix-card"
+            key={mix.title}
+            onClick={() =>
+              tracks[index % tracks.length] &&
+              onPlay(tracks[index % tracks.length])
+            }
+          >
+            <div className="fm-mix-icon">
+              {mix.icon}
+            </div>
+
+            <div>
+              <strong>{mix.title}</strong>
+              <span>{mix.text}</span>
+            </div>
+
+            <b>▶</b>
+          </button>
+        ))}
+      </div>
+
+      <section className="fm-section">
+        <SectionHeader title="Твой микс" />
+
+        <div className="fm-mix-player-card">
+          <div className="fm-mix-art">
+            <Cover
+              track={tracks[0]}
+              size="large"
+            />
+          </div>
+
+          <div>
+            <span>FENIX MIX</span>
+            <h2>Музыка для тебя</h2>
+            <p>
+              Персональная подборка из лучших
+              треков каталога.
+            </p>
+
+            <button
+              type="button"
+              className="fm-primary-button"
+              onClick={() =>
+                tracks[0] && onPlay(tracks[0])
+              }
+            >
+              ▶ Запустить микс
+            </button>
+          </div>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function LibraryPage({
+  title,
+  subtitle,
+  tracks,
+  currentTrack,
+  isPlaying,
+  favorites,
+  onPlay,
+  onFavorite,
+}) {
+  return (
+    <>
+      <div className="fm-page-heading">
+        <span className="fm-eyebrow">
+          ТВОЯ КОЛЛЕКЦИЯ
+        </span>
+
+        <h1>{title}</h1>
+
+        <p>{subtitle}</p>
+      </div>
+
+      {tracks.length === 0 ? (
+        <div className="fm-empty fm-large-empty">
+          <div className="fm-empty-icon">
+            {title === "Избранное" ? "♡" : "↶"}
+          </div>
+
+          <h3>
+            {title === "Избранное"
+              ? "Избранное пока пусто"
+              : "История пока пуста"}
+          </h3>
+
+          <p>
+            {title === "Избранное"
+              ? "Нажимай на сердце возле треков, чтобы сохранить их здесь."
+              : "Запусти музыку, и недавно прослушанные треки появятся здесь."}
+          </p>
+        </div>
+      ) : (
+        <section className="fm-section">
+          <div className="fm-track-list">
+            {tracks.map((track, index) => (
+              <TrackRow
+                key={`${track.id}-${index}`}
+                track={track}
+                index={index}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onPlay={onPlay}
+                onFavorite={onFavorite}
+                isFavorite={favorites.includes(
+                  track.id
+                )}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+    </>
+  );
+}
+
+function ProfilePage({
+  user,
+  onLogin,
+  onLogout,
+}) {
+  if (!user) {
+    return (
+      <div className="fm-profile-login">
+        <div className="fm-profile-login-icon">
+          F
+        </div>
+
+        <h1>Твой профиль</h1>
+
+        <p>
+          Войди в аккаунт, чтобы сохранять
+          коллекцию, историю и настройки.
+        </p>
+
+        <button
+          type="button"
+          className="fm-primary-button"
+          onClick={onLogin}
+        >
+          Войти
+        </button>
+      </div>
+    );
+  }
+
+  const username =
+    user.username ||
+    user.name ||
+    "Fenix User";
+
+  return (
+    <div className="fm-profile-page">
+      <div className="fm-profile-cover">
+        <div className="fm-profile-avatar">
+          {getInitials(username)}
+        </div>
+      </div>
+
+      <div className="fm-profile-main">
+        <span className="fm-eyebrow">
+          ПРОФИЛЬ
+        </span>
+
+        <h1>{username}</h1>
+
+        <p>
+          {user.email || "Пользователь Fenix Music"}
+        </p>
+
+        <div className="fm-profile-stats">
+          <div>
+            <strong>Fenix</strong>
+            <span>Аккаунт</span>
+          </div>
+
+          <div>
+            <strong>Music</strong>
+            <span>Коллекция</span>
+          </div>
+
+          <div>
+            <strong>∞</strong>
+            <span>Музыка</span>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="fm-danger-button"
+          onClick={onLogout}
+        >
+          Выйти из аккаунта
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsPage({
+  volume,
+  setVolume,
+}) {
+  const [autoplay, setAutoplay] = useState(true);
+  const [quality, setQuality] = useState("auto");
+  const [notifications, setNotifications] =
+    useState(true);
+
+  return (
+    <>
+      <div className="fm-page-heading">
+        <span className="fm-eyebrow">
+          FENIX MUSIC
+        </span>
+
+        <h1>Настройки</h1>
+
+        <p>
+          Управление приложением и
+          воспроизведением.
+        </p>
+      </div>
+
+      <div className="fm-settings">
+        <div className="fm-settings-group">
+          <h3>Воспроизведение</h3>
+
+          <label className="fm-setting-row">
+            <div>
+              <strong>
+                Автоматическое воспроизведение
+              </strong>
+              <span>
+                Продолжать очередь после окончания
+                трека
+              </span>
+            </div>
 
             <input
-              className="fm-volume"
+              type="checkbox"
+              checked={autoplay}
+              onChange={(event) =>
+                setAutoplay(event.target.checked)
+              }
+            />
+          </label>
+
+          <div className="fm-setting-row">
+            <div>
+              <strong>Качество музыки</strong>
+              <span>
+                Выбери качество аудио
+              </span>
+            </div>
+
+            <select
+              value={quality}
+              onChange={(event) =>
+                setQuality(event.target.value)
+              }
+            >
+              <option value="auto">
+                Автоматически
+              </option>
+              <option value="high">
+                Высокое
+              </option>
+              <option value="medium">
+                Среднее
+              </option>
+              <option value="low">
+                Экономия трафика
+              </option>
+            </select>
+          </div>
+
+          <div className="fm-setting-row">
+            <div>
+              <strong>Громкость</strong>
+              <span>
+                Текущая громкость {volume}%
+              </span>
+            </div>
+
+            <input
               type="range"
               min="0"
               max="100"
@@ -689,51 +1983,158 @@ function Player({
             />
           </div>
         </div>
+
+        <div className="fm-settings-group">
+          <h3>Уведомления</h3>
+
+          <label className="fm-setting-row">
+            <div>
+              <strong>
+                Новые релизы
+              </strong>
+              <span>
+                Уведомлять о новых треках
+              </span>
+            </div>
+
+            <input
+              type="checkbox"
+              checked={notifications}
+              onChange={(event) =>
+                setNotifications(
+                  event.target.checked
+                )
+              }
+            />
+          </label>
+        </div>
+
+        <div className="fm-settings-about">
+          <strong>Fenix Music</strong>
+          <span>Версия 3.0</span>
+          <small>
+            Твоя музыкальная вселенная.
+          </small>
+        </div>
       </div>
     </>
   );
 }
 
-function App() {
+export default function App() {
   const [page, setPage] = useState("home");
   const [tracks, setTracks] = useState([]);
-  const [favorites, setFavorites] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [currentTrack, setCurrentTrack] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [search, setSearch] = useState("");
-  const [volume, setVolume] = useState(80);
   const [loading, setLoading] = useState(true);
-  const [serverError, setServerError] = useState("");
-  const [authOpen, setAuthOpen] = useState(false);
-  const [authMode, setAuthMode] = useState("login");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState("");
-  const [captcha, setCaptcha] = useState("");
-  const [captchaId, setCaptchaId] = useState("");
-  const [captchaInput, setCaptchaInput] = useState("");
-  const [user, setUser] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [backendError, setBackendError] =
+    useState("");
+
+  const [currentTrack, setCurrentTrack] =
+    useState(null);
+  const [isPlaying, setIsPlaying] =
+    useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(80);
+
+  const [favorites, setFavorites] =
+    useState([]);
+  const [history, setHistory] =
+    useState([]);
+
+  const [queue, setQueue] = useState([]);
+  const [shuffle, setShuffle] =
+    useState(false);
+  const [repeat, setRepeat] =
+    useState(false);
+
+  const [queueOpen, setQueueOpen] =
+    useState(false);
+  const [fullPlayerOpen, setFullPlayerOpen] =
+    useState(false);
+
+  const [searchOpen, setSearchOpen] =
+    useState(false);
+  const [search, setSearch] =
+    useState("");
+
+  const [authOpen, setAuthOpen] =
+    useState(false);
+  const [authMode, setAuthMode] =
+    useState("login");
+  const [authLoading, setAuthLoading] =
+    useState(false);
+  const [authError, setAuthError] =
+    useState("");
+
+  const [captcha, setCaptcha] =
+    useState("");
+  const [captchaId, setCaptchaId] =
+    useState("");
+  const [captchaInput, setCaptchaInput] =
+    useState("");
+
+  const [user, setUser] =
+    useState(null);
+
+  const [sidebarOpen, setSidebarOpen] =
+    useState(false);
+
+  const audioRef = useRef(null);
+
+  const catalog = useMemo(() => {
+    return tracks.length
+      ? tracks
+      : FALLBACK_TRACKS;
+  }, [tracks]);
+
+  const popularTracks = useMemo(() => {
+    return [...catalog].sort(
+      (a, b) =>
+        Number(b.plays_count || 0) -
+        Number(a.plays_count || 0)
+    );
+  }, [catalog]);
+
+  const historyTracks = useMemo(() => {
+    return history
+      .map((id) =>
+        catalog.find(
+          (track) => track.id === id
+        )
+      )
+      .filter(Boolean);
+  }, [catalog, history]);
+
+  const favoriteTracks = useMemo(() => {
+    return catalog.filter((track) =>
+      favorites.includes(track.id)
+    );
+  }, [catalog, favorites]);
+
+  const currentIndex = currentTrack
+    ? catalog.findIndex(
+        (track) =>
+          track.id === currentTrack.id
+      )
+    : -1;
 
   const loadMusic = useCallback(async () => {
     setLoading(true);
-    setServerError("");
+    setBackendError("");
 
     try {
       const data = await apiFetch("/api/music");
 
-      if (Array.isArray(data?.tracks)) {
+      if (Array.isArray(data.tracks)) {
         setTracks(data.tracks);
       } else {
         setTracks([]);
       }
     } catch (error) {
-      setServerError(
+      setBackendError(
         error?.message ||
-          "Не удалось загрузить музыку"
+          "Backend музыки недоступен"
       );
-      setTracks([]);
     } finally {
       setLoading(false);
     }
@@ -743,18 +2144,29 @@ function App() {
     setAuthError("");
 
     try {
-      const data = await apiFetch("/api/captcha");
+      const data = await apiFetch(
+        "/api/captcha"
+      );
 
-      if (data?.code) {
+      if (
+        data &&
+        data.code !== undefined
+      ) {
         setCaptcha(String(data.code));
-        setCaptchaId(data.captcha_id || "");
+        setCaptchaId(
+          data.captcha_id
+            ? String(data.captcha_id)
+            : ""
+        );
         setCaptchaInput("");
         return;
       }
 
-      throw new Error("CAPTCHA не получена");
+      throw new Error(
+        "CAPTCHA не получена"
+      );
     } catch {
-      setCaptcha(createCaptchaFallback());
+      setCaptcha(randomCaptcha());
       setCaptchaId("");
       setCaptchaInput("");
     }
@@ -764,30 +2176,48 @@ function App() {
     loadMusic();
 
     const savedFavorites =
-      localStorage.getItem("fenix_music_favorites");
+      localStorage.getItem(
+        "fenix_music_favorites"
+      );
 
     const savedHistory =
-      localStorage.getItem("fenix_music_history");
+      localStorage.getItem(
+        "fenix_music_history"
+      );
+
+    const savedUser =
+      localStorage.getItem(
+        "fenix_music_user"
+      );
 
     if (savedFavorites) {
       try {
-        setFavorites(JSON.parse(savedFavorites));
-      } catch {}
+        setFavorites(
+          JSON.parse(savedFavorites)
+        );
+      } catch {
+        setFavorites([]);
+      }
     }
 
     if (savedHistory) {
       try {
-        setHistory(JSON.parse(savedHistory));
-      } catch {}
+        setHistory(
+          JSON.parse(savedHistory)
+        );
+      } catch {
+        setHistory([]);
+      }
     }
-
-    const savedUser =
-      localStorage.getItem("fenix_music_user");
 
     if (savedUser) {
       try {
-        setUser(JSON.parse(savedUser));
-      } catch {}
+        setUser(
+          JSON.parse(savedUser)
+        );
+      } catch {
+        setUser(null);
+      }
     }
   }, [loadMusic]);
 
@@ -805,121 +2235,186 @@ function App() {
     );
   }, [history]);
 
-  const allTracks = useMemo(() => {
-    if (tracks.length > 0) {
-      return tracks;
+  useEffect(() => {
+    if (!audioRef.current) {
+      return;
     }
 
-    return DEMO_TRACKS;
-  }, [tracks]);
+    audioRef.current.volume =
+      volume / 100;
+  }, [volume]);
 
-  const filteredTracks = useMemo(() => {
-    const query = search.trim().toLowerCase();
-
-    if (!query) {
-      return allTracks;
+  useEffect(() => {
+    if (!currentTrack) {
+      return;
     }
 
-    return allTracks.filter((track) => {
-      const text = [
-        track.title,
-        track.artist_name,
-        track.album_name,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+    if (!currentTrack.audio_url) {
+      return;
+    }
 
-      return text.includes(query);
-    });
-  }, [allTracks, search]);
+    const audio = audioRef.current;
 
-  const popularTracks = useMemo(() => {
-    return [...filteredTracks].sort(
-      (a, b) =>
-        Number(b.plays_count || 0) -
-        Number(a.plays_count || 0)
+    audio.src = apiUrl(
+      currentTrack.audio_url
     );
-  }, [filteredTracks]);
 
-  const favoriteTracks = useMemo(() => {
-    return allTracks.filter((track) =>
-      favorites.includes(track.id)
-    );
-  }, [allTracks, favorites]);
+    audio.load();
 
-  const historyTracks = useMemo(() => {
-    return history
-      .map((id) =>
-        allTracks.find((track) => track.id === id)
-      )
-      .filter(Boolean);
-  }, [allTracks, history]);
+    if (isPlaying) {
+      audio.play().catch(() => {
+        setIsPlaying(false);
+      });
+    }
+  }, [currentTrack]);
 
-  const duration =
-    currentTrack?.duration ||
-    0;
+  useEffect(() => {
+    const audio = audioRef.current;
 
-  const currentIndex = currentTrack
-    ? allTracks.findIndex(
-        (track) => track.id === currentTrack.id
-      )
-    : -1;
+    if (!audio || !currentTrack) {
+      return;
+    }
 
-  function playTrack(track) {
-    setCurrentTrack(track);
-    setIsPlaying(true);
-    setProgress(0);
+    if (
+      isPlaying &&
+      currentTrack.audio_url
+    ) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [isPlaying, currentTrack]);
 
+  function addHistory(track) {
     setHistory((previous) => {
       const next = [
         track.id,
-        ...previous.filter((id) => id !== track.id),
+        ...previous.filter(
+          (id) => id !== track.id
+        ),
       ];
 
-      return next.slice(0, 30);
+      return next.slice(0, 50);
+    });
+  }
+
+  function playTrack(track) {
+    if (!track) {
+      return;
+    }
+
+    setCurrentTrack(track);
+    setProgress(0);
+    setDuration(
+      Number(track.duration) || 0
+    );
+    setIsPlaying(true);
+    addHistory(track);
+
+    setQueue((previous) => {
+      if (
+        previous.some(
+          (item) => item.id === track.id
+        )
+      ) {
+        return previous;
+      }
+
+      return [...previous, track];
     });
   }
 
   function togglePlayback() {
     if (!currentTrack) {
-      if (allTracks[0]) {
-        playTrack(allTracks[0]);
+      if (catalog[0]) {
+        playTrack(catalog[0]);
       }
 
+      return;
+    }
+
+    if (
+      !currentTrack.audio_url &&
+      !isPlaying
+    ) {
+      setIsPlaying(true);
       return;
     }
 
     setIsPlaying((value) => !value);
   }
 
-  function nextTrack() {
-    if (!allTracks.length) {
+  function chooseNextTrack() {
+    if (!catalog.length) {
       return;
     }
 
-    const nextIndex =
-      currentIndex >= 0
-        ? (currentIndex + 1) % allTracks.length
-        : 0;
+    if (repeat && currentTrack) {
+      setProgress(0);
+      setIsPlaying(true);
 
-    playTrack(allTracks[nextIndex]);
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+      }
+
+      return;
+    }
+
+    let nextIndex = 0;
+
+    if (shuffle) {
+      if (catalog.length === 1) {
+        nextIndex = 0;
+      } else {
+        do {
+          nextIndex = Math.floor(
+            Math.random() *
+              catalog.length
+          );
+        } while (
+          nextIndex === currentIndex
+        );
+      }
+    } else if (currentIndex >= 0) {
+      nextIndex =
+        (currentIndex + 1) %
+        catalog.length;
+    }
+
+    playTrack(catalog[nextIndex]);
   }
 
-  function previousTrack() {
-    if (!allTracks.length) {
+  function choosePreviousTrack() {
+    if (!catalog.length) {
       return;
     }
 
-    const previousIndex =
-      currentIndex > 0
-        ? currentIndex - 1
-        : allTracks.length - 1;
+    if (
+      audioRef.current &&
+      audioRef.current.currentTime > 5
+    ) {
+      audioRef.current.currentTime = 0;
+      setProgress(0);
+      return;
+    }
 
-    playTrack(allTracks[previousIndex]);
+    let previousIndex;
+
+    if (currentIndex <= 0) {
+      previousIndex =
+        catalog.length - 1;
+    } else {
+      previousIndex = currentIndex - 1;
+    }
+
+    playTrack(catalog[previousIndex]);
   }
 
   function toggleFavorite(track) {
+    if (!track) {
+      return;
+    }
+
     setFavorites((previous) => {
       if (previous.includes(track.id)) {
         return previous.filter(
@@ -931,19 +2426,60 @@ function App() {
     });
   }
 
+  function isFavorite(track) {
+    return favorites.includes(track.id);
+  }
+
+  function addToQueue(track) {
+    setQueue((previous) => {
+      if (
+        previous.some(
+          (item) => item.id === track.id
+        )
+      ) {
+        return previous;
+      }
+
+      return [...previous, track];
+    });
+  }
+
+  function removeFromQueue(track) {
+    setQueue((previous) =>
+      previous.filter(
+        (item) => item.id !== track.id
+      )
+    );
+  }
+
+  function openLogin() {
+    setAuthMode("login");
+    setAuthError("");
+    setAuthOpen(true);
+    loadCaptcha();
+  }
+
+  function openRegister() {
+    setAuthMode("register");
+    setAuthError("");
+    setAuthOpen(true);
+    loadCaptcha();
+  }
+
   async function submitAuth(values) {
     setAuthLoading(true);
     setAuthError("");
 
     if (
-      values.captcha !== captcha ||
-      !/^\d{4}$/.test(values.captcha)
+      String(values.captcha) !==
+      String(captcha)
     ) {
       setAuthError(
-        "Неверная CAPTCHA. Обновите код и попробуйте снова."
+        "Неверная CAPTCHA. Обновите код."
       );
+
       setCaptchaInput("");
-      setCaptcha(createCaptchaFallback());
+      setCaptcha(randomCaptcha());
       setAuthLoading(false);
       return;
     }
@@ -962,500 +2498,371 @@ function App() {
       };
 
       if (authMode === "register") {
-        payload.username = values.username;
+        payload.username =
+          values.username;
       }
 
-      const data = await apiFetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+      const data = await apiFetch(
+        endpoint,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify(
+            payload
+          ),
+        }
+      );
 
-      const nextUser =
-        data?.user ||
-        data?.profile ||
-        data?.account ||
-        null;
+      const account =
+        data.user ||
+        data.profile ||
+        data.account ||
+        data;
 
-      if (nextUser) {
-        setUser(nextUser);
+      if (account) {
+        setUser(account);
 
         localStorage.setItem(
           "fenix_music_user",
-          JSON.stringify(nextUser)
+          JSON.stringify(account)
         );
       }
 
       setAuthOpen(false);
+      setCaptchaInput("");
     } catch (error) {
       setAuthError(
         error?.message ||
-          "Не удалось выполнить операцию"
+          "Не удалось выполнить вход"
       );
+
       await loadCaptcha();
     } finally {
       setAuthLoading(false);
     }
   }
 
-  function openAuth(mode = "login") {
-    setAuthMode(mode);
-    setAuthOpen(true);
-    loadCaptcha();
-  }
-
   function logout() {
     setUser(null);
-    localStorage.removeItem("fenix_music_user");
+    localStorage.removeItem(
+      "fenix_music_user"
+    );
   }
 
-  function changePage(nextPage) {
+  function navigate(nextPage) {
     setPage(nextPage);
     setSidebarOpen(false);
+    setQueueOpen(false);
     window.scrollTo({
       top: 0,
       behavior: "smooth",
     });
   }
 
+  function handleAudioTimeUpdate(event) {
+    const audio = event.currentTarget;
+
+    setProgress(audio.currentTime);
+
+    if (
+      Number.isFinite(audio.duration) &&
+      audio.duration > 0
+    ) {
+      setDuration(audio.duration);
+    }
+  }
+
+  function handleAudioLoaded(event) {
+    const value =
+      event.currentTarget.duration;
+
+    if (
+      Number.isFinite(value) &&
+      value > 0
+    ) {
+      setDuration(value);
+    }
+  }
+
+  function handleAudioEnded() {
+    if (repeat) {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(
+          () => {}
+        );
+      }
+
+      setProgress(0);
+      return;
+    }
+
+    chooseNextTrack();
+  }
+
+  function seek(value) {
+    setProgress(value);
+
+    if (audioRef.current) {
+      audioRef.current.currentTime =
+        value;
+    }
+  }
+
   function renderPage() {
-    if (page === "library") {
+    if (page === "for-you") {
       return (
-        <>
-          <SectionTitle
-            title="Моя музыка"
-            action="Обновить"
-            onAction={loadMusic}
-          />
-
-          {favoriteTracks.length === 0 ? (
-            <div className="fm-empty">
-              <div className="fm-empty-icon">♡</div>
-              <h3>Здесь пока пусто</h3>
-              <p>
-                Добавляй любимые треки в избранное,
-                и они появятся здесь.
-              </p>
-            </div>
-          ) : (
-            <div className="fm-track-list">
-              {favoriteTracks.map((track, index) => (
-                <TrackRow
-                  key={track.id}
-                  track={track}
-                  index={index}
-                  currentTrack={currentTrack}
-                  isPlaying={isPlaying}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  favorite={favorites.includes(track.id)}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      );
-    }
-
-    if (page === "history") {
-      return (
-        <>
-          <SectionTitle title="Недавно прослушанное" />
-
-          {historyTracks.length === 0 ? (
-            <div className="fm-empty">
-              <div className="fm-empty-icon">↶</div>
-              <h3>История пуста</h3>
-              <p>
-                Запусти любой трек, чтобы он появился
-                здесь.
-              </p>
-            </div>
-          ) : (
-            <div className="fm-track-list">
-              {historyTracks.map((track, index) => (
-                <TrackRow
-                  key={`${track.id}-${index}`}
-                  track={track}
-                  index={index}
-                  currentTrack={currentTrack}
-                  isPlaying={isPlaying}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  favorite={favorites.includes(track.id)}
-                />
-              ))}
-            </div>
-          )}
-        </>
-      );
-    }
-
-    if (page === "popular") {
-      return (
-        <>
-          <SectionTitle
-            title="Популярное"
-            action="Все"
-            onAction={() => {}}
-          />
-
-          <div className="fm-card-grid">
-            {popularTracks
-              .slice(0, 8)
-              .map((track) => (
-                <TrackCard
-                  key={track.id}
-                  track={track}
-                  currentTrack={currentTrack}
-                  isPlaying={isPlaying}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  favorite={favorites.includes(track.id)}
-                />
-              ))}
-          </div>
-
-          <SectionTitle title="Топ треков" />
-
-          <div className="fm-track-list">
-            {popularTracks.map((track, index) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                index={index}
-                currentTrack={currentTrack}
-                isPlaying={isPlaying}
-                onPlay={playTrack}
-                onFavorite={toggleFavorite}
-                favorite={favorites.includes(track.id)}
-              />
-            ))}
-          </div>
-        </>
+        <ForYouPage
+          tracks={catalog}
+          currentTrack={currentTrack}
+          isPlaying={isPlaying}
+          favorites={favorites}
+          onPlay={playTrack}
+          onFavorite={toggleFavorite}
+          goTo={navigate}
+        />
       );
     }
 
     if (page === "new") {
       return (
-        <>
-          <SectionTitle
-            title="Новинки"
-            action="Обновить"
-            onAction={loadMusic}
-          />
-
-          <div className="fm-card-grid">
-            {filteredTracks
-              .slice(0, 8)
-              .map((track) => (
-                <TrackCard
-                  key={track.id}
-                  track={track}
-                  currentTrack={currentTrack}
-                  isPlaying={isPlaying}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  favorite={favorites.includes(track.id)}
-                />
-              ))}
-          </div>
-        </>
+        <NewPage
+          tracks={catalog}
+          currentTrack={currentTrack}
+          isPlaying={isPlaying}
+          favorites={favorites}
+          onPlay={playTrack}
+          onFavorite={toggleFavorite}
+        />
       );
     }
 
-    if (page === "recommendations") {
+    if (page === "popular") {
       return (
-        <>
-          <SectionTitle title="Для вас" />
-
-          <div className="fm-recommendation-banner">
-            <div>
-              <span>ПЕРСОНАЛЬНАЯ ПОДБОРКА</span>
-              <h2>Музыка под твоё настроение</h2>
-              <p>
-                Мы собрали треки, которые могут тебе
-                понравиться.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              className="fm-primary-button"
-              onClick={() =>
-                filteredTracks[0] &&
-                playTrack(filteredTracks[0])
-              }
-            >
-              ▶ Слушать
-            </button>
-          </div>
-
-          <SectionTitle title="Рекомендуем" />
-
-          <div className="fm-card-grid">
-            {filteredTracks
-              .slice(0, 8)
-              .map((track) => (
-                <TrackCard
-                  key={track.id}
-                  track={track}
-                  currentTrack={currentTrack}
-                  isPlaying={isPlaying}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  favorite={favorites.includes(track.id)}
-                />
-              ))}
-          </div>
-        </>
+        <PopularPage
+          tracks={catalog}
+          currentTrack={currentTrack}
+          isPlaying={isPlaying}
+          favorites={favorites}
+          onPlay={playTrack}
+          onFavorite={toggleFavorite}
+        />
       );
     }
 
     if (page === "mixes") {
       return (
-        <>
-          <SectionTitle title="Миксы" />
+        <MixesPage
+          tracks={catalog}
+          onPlay={playTrack}
+        />
+      );
+    }
 
-          <div className="fm-mix-grid">
-            {[
-              ["Night Mix", "Темный ночной вайб", "🌙"],
-              ["Energy Mix", "Заряд на весь день", "⚡"],
-              ["Chill Mix", "Спокойное настроение", "☁"],
-              ["Drive Mix", "Музыка для дороги", "🚗"],
-              ["Neon Mix", "Городские огни", "🌃"],
-              ["Focus Mix", "Концентрация", "◉"],
-            ].map(([title, text, emoji]) => (
-              <button
-                key={title}
-                className="fm-mix-card"
-                type="button"
-                onClick={() =>
-                  filteredTracks[0] &&
-                  playTrack(filteredTracks[0])
-                }
-              >
-                <span>{emoji}</span>
-                <strong>{title}</strong>
-                <small>{text}</small>
-              </button>
-            ))}
-          </div>
-        </>
+    if (page === "history") {
+      return (
+        <LibraryPage
+          title="История"
+          subtitle="Недавно прослушанные треки"
+          tracks={historyTracks}
+          currentTrack={currentTrack}
+          isPlaying={isPlaying}
+          favorites={favorites}
+          onPlay={playTrack}
+          onFavorite={toggleFavorite}
+        />
+      );
+    }
+
+    if (page === "favorites") {
+      return (
+        <LibraryPage
+          title="Избранное"
+          subtitle="Треки, которые ты сохранил"
+          tracks={favoriteTracks}
+          currentTrack={currentTrack}
+          isPlaying={isPlaying}
+          favorites={favorites}
+          onPlay={playTrack}
+          onFavorite={toggleFavorite}
+        />
+      );
+    }
+
+    if (page === "profile") {
+      return (
+        <ProfilePage
+          user={user}
+          onLogin={openLogin}
+          onLogout={logout}
+        />
+      );
+    }
+
+    if (page === "settings") {
+      return (
+        <SettingsPage
+          volume={volume}
+          setVolume={setVolume}
+        />
       );
     }
 
     return (
-      <>
-        <section className="fm-hero">
-          <div className="fm-hero-content">
-            <span className="fm-eyebrow">
-              FENIX MUSIC
-            </span>
-
-            <h1>
-              Музыка.
-              <br />
-              <em>Твой мир.</em>
-            </h1>
-
-            <p>
-              Слушай любимые треки, открывай новые
-              релизы и собирай свою музыкальную
-              коллекцию.
-            </p>
-
-            <div className="fm-hero-actions">
-              <button
-                className="fm-primary-button"
-                type="button"
-                onClick={() =>
-                  filteredTracks[0] &&
-                  playTrack(filteredTracks[0])
-                }
-              >
-                ▶ Начать слушать
-              </button>
-
-              <button
-                className="fm-secondary-button"
-                type="button"
-                onClick={() =>
-                  changePage("recommendations")
-                }
-              >
-                Для вас
-              </button>
-            </div>
-          </div>
-
-          <div className="fm-hero-orb">
-            <div className="fm-orb-ring ring-one" />
-            <div className="fm-orb-ring ring-two" />
-            <div className="fm-orb-center">
-              <span>F</span>
-            </div>
-          </div>
-        </section>
-
-        <SectionTitle
-          title="Продолжить слушать"
-          action="Показать все"
-          onAction={() => changePage("history")}
-        />
-
-        {historyTracks.length > 0 ? (
-          <div className="fm-card-grid">
-            {historyTracks
-              .slice(0, 4)
-              .map((track) => (
-                <TrackCard
-                  key={track.id}
-                  track={track}
-                  currentTrack={currentTrack}
-                  isPlaying={isPlaying}
-                  onPlay={playTrack}
-                  onFavorite={toggleFavorite}
-                  favorite={favorites.includes(track.id)}
-                />
-              ))}
-          </div>
-        ) : (
-          <div className="fm-empty fm-empty-small">
-            <div className="fm-empty-icon">♫</div>
-            <h3>Начни слушать</h3>
-            <p>
-              Здесь появятся треки, которые ты недавно
-              запускал.
-            </p>
-          </div>
-        )}
-
-        <SectionTitle
-          title="Популярное"
-          action="Все"
-          onAction={() => changePage("popular")}
-        />
-
-        <div className="fm-card-grid">
-          {popularTracks
-            .slice(0, 6)
-            .map((track) => (
-              <TrackCard
-                key={track.id}
-                track={track}
-                currentTrack={currentTrack}
-                isPlaying={isPlaying}
-                onPlay={playTrack}
-                onFavorite={toggleFavorite}
-                favorite={favorites.includes(track.id)}
-              />
-            ))}
-        </div>
-
-        <SectionTitle title="Все треки" />
-
-        {filteredTracks.length > 0 ? (
-          <div className="fm-track-list">
-            {filteredTracks.map((track, index) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                index={index}
-                currentTrack={currentTrack}
-                isPlaying={isPlaying}
-                onPlay={playTrack}
-                onFavorite={toggleFavorite}
-                favorite={favorites.includes(track.id)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="fm-empty">
-            <div className="fm-empty-icon">♫</div>
-            <h3>Треки не найдены</h3>
-            <p>
-              Попробуй изменить поисковый запрос.
-            </p>
-          </div>
-        )}
-      </>
+      <HomePage
+        tracks={catalog}
+        currentTrack={currentTrack}
+        isPlaying={isPlaying}
+        favorites={favorites}
+        historyTracks={historyTracks}
+        popularTracks={popularTracks}
+        onPlay={playTrack}
+        onFavorite={toggleFavorite}
+        goTo={navigate}
+      />
     );
   }
 
   return (
     <div className="fm-app">
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        onTimeUpdate={handleAudioTimeUpdate}
+        onLoadedMetadata={handleAudioLoaded}
+        onEnded={handleAudioEnded}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+      />
+
       <aside
         className={`fm-sidebar ${
           sidebarOpen ? "open" : ""
         }`}
       >
-        <div className="fm-brand">
-          <div className="fm-logo-mark">F</div>
-          <div>
-            <strong>FENIX</strong>
-            <span>MUSIC</span>
-          </div>
+        <div className="fm-sidebar-brand">
+          <button
+            type="button"
+            onClick={() => navigate("home")}
+            className="fm-brand-button"
+          >
+            <div className="fm-brand-logo">
+              F
+            </div>
+
+            <div className="fm-brand-text">
+              <strong>FENIX</strong>
+              <span>MUSIC</span>
+            </div>
+          </button>
         </div>
 
-        <nav className="fm-nav">
-          {NAV_ITEMS.map((item) => (
+        <div className="fm-sidebar-label">
+          МУЗЫКА
+        </div>
+
+        <nav className="fm-sidebar-nav">
+          {NAVIGATION.map((item) => (
             <button
               key={item.id}
               type="button"
               className={`fm-nav-item ${
-                page === item.id ? "active" : ""
+                page === item.id
+                  ? "active"
+                  : ""
               }`}
-              onClick={() => changePage(item.id)}
+              onClick={() =>
+                navigate(item.id)
+              }
             >
-              <Icon>{item.icon}</Icon>
-              <span>{item.label}</span>
+              <span>{item.icon}</span>
+              <strong>{item.title}</strong>
             </button>
           ))}
         </nav>
 
-        <div className="fm-sidebar-bottom">
-          <div className="fm-sidebar-feature">
-            <span>✦</span>
-            <strong>Fenix Premium</strong>
-            <small>
-              Больше возможностей
-            </small>
-          </div>
+        <div className="fm-sidebar-label">
+          ТВОЯ МУЗЫКА
+        </div>
 
+        <nav className="fm-sidebar-nav">
+          {LIBRARY_NAV.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`fm-nav-item ${
+                page === item.id
+                  ? "active"
+                  : ""
+              }`}
+              onClick={() =>
+                navigate(item.id)
+              }
+            >
+              <span>{item.icon}</span>
+              <strong>{item.title}</strong>
+            </button>
+          ))}
+        </nav>
+
+        <div className="fm-sidebar-spacer" />
+
+        <button
+          type="button"
+          className="fm-premium-card"
+          onClick={() =>
+            navigate("for-you")
+          }
+        >
+          <span>✦</span>
+          <strong>Fenix Premium</strong>
+          <small>
+            Больше музыки и возможностей
+          </small>
+        </button>
+
+        <div className="fm-sidebar-account">
           {user ? (
             <button
-              className="fm-user-card"
               type="button"
-              onClick={logout}
+              className="fm-account-button"
+              onClick={() =>
+                navigate("profile")
+              }
             >
-              <span className="fm-avatar">
+              <div className="fm-avatar">
                 {getInitials(
                   user.username ||
                     user.name ||
                     user.email
                 )}
-              </span>
+              </div>
 
-              <span>
+              <div>
                 <strong>
                   {user.username ||
                     user.name ||
                     "Пользователь"}
                 </strong>
-                <small>Выйти</small>
-              </span>
+                <span>Профиль</span>
+              </div>
             </button>
           ) : (
             <button
-              className="fm-login-sidebar"
               type="button"
-              onClick={() => openAuth("login")}
+              className="fm-login-sidebar"
+              onClick={openLogin}
             >
               <span>↪</span>
-              <strong>Войти в аккаунт</strong>
+              <div>
+                <strong>Войти</strong>
+                <small>
+                  Синхронизировать музыку
+                </small>
+              </div>
             </button>
           )}
         </div>
@@ -1463,77 +2870,86 @@ function App() {
 
       {sidebarOpen ? (
         <button
-          className="fm-mobile-overlay"
           type="button"
+          className="fm-mobile-backdrop"
+          onClick={() =>
+            setSidebarOpen(false)
+          }
           aria-label="Закрыть меню"
-          onClick={() => setSidebarOpen(false)}
         />
       ) : null}
 
       <main className="fm-main">
         <header className="fm-header">
           <button
-            className="fm-menu-button"
             type="button"
+            className="fm-mobile-menu"
             onClick={() =>
-              setSidebarOpen((value) => !value)
+              setSidebarOpen(
+                (value) => !value
+              )
             }
-            aria-label="Меню"
           >
             ☰
           </button>
 
-          <div className="fm-search">
-            <span>⌕</span>
-
-            <input
-              value={search}
-              onChange={(event) =>
-                setSearch(event.target.value)
+          <div className="fm-header-search">
+            <button
+              type="button"
+              onClick={() =>
+                setSearchOpen(true)
               }
-              placeholder="Поиск музыки, артистов и альбомов"
-            />
-
-            {search ? (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                aria-label="Очистить"
-              >
-                ×
-              </button>
-            ) : null}
+            >
+              <span>⌕</span>
+              <span>
+                {search ||
+                  "Поиск музыки, артистов и альбомов"}
+              </span>
+            </button>
           </div>
 
           <div className="fm-header-actions">
             <button
-              className="fm-icon-button"
               type="button"
-              onClick={() => changePage("history")}
+              className="fm-header-icon"
+              onClick={() =>
+                navigate("history")
+              }
               title="История"
             >
               ↶
             </button>
 
+            <button
+              type="button"
+              className="fm-header-icon"
+              onClick={() =>
+                navigate("favorites")
+              }
+              title="Избранное"
+            >
+              ♡
+            </button>
+
             {user ? (
               <button
-                className="fm-header-user"
                 type="button"
-                onClick={logout}
+                className="fm-header-avatar"
+                onClick={() =>
+                  navigate("profile")
+                }
               >
-                <span className="fm-avatar">
-                  {getInitials(
-                    user.username ||
-                      user.name ||
-                      user.email
-                  )}
-                </span>
+                {getInitials(
+                  user.username ||
+                    user.name ||
+                    user.email
+                )}
               </button>
             ) : (
               <button
-                className="fm-login-button"
                 type="button"
-                onClick={() => openAuth("login")}
+                className="fm-header-login"
+                onClick={openLogin}
               >
                 Войти
               </button>
@@ -1541,30 +2957,39 @@ function App() {
           </div>
         </header>
 
+        {backendError ? (
+          <div className="fm-backend-notice">
+            <div>
+              <strong>
+                Музыкальный сервер
+              </strong>
+
+              <span>
+                {backendError}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={loadMusic}
+            >
+              Повторить
+            </button>
+          </div>
+        ) : null}
+
         <div className="fm-content">
-          {serverError ? (
-            <div className="fm-server-warning">
-              <span>⚠</span>
-              <div>
-                <strong>
-                  Backend отвечает с ошибкой
-                </strong>
-                <small>{serverError}</small>
+          {loading && tracks.length === 0 ? (
+            <div className="fm-loading-screen">
+              <div className="fm-loading-logo">
+                F
               </div>
 
-              <button
-                type="button"
-                onClick={loadMusic}
-              >
-                Повторить
-              </button>
-            </div>
-          ) : null}
-
-          {loading && tracks.length === 0 ? (
-            <div className="fm-loading">
               <div className="fm-spinner" />
-              <span>Загружаем Fenix Music...</span>
+
+              <span>
+                Загружаем Fenix Music...
+              </span>
             </div>
           ) : (
             renderPage()
@@ -1572,40 +2997,154 @@ function App() {
         </div>
       </main>
 
-      {currentTrack ? (
-        <Player
-          track={currentTrack}
-          isPlaying={isPlaying}
-          onToggle={togglePlayback}
-          onNext={nextTrack}
-          onPrevious={previousTrack}
-          progress={progress}
-          duration={duration}
-          volume={volume}
-          setProgress={setProgress}
-          setVolume={setVolume}
-          favorite={favorites.includes(
-            currentTrack.id
-          )}
-          onFavorite={toggleFavorite}
-        />
-      ) : null}
+      <QueuePanel
+        open={queueOpen}
+        queue={queue}
+        currentTrack={currentTrack}
+        onPlay={playTrack}
+        onRemove={removeFromQueue}
+        onClose={() =>
+          setQueueOpen(false)
+        }
+      />
+
+      <PlayerBar
+        track={currentTrack}
+        isPlaying={isPlaying}
+        progress={progress}
+        duration={duration}
+        volume={volume}
+        shuffle={shuffle}
+        repeat={repeat}
+        favorite={
+          currentTrack
+            ? favorites.includes(
+                currentTrack.id
+              )
+            : false
+        }
+        queueOpen={queueOpen}
+        onToggle={togglePlayback}
+        onPrevious={
+          choosePreviousTrack
+        }
+        onNext={chooseNextTrack}
+        onSeek={seek}
+        onVolume={setVolume}
+        onShuffle={() =>
+          setShuffle(
+            (value) => !value
+          )
+        }
+        onRepeat={() =>
+          setRepeat(
+            (value) => !value
+          )
+        }
+        onFavorite={() =>
+          currentTrack &&
+          toggleFavorite(currentTrack)
+        }
+        onQueue={() =>
+          setQueueOpen(
+            (value) => !value
+          )
+        }
+        onFullPlayer={() =>
+          setFullPlayerOpen(true)
+        }
+      />
+
+      <FullPlayer
+        open={fullPlayerOpen}
+        track={currentTrack}
+        isPlaying={isPlaying}
+        progress={progress}
+        duration={duration}
+        volume={volume}
+        shuffle={shuffle}
+        repeat={repeat}
+        favorite={
+          currentTrack
+            ? favorites.includes(
+                currentTrack.id
+              )
+            : false
+        }
+        onClose={() =>
+          setFullPlayerOpen(false)
+        }
+        onToggle={togglePlayback}
+        onPrevious={
+          choosePreviousTrack
+        }
+        onNext={chooseNextTrack}
+        onSeek={seek}
+        onVolume={setVolume}
+        onShuffle={() =>
+          setShuffle(
+            (value) => !value
+          )
+        }
+        onRepeat={() =>
+          setRepeat(
+            (value) => !value
+          )
+        }
+        onFavorite={() =>
+          currentTrack &&
+          toggleFavorite(currentTrack)
+        }
+      />
+
+      <SearchOverlay
+        open={searchOpen}
+        query={search}
+        setQuery={setSearch}
+        tracks={catalog}
+        currentTrack={currentTrack}
+        isPlaying={isPlaying}
+        onPlay={playTrack}
+        onFavorite={toggleFavorite}
+        isFavorite={isFavorite}
+        onClose={() =>
+          setSearchOpen(false)
+        }
+      />
 
       <AuthModal
         open={authOpen}
-        onClose={() => setAuthOpen(false)}
         mode={authMode}
-        setMode={setAuthMode}
+        onClose={() =>
+          setAuthOpen(false)
+        }
+        onModeChange={(mode) => {
+          setAuthMode(mode);
+          setAuthError("");
+          loadCaptcha();
+        }}
+        onSubmit={submitAuth}
+        loading={authLoading}
+        error={authError}
         captcha={captcha}
         captchaInput={captchaInput}
         setCaptchaInput={setCaptchaInput}
         refreshCaptcha={loadCaptcha}
-        onSubmit={submitAuth}
-        authLoading={authLoading}
-        authError={authError}
       />
+
+      <footer className="fm-footer">
+        <span>FENIX MUSIC</span>
+        <span>Музыка. Твой мир.</span>
+
+        <button
+          type="button"
+          onClick={() =>
+            navigate("settings")
+          }
+        >
+          ⚙ Настройки
+        </button>
+      </footer>
     </div>
   );
 }
-
-export default App;
