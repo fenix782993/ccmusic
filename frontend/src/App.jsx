@@ -20,7 +20,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Plus,
-  Trash2,
   MoreHorizontal,
   Music2,
   Disc3,
@@ -30,7 +29,6 @@ import {
   UserPlus,
   X,
   Check,
-  Upload,
   RefreshCw,
 } from "lucide-react";
 
@@ -164,7 +162,6 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
 
   const [profile, setProfile] = useState(null);
-
   const [toast, setToast] = useState("");
 
   useEffect(() => {
@@ -189,7 +186,6 @@ function App() {
 
   useEffect(() => {
     if (!audioRef.current) return;
-
     audioRef.current.volume = volume;
   }, [volume]);
 
@@ -281,9 +277,11 @@ function App() {
           (Array.isArray(albumsData) ? albumsData : [])
       );
 
-      setGenres(
-        [...new Set(mainTracks.map((track) => track.genre).filter(Boolean))]
-      );
+      setGenres([
+        ...new Set(
+          mainTracks.map((track) => track.genre).filter(Boolean)
+        ),
+      ]);
     } catch (err) {
       console.error(err);
       setError(err.message);
@@ -341,11 +339,15 @@ function App() {
   function playTrack(track, list = null) {
     if (!track) return;
 
-    const nextQueue = uniqueTracks(list?.length ? list : tracks);
+    const nextQueue = uniqueTracks(
+      list?.length ? list : tracks
+    );
 
     setQueue(nextQueue);
 
-    const index = nextQueue.findIndex((item) => item.id === track.id);
+    const index = nextQueue.findIndex(
+      (item) => item.id === track.id
+    );
 
     setQueueIndex(index >= 0 ? index : 0);
     setCurrentTrack(track);
@@ -384,11 +386,11 @@ function App() {
         method: "POST",
       });
     } catch {
-      // Не блокируем проигрывание музыки.
+      // История не должна блокировать воспроизведение.
     }
   }
 
-  async function handleAudioPlay() {
+  function handleAudioPlay() {
     setIsPlaying(true);
 
     if (currentTrack) {
@@ -406,7 +408,9 @@ function App() {
         nextIndex = 0;
       } else {
         do {
-          nextIndex = Math.floor(Math.random() * queue.length);
+          nextIndex = Math.floor(
+            Math.random() * queue.length
+          );
         } while (nextIndex === queueIndex);
       }
     } else {
@@ -430,7 +434,10 @@ function App() {
   function previousTrack() {
     if (!queue.length) return;
 
-    if (audioRef.current && audioRef.current.currentTime > 5) {
+    if (
+      audioRef.current &&
+      audioRef.current.currentTime > 5
+    ) {
       audioRef.current.currentTime = 0;
       return;
     }
@@ -438,7 +445,9 @@ function App() {
     let previousIndex = queueIndex - 1;
 
     if (previousIndex < 0) {
-      previousIndex = repeat ? queue.length - 1 : 0;
+      previousIndex = repeat
+        ? queue.length - 1
+        : 0;
     }
 
     setQueueIndex(previousIndex);
@@ -447,7 +456,11 @@ function App() {
   }
 
   function handleEnded() {
-    if (repeat && currentTrack && audioRef.current) {
+    if (
+      repeat &&
+      currentTrack &&
+      audioRef.current
+    ) {
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(() => {});
       return;
@@ -467,11 +480,14 @@ function App() {
 
   async function toggleLike(track) {
     if (!user) {
+      openPage("profile");
       setAuthMode("login");
       return;
     }
 
-    const liked = likes.some((item) => item.id === track.id);
+    const liked = likes.some(
+      (item) => item.id === track.id
+    );
 
     try {
       await api(`/api/library/likes/${track.id}`, {
@@ -482,10 +498,19 @@ function App() {
       });
 
       if (liked) {
-        setLikes((items) => items.filter((item) => item.id !== track.id));
+        setLikes((items) =>
+          items.filter(
+            (item) => item.id !== track.id
+          )
+        );
+
         showToast("Удалено из избранного");
       } else {
-        setLikes((items) => [...items, track]);
+        setLikes((items) => [
+          ...items,
+          track,
+        ]);
+
         showToast("Добавлено в избранное");
       }
     } catch (err) {
@@ -494,24 +519,29 @@ function App() {
   }
 
   function isLiked(track) {
-    return likes.some((item) => item.id === track?.id);
+    return likes.some(
+      (item) => item.id === track?.id
+    );
   }
 
   function handleAuthSuccess(account) {
     setUser(account);
     setAuthMode(null);
+    setPage("profile");
     loadUserData();
     showToast("Добро пожаловать в FENIX MUSIC");
   }
 
   function logout() {
     localStorage.removeItem(TOKEN_KEY);
+
     setUser(null);
     setLikes([]);
     setHistory([]);
     setPlaylists([]);
     setProfile(null);
     setPage("home");
+
     showToast("Вы вышли из аккаунта");
   }
 
@@ -522,38 +552,21 @@ function App() {
 
     return tracks.filter((track) => {
       return (
-        String(track.title || "").toLowerCase().includes(query) ||
-        String(track.artist || "").toLowerCase().includes(query) ||
-        String(track.album || "").toLowerCase().includes(query) ||
-        String(track.genre || "").toLowerCase().includes(query)
+        String(track.title || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(track.artist || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(track.album || "")
+          .toLowerCase()
+          .includes(query) ||
+        String(track.genre || "")
+          .toLowerCase()
+          .includes(query)
       );
     });
   }, [search, tracks]);
-
-  function getPageTracks() {
-    switch (page) {
-      case "popular":
-        return popular;
-
-      case "new":
-        return newTracks;
-
-      case "recommendations":
-        return recommendations;
-
-      case "likes":
-        return likes;
-
-      case "history":
-        return history;
-
-      case "tracks":
-        return tracks;
-
-      default:
-        return tracks;
-    }
-  }
 
   function openPage(nextPage) {
     setPage(nextPage);
@@ -569,12 +582,16 @@ function App() {
         onEnded={handleEnded}
         onTimeUpdate={() => {
           if (audioRef.current) {
-            setProgress(audioRef.current.currentTime);
+            setProgress(
+              audioRef.current.currentTime
+            );
           }
         }}
         onLoadedMetadata={() => {
           if (audioRef.current) {
-            setDuration(audioRef.current.duration || 0);
+            setDuration(
+              audioRef.current.duration || 0
+            );
           }
         }}
       />
@@ -583,10 +600,10 @@ function App() {
         page={page}
         openPage={openPage}
         user={user}
-        onLogin={() => setAuthMode("login")}
-        onRegister={() => setAuthMode("register")}
         onLogout={logout}
-        onSettings={() => setShowSettings(true)}
+        onSettings={() =>
+          setShowSettings(true)
+        }
       />
 
       <main className="main-content">
@@ -594,14 +611,18 @@ function App() {
           <div className="navigation-buttons">
             <button
               className="icon-button"
-              onClick={() => window.history.back()}
+              onClick={() =>
+                window.history.back()
+              }
             >
               <ChevronLeft size={20} />
             </button>
 
             <button
               className="icon-button"
-              onClick={() => window.history.forward()}
+              onClick={() =>
+                window.history.forward()
+              }
             >
               <ChevronRight size={20} />
             </button>
@@ -612,7 +633,9 @@ function App() {
 
             <input
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) =>
+                setSearch(event.target.value)
+              }
               placeholder="Что хочешь послушать?"
             />
 
@@ -630,27 +653,23 @@ function App() {
             {user ? (
               <button
                 className="user-chip"
-                onClick={() => openPage("profile")}
+                onClick={() =>
+                  openPage("profile")
+                }
               >
                 <Avatar user={user} />
                 <span>{user.username}</span>
               </button>
             ) : (
-              <>
-                <button
-                  className="secondary-button"
-                  onClick={() => setAuthMode("login")}
-                >
-                  Войти
-                </button>
-
-                <button
-                  className="primary-button"
-                  onClick={() => setAuthMode("register")}
-                >
-                  Регистрация
-                </button>
-              </>
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  openPage("profile")
+                }
+              >
+                <User size={17} />
+                Профиль
+              </button>
             )}
           </div>
         </header>
@@ -669,7 +688,9 @@ function App() {
               {page === "home" && (
                 <HomePage
                   user={user}
-                  recommendations={recommendations}
+                  recommendations={
+                    recommendations
+                  }
                   popular={popular}
                   newTracks={newTracks}
                   tracks={tracks}
@@ -735,7 +756,7 @@ function App() {
                   emptyText={
                     user
                       ? "Здесь пока нет любимых треков"
-                      : "Войди в аккаунт, чтобы использовать избранное"
+                      : "Войди в аккаунт через Профиль"
                   }
                 />
               )}
@@ -758,7 +779,9 @@ function App() {
                   likes={likes}
                   history={history}
                   user={user}
-                  onCreate={() => setShowCreatePlaylist(true)}
+                  onCreate={() =>
+                    setShowCreatePlaylist(true)
+                  }
                   onPlay={playTrack}
                   onLike={toggleLike}
                   isLiked={isLiked}
@@ -767,11 +790,15 @@ function App() {
               )}
 
               {page === "artists" && (
-                <ArtistsPage artists={artists} />
+                <ArtistsPage
+                  artists={artists}
+                />
               )}
 
               {page === "albums" && (
-                <AlbumsPage albums={albums} />
+                <AlbumsPage
+                  albums={albums}
+                />
               )}
 
               {page === "profile" && (
@@ -781,10 +808,16 @@ function App() {
                   likes={likes}
                   history={history}
                   playlists={playlists}
-                  onLogin={() => setAuthMode("login")}
-                  onRegister={() => setAuthMode("register")}
+                  onLogin={() =>
+                    setAuthMode("login")
+                  }
+                  onRegister={() =>
+                    setAuthMode("register")
+                  }
                   onLogout={logout}
-                  onSettings={() => setShowSettings(true)}
+                  onSettings={() =>
+                    setShowSettings(true)
+                  }
                 />
               )}
             </>
@@ -806,26 +839,45 @@ function App() {
         onNext={nextTrack}
         onSeek={seek}
         onVolume={setVolume}
-        onShuffle={() => setShuffle((value) => !value)}
-        onRepeat={() => setRepeat((value) => !value)}
-        onLike={() => currentTrack && toggleLike(currentTrack)}
-        onQueue={() => setShowQueue(true)}
+        onShuffle={() =>
+          setShuffle((value) => !value)
+        }
+        onRepeat={() =>
+          setRepeat((value) => !value)
+        }
+        onLike={() =>
+          currentTrack &&
+          toggleLike(currentTrack)
+        }
+        onQueue={() =>
+          setShowQueue(true)
+        }
       />
 
       {showQueue && (
         <QueuePanel
           queue={queue}
           currentTrack={currentTrack}
-          onPlay={(track) => playTrack(track, queue)}
-          onClose={() => setShowQueue(false)}
+          onPlay={(track) =>
+            playTrack(track, queue)
+          }
+          onClose={() =>
+            setShowQueue(false)
+          }
         />
       )}
 
       {showCreatePlaylist && (
         <CreatePlaylistModal
-          onClose={() => setShowCreatePlaylist(false)}
+          onClose={() =>
+            setShowCreatePlaylist(false)
+          }
           onCreated={(playlist) => {
-            setPlaylists((items) => [...items, playlist]);
+            setPlaylists((items) => [
+              ...items,
+              playlist,
+            ]);
+
             setShowCreatePlaylist(false);
             showToast("Плейлист создан");
           }}
@@ -835,7 +887,9 @@ function App() {
       {showSettings && (
         <SettingsModal
           user={user}
-          onClose={() => setShowSettings(false)}
+          onClose={() =>
+            setShowSettings(false)
+          }
           onUpdated={(updated) => {
             setUser(updated);
             showToast("Профиль обновлён");
@@ -847,7 +901,9 @@ function App() {
         <AuthModal
           mode={authMode}
           setMode={setAuthMode}
-          onClose={() => setAuthMode(null)}
+          onClose={() =>
+            setAuthMode(null)
+          }
           onSuccess={handleAuthSuccess}
         />
       )}
@@ -860,7 +916,9 @@ function App() {
 
           <div className="spinner" />
 
-          <span>Загрузка FENIX MUSIC...</span>
+          <span>
+            Загрузка FENIX MUSIC...
+          </span>
         </div>
       )}
 
@@ -872,13 +930,19 @@ function App() {
             <RefreshCw size={16} />
           </button>
 
-          <button onClick={() => setError("")}>
+          <button
+            onClick={() => setError("")}
+          >
             <X size={16} />
           </button>
         </div>
       )}
 
-      {toast && <div className="toast">{toast}</div>}
+      {toast && (
+        <div className="toast">
+          {toast}
+        </div>
+      )}
     </div>
   );
 }
@@ -891,8 +955,6 @@ function Sidebar({
   page,
   openPage,
   user,
-  onLogin,
-  onRegister,
   onLogout,
   onSettings,
 }) {
@@ -914,7 +976,9 @@ function Sidebar({
           icon={<Home size={19} />}
           label="Главная"
           active={page === "home"}
-          onClick={() => openPage("home")}
+          onClick={() =>
+            openPage("home")
+          }
         />
 
         <NavItem
@@ -922,7 +986,11 @@ function Sidebar({
           label="Поиск"
           active={false}
           onClick={() =>
-            document.querySelector(".search-box input")?.focus()
+            document
+              .querySelector(
+                ".search-box input"
+              )
+              ?.focus()
           }
         />
 
@@ -930,71 +998,104 @@ function Sidebar({
           icon={<Library size={19} />}
           label="Моя библиотека"
           active={page === "library"}
-          onClick={() => openPage("library")}
+          onClick={() =>
+            openPage("library")
+          }
+        />
+
+        <NavItem
+          icon={<User size={19} />}
+          label="Профиль"
+          active={page === "profile"}
+          onClick={() =>
+            openPage("profile")
+          }
         />
       </nav>
 
       <div className="side-section">
-        <div className="side-title">МУЗЫКА</div>
+        <div className="side-title">
+          МУЗЫКА
+        </div>
 
         <NavItem
           icon={<ListMusic size={18} />}
           label="Все треки"
           active={page === "tracks"}
-          onClick={() => openPage("tracks")}
+          onClick={() =>
+            openPage("tracks")
+          }
         />
 
         <NavItem
           icon={<Heart size={18} />}
           label="Избранное"
           active={page === "likes"}
-          onClick={() => openPage("likes")}
+          onClick={() =>
+            openPage("likes")
+          }
         />
 
         <NavItem
           icon={<History size={18} />}
           label="История"
           active={page === "history"}
-          onClick={() => openPage("history")}
+          onClick={() =>
+            openPage("history")
+          }
         />
 
         <NavItem
           icon={<Mic2 size={18} />}
           label="Исполнители"
           active={page === "artists"}
-          onClick={() => openPage("artists")}
+          onClick={() =>
+            openPage("artists")
+          }
         />
 
         <NavItem
           icon={<Disc3 size={18} />}
           label="Альбомы"
           active={page === "albums"}
-          onClick={() => openPage("albums")}
+          onClick={() =>
+            openPage("albums")
+          }
         />
       </div>
 
       <div className="side-section">
-        <div className="side-title">ОТКРЫТЬ</div>
+        <div className="side-title">
+          ОТКРЫТЬ
+        </div>
 
         <NavItem
           icon={<Music2 size={18} />}
           label="Для вас"
-          active={page === "recommendations"}
-          onClick={() => openPage("recommendations")}
+          active={
+            page === "recommendations"
+          }
+          onClick={() =>
+            openPage("recommendations")
+          }
         />
 
         <NavItem
           icon={<Play size={18} />}
           label="Популярное"
           active={page === "popular"}
-          onClick={() => openPage("popular")}
+          onClick={() =>
+            openPage("popular")
+          }
         />
 
         <NavItem
           icon={<RefreshCw size={18} />}
           label="Новинки"
           active={page === "new"}
-          onClick={() => openPage("new")}
+          onClick={() =>
+            openPage("new")
+          }
         />
       </div>
 
@@ -1003,13 +1104,20 @@ function Sidebar({
           <>
             <button
               className="sidebar-account"
-              onClick={() => openPage("profile")}
+              onClick={() =>
+                openPage("profile")
+              }
             >
               <Avatar user={user} />
 
               <div>
-                <strong>{user.username}</strong>
-                <span>Профиль</span>
+                <strong>
+                  {user.username}
+                </strong>
+
+                <span>
+                  Профиль
+                </span>
               </div>
             </button>
 
@@ -1028,42 +1136,48 @@ function Sidebar({
             />
           </>
         ) : (
-          <div className="sidebar-auth">
+          <button
+            className="sidebar-auth"
+            onClick={() =>
+              openPage("profile")
+            }
+            type="button"
+          >
             <div className="sidebar-auth-icon">
               <User size={22} />
             </div>
 
-            <strong>Войди в FENIX MUSIC</strong>
+            <div className="sidebar-auth-text">
+              <strong>
+                Профиль FENIX MUSIC
+              </strong>
 
-            <span>
-              Сохраняй любимую музыку и историю прослушивания.
-            </span>
+              <span>
+                Войти или зарегистрироваться
+              </span>
+            </div>
 
-            <button
-              className="primary-button full"
-              onClick={onLogin}
-            >
-              Войти
-            </button>
-
-            <button
-              className="ghost-button full"
-              onClick={onRegister}
-            >
-              Создать аккаунт
-            </button>
-          </div>
+            <ChevronRight size={18} />
+          </button>
         )}
       </div>
     </aside>
   );
 }
 
-function NavItem({ icon, label, active, onClick }) {
+function NavItem({
+  icon,
+  label,
+  active,
+  onClick,
+}) {
   return (
     <button
-      className={`nav-item ${active ? "active" : ""}`}
+      className={`nav-item ${
+        active ? "active" : ""
+      }`}
       onClick={onClick}
+      type="button"
     >
       {icon}
       <span>{label}</span>
@@ -1090,7 +1204,9 @@ function HomePage({
     <div className="home-page">
       <section className="hero">
         <div className="hero-content">
-          <span className="eyebrow">FENIX MUSIC</span>
+          <span className="eyebrow">
+            FENIX MUSIC
+          </span>
 
           <h1>
             Музыка.
@@ -1099,27 +1215,39 @@ function HomePage({
           </h1>
 
           <p>
-            Слушай любимые треки, находи новых исполнителей
-            и создавай свою музыкальную библиотеку.
+            Слушай любимые треки, находи новых
+            исполнителей и создавай свою
+            музыкальную библиотеку.
           </p>
 
           <div className="hero-actions">
             <button
               className="primary-button large"
               onClick={() => {
-                if (tracks.length) onPlay(tracks[0], tracks);
+                if (tracks.length) {
+                  onPlay(
+                    tracks[0],
+                    tracks
+                  );
+                }
               }}
             >
-              <Play size={18} fill="currentColor" />
+              <Play
+                size={18}
+                fill="currentColor"
+              />
               Слушать музыку
             </button>
 
             {!user && (
               <button
                 className="secondary-button large"
-                onClick={() => openPage("library")}
+                onClick={() =>
+                  openPage("profile")
+                }
               >
-                Создать библиотеку
+                <User size={18} />
+                Создать аккаунт
               </button>
             )}
           </div>
@@ -1127,7 +1255,10 @@ function HomePage({
 
         <div className="hero-decoration">
           <div className="hero-disc">
-            <Disc3 size={190} strokeWidth={1} />
+            <Disc3
+              size={190}
+              strokeWidth={1}
+            />
           </div>
         </div>
       </section>
@@ -1139,7 +1270,9 @@ function HomePage({
         onPlay={onPlay}
         onLike={onLike}
         isLiked={isLiked}
-        onMore={() => openPage("recommendations")}
+        onMore={() =>
+          openPage("recommendations")
+        }
       />
 
       <TrackSection
@@ -1149,7 +1282,9 @@ function HomePage({
         onPlay={onPlay}
         onLike={onLike}
         isLiked={isLiked}
-        onMore={() => openPage("popular")}
+        onMore={() =>
+          openPage("popular")
+        }
       />
 
       <TrackSection
@@ -1159,7 +1294,9 @@ function HomePage({
         onPlay={onPlay}
         onLike={onLike}
         isLiked={isLiked}
-        onMore={() => openPage("new")}
+        onMore={() =>
+          openPage("new")
+        }
       />
     </div>
   );
@@ -1180,23 +1317,38 @@ function TrackPage({
 }) {
   return (
     <div className="page">
-      <PageHeader title={title} subtitle={subtitle} />
+      <PageHeader
+        title={title}
+        subtitle={subtitle}
+      />
 
       {tracks.length ? (
         <div className="track-list">
-          {tracks.map((track, index) => (
-            <TrackRow
-              key={`${track.id}-${index}`}
-              track={track}
-              index={index + 1}
-              onPlay={() => onPlay(track, tracks)}
-              onLike={() => onLike(track)}
-              liked={isLiked(track)}
-            />
-          ))}
+          {tracks.map(
+            (track, index) => (
+              <TrackRow
+                key={`${track.id}-${index}`}
+                track={track}
+                index={index + 1}
+                onPlay={() =>
+                  onPlay(
+                    track,
+                    tracks
+                  )
+                }
+                onLike={() =>
+                  onLike(track)
+                }
+                liked={isLiked(track)}
+              />
+            )
+          )}
         </div>
       ) : (
-        <EmptyState icon={<Music2 size={35} />} text={emptyText} />
+        <EmptyState
+          icon={<Music2 size={35} />}
+          text={emptyText}
+        />
       )}
     </div>
   );
@@ -1218,11 +1370,17 @@ function TrackSection({
       <div className="section-heading">
         <div>
           <h2>{title}</h2>
-          {subtitle && <p>{subtitle}</p>}
+
+          {subtitle && (
+            <p>{subtitle}</p>
+          )}
         </div>
 
         {onMore && (
-          <button className="text-button" onClick={onMore}>
+          <button
+            className="text-button"
+            onClick={onMore}
+          >
             Показать всё
           </button>
         )}
@@ -1233,8 +1391,15 @@ function TrackSection({
           <TrackCard
             key={track.id}
             track={track}
-            onPlay={() => onPlay(track, tracks)}
-            onLike={() => onLike(track)}
+            onPlay={() =>
+              onPlay(
+                track,
+                tracks
+              )
+            }
+            onLike={() =>
+              onLike(track)
+            }
             liked={isLiked(track)}
           />
         ))}
@@ -1243,7 +1408,12 @@ function TrackSection({
   );
 }
 
-function TrackCard({ track, onPlay, onLike, liked }) {
+function TrackCard({
+  track,
+  onPlay,
+  onLike,
+  liked,
+}) {
   return (
     <article className="track-card">
       <div className="track-cover-wrap">
@@ -1257,46 +1427,79 @@ function TrackCard({ track, onPlay, onLike, liked }) {
           <CoverPlaceholder />
         )}
 
-        <button className="card-play" onClick={onPlay}>
-          <Play size={21} fill="currentColor" />
+        <button
+          className="card-play"
+          onClick={onPlay}
+        >
+          <Play
+            size={21}
+            fill="currentColor"
+          />
         </button>
 
         <button
-          className={`card-like ${liked ? "liked" : ""}`}
+          className={`card-like ${
+            liked ? "liked" : ""
+          }`}
           onClick={(event) => {
             event.stopPropagation();
             onLike();
           }}
         >
-          <Heart size={17} fill={liked ? "currentColor" : "none"} />
+          <Heart
+            size={17}
+            fill={
+              liked
+                ? "currentColor"
+                : "none"
+            }
+          />
         </button>
       </div>
 
       <div className="track-card-info">
-        <strong title={track.title}>{track.title}</strong>
+        <strong title={track.title}>
+          {track.title}
+        </strong>
 
         <span title={track.artist}>
-          {track.artist || "Неизвестный исполнитель"}
+          {track.artist ||
+            "Неизвестный исполнитель"}
         </span>
       </div>
     </article>
   );
 }
 
-function TrackRow({ track, index, onPlay, onLike, liked }) {
+function TrackRow({
+  track,
+  index,
+  onPlay,
+  onLike,
+  liked,
+}) {
   return (
     <div className="track-row">
       <div className="track-number">
         <span>{index}</span>
 
-        <button className="row-play" onClick={onPlay}>
-          <Play size={16} fill="currentColor" />
+        <button
+          className="row-play"
+          onClick={onPlay}
+        >
+          <Play
+            size={16}
+            fill="currentColor"
+          />
         </button>
       </div>
 
       <div className="row-cover">
         {track.cover_url ? (
-          <img src={getCover(track)} alt={track.title} />
+          <img
+            src={getCover(track)}
+            alt={track.title}
+          />
         ) : (
           <CoverPlaceholder small />
         )}
@@ -1304,7 +1507,10 @@ function TrackRow({ track, index, onPlay, onLike, liked }) {
 
       <div className="row-main">
         <strong>{track.title}</strong>
-        <span>{track.artist || "Неизвестный исполнитель"}</span>
+        <span>
+          {track.artist ||
+            "Неизвестный исполнитель"}
+        </span>
       </div>
 
       <div className="row-album">
@@ -1316,14 +1522,24 @@ function TrackRow({ track, index, onPlay, onLike, liked }) {
       </div>
 
       <button
-        className={`row-like ${liked ? "liked" : ""}`}
+        className={`row-like ${
+          liked ? "liked" : ""
+        }`}
         onClick={onLike}
       >
-        <Heart size={17} fill={liked ? "currentColor" : "none"} />
+        <Heart
+          size={17}
+          fill={
+            liked
+              ? "currentColor"
+              : "none"
+          }
+        />
       </button>
 
       <span className="row-duration">
-        {track.duration_label || formatTime(track.duration)}
+        {track.duration_label ||
+          formatTime(track.duration)}
       </span>
 
       <button className="row-more">
@@ -1333,10 +1549,18 @@ function TrackRow({ track, index, onPlay, onLike, liked }) {
   );
 }
 
-function CoverPlaceholder({ small = false }) {
+function CoverPlaceholder({
+  small = false,
+}) {
   return (
-    <div className={`cover-placeholder ${small ? "small" : ""}`}>
-      <Music2 size={small ? 19 : 32} />
+    <div
+      className={`cover-placeholder ${
+        small ? "small" : ""
+      }`}
+    >
+      <Music2
+        size={small ? 19 : 32}
+      />
     </div>
   );
 }
@@ -1355,22 +1579,31 @@ function SearchPage({
   return (
     <div className="page">
       <PageHeader
-        title={`Результаты поиска`}
+        title="Результаты поиска"
         subtitle={`По запросу «${query}» найдено: ${results.length}`}
       />
 
       {results.length ? (
         <div className="track-list">
-          {results.map((track, index) => (
-            <TrackRow
-              key={track.id}
-              track={track}
-              index={index + 1}
-              onPlay={() => onPlay(track, results)}
-              onLike={() => onLike(track)}
-              liked={isLiked(track)}
-            />
-          ))}
+          {results.map(
+            (track, index) => (
+              <TrackRow
+                key={track.id}
+                track={track}
+                index={index + 1}
+                onPlay={() =>
+                  onPlay(
+                    track,
+                    results
+                  )
+                }
+                onLike={() =>
+                  onLike(track)
+                }
+                liked={isLiked(track)}
+              />
+            )
+          )}
         </div>
       ) : (
         <EmptyState
@@ -1404,7 +1637,7 @@ function LibraryPage({
         subtitle={
           user
             ? "Твоя музыка, избранное и плейлисты"
-            : "Войди, чтобы сохранять свою библиотеку"
+            : "Войди через Профиль, чтобы сохранять свою библиотеку"
         }
       />
 
@@ -1420,21 +1653,35 @@ function LibraryPage({
       </div>
 
       <div className="library-stats">
-        <button onClick={() => openPage("likes")}>
+        <button
+          onClick={() =>
+            openPage("likes")
+          }
+        >
           <Heart size={24} />
           <strong>{likes.length}</strong>
-          <span>Избранных треков</span>
+          <span>
+            Избранных треков
+          </span>
         </button>
 
-        <button onClick={() => openPage("history")}>
+        <button
+          onClick={() =>
+            openPage("history")
+          }
+        >
           <History size={24} />
-          <strong>{history.length}</strong>
+          <strong>
+            {history.length}
+          </strong>
           <span>В истории</span>
         </button>
 
         <div>
           <ListMusic size={24} />
-          <strong>{playlists.length}</strong>
+          <strong>
+            {playlists.length}
+          </strong>
           <span>Плейлистов</span>
         </div>
       </div>
@@ -1448,12 +1695,14 @@ function LibraryPage({
 
       {playlists.length ? (
         <div className="playlist-grid">
-          {playlists.map((playlist) => (
-            <PlaylistCard
-              key={playlist.id}
-              playlist={playlist}
-            />
-          ))}
+          {playlists.map(
+            (playlist) => (
+              <PlaylistCard
+                key={playlist.id}
+                playlist={playlist}
+              />
+            )
+          )}
         </div>
       ) : (
         <EmptyState
@@ -1461,7 +1710,7 @@ function LibraryPage({
           text={
             user
               ? "У тебя пока нет плейлистов"
-              : "Войди, чтобы создавать плейлисты"
+              : "Войди через Профиль, чтобы создавать плейлисты"
           }
         />
       )}
@@ -1474,28 +1723,40 @@ function LibraryPage({
           onPlay={onPlay}
           onLike={onLike}
           isLiked={isLiked}
-          onMore={() => openPage("likes")}
+          onMore={() =>
+            openPage("likes")
+          }
         />
       )}
     </div>
   );
 }
 
-function PlaylistCard({ playlist }) {
+function PlaylistCard({
+  playlist,
+}) {
   return (
     <div className="playlist-card">
       <div className="playlist-cover">
         {playlist.cover_url ? (
-          <img src={apiUrl(playlist.cover_url)} alt={playlist.name} />
+          <img
+            src={apiUrl(
+              playlist.cover_url
+            )}
+            alt={playlist.name}
+          />
         ) : (
           <ListMusic size={45} />
         )}
       </div>
 
-      <strong>{playlist.name}</strong>
+      <strong>
+        {playlist.name}
+      </strong>
 
       <span>
-        {playlist.description || "Плейлист FENIX MUSIC"}
+        {playlist.description ||
+          "Плейлист FENIX MUSIC"}
       </span>
     </div>
   );
@@ -1505,7 +1766,9 @@ function PlaylistCard({ playlist }) {
    ARTISTS / ALBUMS
 ========================================================= */
 
-function ArtistsPage({ artists }) {
+function ArtistsPage({
+  artists,
+}) {
   return (
     <div className="page">
       <PageHeader
@@ -1515,26 +1778,37 @@ function ArtistsPage({ artists }) {
 
       {artists.length ? (
         <div className="artist-grid">
-          {artists.map((artist, index) => {
-            const name =
-              typeof artist === "string"
-                ? artist
-                : artist.name || artist.artist || "Unknown";
+          {artists.map(
+            (artist, index) => {
+              const name =
+                typeof artist === "string"
+                  ? artist
+                  : artist.name ||
+                    artist.artist ||
+                    "Unknown";
 
-            return (
-              <div className="artist-card" key={`${name}-${index}`}>
-                <div className="artist-avatar">
-                  <Mic2 size={38} />
+              return (
+                <div
+                  className="artist-card"
+                  key={`${name}-${index}`}
+                >
+                  <div className="artist-avatar">
+                    <Mic2 size={38} />
+                  </div>
+
+                  <strong>
+                    {name}
+                  </strong>
+
+                  {artist.track_count != null && (
+                    <span>
+                      {artist.track_count} треков
+                    </span>
+                  )}
                 </div>
-
-                <strong>{name}</strong>
-
-                {artist.track_count != null && (
-                  <span>{artist.track_count} треков</span>
-                )}
-              </div>
-            );
-          })}
+              );
+            }
+          )}
         </div>
       ) : (
         <EmptyState
@@ -1546,7 +1820,9 @@ function ArtistsPage({ artists }) {
   );
 }
 
-function AlbumsPage({ albums }) {
+function AlbumsPage({
+  albums,
+}) {
   return (
     <div className="page">
       <PageHeader
@@ -1556,36 +1832,52 @@ function AlbumsPage({ albums }) {
 
       {albums.length ? (
         <div className="album-grid">
-          {albums.map((album, index) => {
-            const name =
-              typeof album === "string"
-                ? album
-                : album.name || album.album || "Singles";
+          {albums.map(
+            (album, index) => {
+              const name =
+                typeof album === "string"
+                  ? album
+                  : album.name ||
+                    album.album ||
+                    "Singles";
 
-            const artist =
-              typeof album === "object"
-                ? album.artist || ""
-                : "";
+              const artist =
+                typeof album ===
+                "object"
+                  ? album.artist || ""
+                  : "";
 
-            return (
-              <div className="album-card" key={`${name}-${index}`}>
-                <div className="album-cover">
-                  {album.cover_url ? (
-                    <img
-                      src={apiUrl(album.cover_url)}
-                      alt={name}
-                    />
-                  ) : (
-                    <Disc3 size={50} />
+              return (
+                <div
+                  className="album-card"
+                  key={`${name}-${index}`}
+                >
+                  <div className="album-cover">
+                    {album.cover_url ? (
+                      <img
+                        src={apiUrl(
+                          album.cover_url
+                        )}
+                        alt={name}
+                      />
+                    ) : (
+                      <Disc3 size={50} />
+                    )}
+                  </div>
+
+                  <strong>
+                    {name}
+                  </strong>
+
+                  {artist && (
+                    <span>
+                      {artist}
+                    </span>
                   )}
                 </div>
-
-                <strong>{name}</strong>
-
-                {artist && <span>{artist}</span>}
-              </div>
-            );
-          })}
+              );
+            }
+          )}
         </div>
       ) : (
         <EmptyState
@@ -1620,26 +1912,60 @@ function ProfilePage({
             <User size={50} />
           </div>
 
-          <h1>Твой профиль FENIX</h1>
+          <span className="eyebrow">
+            FENIX MUSIC
+          </span>
+
+          <h1>
+            Твой профиль
+          </h1>
 
           <p>
-            Войди или зарегистрируйся, чтобы сохранять музыку,
-            историю и создавать плейлисты.
+            Войди в аккаунт или создай
+            новый, чтобы сохранять
+            любимую музыку, историю
+            прослушивания и плейлисты.
           </p>
 
-          <div className="hero-actions">
-            <button className="primary-button" onClick={onLogin}>
-              <LogIn size={18} />
+          <div className="profile-login-actions">
+            <button
+              className="primary-button large"
+              onClick={onLogin}
+            >
+              <LogIn size={19} />
               Войти
             </button>
 
             <button
-              className="secondary-button"
+              className="secondary-button large"
               onClick={onRegister}
             >
-              <UserPlus size={18} />
-              Регистрация
+              <UserPlus size={19} />
+              Создать аккаунт
             </button>
+          </div>
+
+          <div className="profile-login-features">
+            <div>
+              <Heart size={18} />
+              <span>
+                Избранное
+              </span>
+            </div>
+
+            <div>
+              <History size={18} />
+              <span>
+                История
+              </span>
+            </div>
+
+            <div>
+              <ListMusic size={18} />
+              <span>
+                Плейлисты
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -1654,19 +1980,28 @@ function ProfilePage({
   return (
     <div className="page">
       <div className="profile-header">
-        <Avatar user={user} large />
+        <Avatar
+          user={user}
+          large
+        />
 
         <div className="profile-info">
           <span>ПРОФИЛЬ</span>
 
-          <h1>{user.username}</h1>
+          <h1>
+            {user.username}
+          </h1>
 
-          <p>{user.email}</p>
+          <p>
+            {user.email}
+          </p>
 
           {user.created_at && (
             <small>
               В FENIX MUSIC с{" "}
-              {new Date(user.created_at).toLocaleDateString(
+              {new Date(
+                user.created_at
+              ).toLocaleDateString(
                 "ru-RU"
               )}
             </small>
@@ -1695,53 +2030,92 @@ function ProfilePage({
       <div className="profile-stat-grid">
         <div>
           <Heart size={22} />
-          <strong>{likes.length}</strong>
-          <span>Избранное</span>
+          <strong>
+            {likes.length}
+          </strong>
+          <span>
+            Избранное
+          </span>
         </div>
 
         <div>
           <History size={22} />
-          <strong>{history.length}</strong>
-          <span>Прослушиваний</span>
+          <strong>
+            {history.length}
+          </strong>
+          <span>
+            Прослушиваний
+          </span>
         </div>
 
         <div>
           <ListMusic size={22} />
-          <strong>{playlists.length}</strong>
-          <span>Плейлистов</span>
+          <strong>
+            {playlists.length}
+          </strong>
+          <span>
+            Плейлистов
+          </span>
         </div>
 
         <div>
           <Music2 size={22} />
-          <strong>{formatTime(totalSeconds)}</strong>
-          <span>Время прослушивания</span>
+          <strong>
+            {formatTime(
+              totalSeconds
+            )}
+          </strong>
+          <span>
+            Время прослушивания
+          </span>
         </div>
       </div>
 
       {user.bio && (
         <div className="bio-card">
-          <h3>О себе</h3>
-          <p>{user.bio}</p>
+          <h3>
+            О себе
+          </h3>
+
+          <p>
+            {user.bio}
+          </p>
         </div>
       )}
     </div>
   );
 }
 
-function Avatar({ user, large = false }) {
+function Avatar({
+  user,
+  large = false,
+}) {
   if (user?.avatar_url) {
     return (
       <img
-        className={`avatar ${large ? "large" : ""}`}
-        src={apiUrl(user.avatar_url)}
-        alt={user.username || "User"}
+        className={`avatar ${
+          large ? "large" : ""
+        }`}
+        src={apiUrl(
+          user.avatar_url
+        )}
+        alt={
+          user.username ||
+          "User"
+        }
       />
     );
   }
 
   return (
-    <div className={`avatar avatar-placeholder ${large ? "large" : ""}`}>
-      {(user?.username || "F").slice(0, 1).toUpperCase()}
+    <div
+      className={`avatar avatar-placeholder ${
+        large ? "large" : ""
+      }`}
+    >
+      {(user?.username || "F")
+        .slice(0, 1)
+        .toUpperCase()}
     </div>
   );
 }
@@ -1774,7 +2148,10 @@ function Player({
       <div className="player empty-player">
         <div className="empty-player-brand">
           <Music2 size={21} />
-          <span>Выбери трек, чтобы начать прослушивание</span>
+          <span>
+            Выбери трек, чтобы начать
+            прослушивание
+          </span>
         </div>
       </div>
     );
@@ -1785,36 +2162,64 @@ function Player({
       <div className="player-track">
         <div className="player-cover">
           {track.cover_url ? (
-            <img src={getCover(track)} alt={track.title} />
+            <img
+              src={getCover(track)}
+              alt={track.title}
+            />
           ) : (
             <CoverPlaceholder small />
           )}
         </div>
 
         <div className="player-info">
-          <strong>{track.title}</strong>
-          <span>{track.artist || "Unknown Artist"}</span>
+          <strong>
+            {track.title}
+          </strong>
+
+          <span>
+            {track.artist ||
+              "Unknown Artist"}
+          </span>
         </div>
 
         <button
-          className={`player-like ${liked ? "liked" : ""}`}
+          className={`player-like ${
+            liked ? "liked" : ""
+          }`}
           onClick={onLike}
         >
-          <Heart size={18} fill={liked ? "currentColor" : "none"} />
+          <Heart
+            size={18}
+            fill={
+              liked
+                ? "currentColor"
+                : "none"
+            }
+          />
         </button>
       </div>
 
       <div className="player-center">
         <div className="player-controls">
           <button
-            className={`control-button ${shuffle ? "active" : ""}`}
+            className={`control-button ${
+              shuffle
+                ? "active"
+                : ""
+            }`}
             onClick={onShuffle}
           >
             <Shuffle size={17} />
           </button>
 
-          <button className="control-button" onClick={onPrevious}>
-            <SkipBack size={20} fill="currentColor" />
+          <button
+            className="control-button"
+            onClick={onPrevious}
+          >
+            <SkipBack
+              size={20}
+              fill="currentColor"
+            />
           </button>
 
           <button
@@ -1822,18 +2227,34 @@ function Player({
             onClick={onTogglePlay}
           >
             {playing ? (
-              <Pause size={22} fill="currentColor" />
+              <Pause
+                size={22}
+                fill="currentColor"
+              />
             ) : (
-              <Play size={22} fill="currentColor" />
+              <Play
+                size={22}
+                fill="currentColor"
+              />
             )}
           </button>
 
-          <button className="control-button" onClick={onNext}>
-            <SkipForward size={20} fill="currentColor" />
+          <button
+            className="control-button"
+            onClick={onNext}
+          >
+            <SkipForward
+              size={20}
+              fill="currentColor"
+            />
           </button>
 
           <button
-            className={`control-button ${repeat ? "active" : ""}`}
+            className={`control-button ${
+              repeat
+                ? "active"
+                : ""
+            }`}
             onClick={onRepeat}
           >
             <Repeat size={17} />
@@ -1841,7 +2262,9 @@ function Player({
         </div>
 
         <div className="progress-row">
-          <span>{formatTime(progress)}</span>
+          <span>
+            {formatTime(progress)}
+          </span>
 
           <input
             className="progress-slider"
@@ -1849,11 +2272,21 @@ function Player({
             min="0"
             max={duration || 0}
             step="0.1"
-            value={Math.min(progress, duration || 0)}
-            onChange={(event) => seekValue(event, onSeek)}
+            value={Math.min(
+              progress,
+              duration || 0
+            )}
+            onChange={(event) =>
+              seekValue(
+                event,
+                onSeek
+              )
+            }
           />
 
-          <span>{formatTime(duration)}</span>
+          <span>
+            {formatTime(duration)}
+          </span>
         </div>
       </div>
 
@@ -1870,7 +2303,11 @@ function Player({
           <button
             className="control-button"
             onClick={() =>
-              onVolume(volume > 0 ? 0 : 1)
+              onVolume(
+                volume > 0
+                  ? 0
+                  : 1
+              )
             }
           >
             {volume === 0 ? (
@@ -1887,7 +2324,11 @@ function Player({
             step="0.01"
             value={volume}
             onChange={(event) =>
-              onVolume(Number(event.target.value))
+              onVolume(
+                Number(
+                  event.target.value
+                )
+              )
             }
           />
         </div>
@@ -1895,9 +2336,12 @@ function Player({
         <button
           className="control-button"
           onClick={() => {
-            const element = document.documentElement;
+            const element =
+              document.documentElement;
 
-            if (!document.fullscreenElement) {
+            if (
+              !document.fullscreenElement
+            ) {
               element.requestFullscreen?.();
             } else {
               document.exitFullscreen?.();
@@ -1911,8 +2355,13 @@ function Player({
   );
 }
 
-function seekValue(event, onSeek) {
-  onSeek(Number(event.target.value));
+function seekValue(
+  event,
+  onSeek
+) {
+  onSeek(
+    Number(event.target.value)
+  );
 }
 
 /* =========================================================
@@ -1931,7 +2380,9 @@ function QueuePanel({
         <div className="modal-header">
           <div>
             <h2>Очередь</h2>
-            <span>{queue.length} треков</span>
+            <span>
+              {queue.length} треков
+            </span>
           </div>
 
           <button
@@ -1944,39 +2395,59 @@ function QueuePanel({
 
         <div className="queue-list">
           {queue.length ? (
-            queue.map((track, index) => (
-              <button
-                className={`queue-item ${
-                  currentTrack?.id === track.id ? "current" : ""
-                }`}
-                key={`${track.id}-${index}`}
-                onClick={() => onPlay(track)}
-              >
-                <div className="queue-cover">
-                  {track.cover_url ? (
-                    <img
-                      src={getCover(track)}
-                      alt={track.title}
-                    />
-                  ) : (
-                    <CoverPlaceholder small />
-                  )}
-                </div>
+            queue.map(
+              (track, index) => (
+                <button
+                  className={`queue-item ${
+                    currentTrack?.id ===
+                    track.id
+                      ? "current"
+                      : ""
+                  }`}
+                  key={`${track.id}-${index}`}
+                  onClick={() =>
+                    onPlay(track)
+                  }
+                >
+                  <div className="queue-cover">
+                    {track.cover_url ? (
+                      <img
+                        src={getCover(
+                          track
+                        )}
+                        alt={
+                          track.title
+                        }
+                      />
+                    ) : (
+                      <CoverPlaceholder small />
+                    )}
+                  </div>
 
-                <div>
-                  <strong>{track.title}</strong>
-                  <span>{track.artist}</span>
-                </div>
+                  <div>
+                    <strong>
+                      {track.title}
+                    </strong>
 
-                <span>
-                  {track.duration_label ||
-                    formatTime(track.duration)}
-                </span>
-              </button>
-            ))
+                    <span>
+                      {track.artist}
+                    </span>
+                  </div>
+
+                  <span>
+                    {track.duration_label ||
+                      formatTime(
+                        track.duration
+                      )}
+                  </span>
+                </button>
+              )
+            )
           ) : (
             <EmptyState
-              icon={<ListMusic size={32} />}
+              icon={
+                <ListMusic size={32} />
+              }
               text="Очередь пуста"
             />
           )}
@@ -1996,40 +2467,82 @@ function AuthModal({
   onClose,
   onSuccess,
 }) {
-  const [values, setValues] = useState({
-    username: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-  });
+  const [values, setValues] =
+    useState({
+      username: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+    });
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [loading, setLoading] =
+    useState(false);
 
-  function update(field, value) {
+  const [error, setError] =
+    useState("");
+
+  function update(
+    field,
+    value
+  ) {
     setValues((current) => ({
       ...current,
       [field]: value,
     }));
+
+    if (error) {
+      setError("");
+    }
   }
+
+  const passwordLength =
+    values.password.length >= 6;
+
+  const passwordNumber =
+    /\d/.test(values.password);
+
+  const passwordStrong =
+    passwordLength &&
+    passwordNumber;
 
   async function submit(event) {
     event.preventDefault();
     setError("");
 
     if (mode === "register") {
-      if (values.username.trim().length < 2) {
-        setError("Введите имя пользователя");
+      if (
+        values.username.trim()
+          .length < 2
+      ) {
+        setError(
+          "Имя пользователя должно содержать минимум 2 символа"
+        );
         return;
       }
 
-      if (values.password.length < 6) {
-        setError("Пароль должен содержать минимум 6 символов");
+      if (!values.email.trim()) {
+        setError(
+          "Введите email"
+        );
         return;
       }
 
-      if (values.password !== values.confirmPassword) {
-        setError("Пароли не совпадают");
+      if (
+        values.password.length < 6
+      ) {
+        setError(
+          "Пароль должен содержать минимум 6 символов"
+        );
+        return;
+      }
+
+      if (
+        values.password !==
+        values.confirmPassword
+      ) {
+        setError(
+          "Пароли не совпадают"
+        );
         return;
       }
     }
@@ -2039,124 +2552,304 @@ function AuthModal({
     try {
       let data;
 
-      if (mode === "register") {
-        data = await api("/api/auth/register", {
-          method: "POST",
-          body: JSON.stringify({
-            username: values.username.trim(),
-            email: values.email.trim(),
-            password: values.password,
-          }),
-        });
+      if (
+        mode === "register"
+      ) {
+        data = await api(
+          "/api/auth/register",
+          {
+            method: "POST",
+            body: JSON.stringify(
+              {
+                username:
+                  values.username.trim(),
+                email:
+                  values.email.trim(),
+                password:
+                  values.password,
+              }
+            ),
+          }
+        );
       } else {
-        data = await api("/api/auth/login", {
-          method: "POST",
-          body: JSON.stringify({
-            email: values.email.trim(),
-            password: values.password,
-          }),
-        });
+        data = await api(
+          "/api/auth/login",
+          {
+            method: "POST",
+            body: JSON.stringify(
+              {
+                email:
+                  values.email.trim(),
+                password:
+                  values.password,
+              }
+            ),
+          }
+        );
       }
 
-      const token = data.token || data.access_token;
+      const token =
+        data.token ||
+        data.access_token;
 
       if (!token) {
-        throw new Error("Сервер не вернул токен авторизации");
+        throw new Error(
+          "Сервер не вернул токен авторизации"
+        );
       }
 
-      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(
+        TOKEN_KEY,
+        token
+      );
 
-      onSuccess(data.user || data);
+      onSuccess(
+        data.user || data
+      );
     } catch (err) {
-      setError(err.message);
+      setError(
+        err.message ||
+          "Не удалось выполнить операцию"
+      );
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="overlay">
+    <div className="overlay auth-overlay">
       <div className="auth-modal">
-        <button className="modal-close" onClick={onClose}>
+        <button
+          className="modal-close"
+          onClick={onClose}
+          type="button"
+        >
           <X size={20} />
         </button>
 
-        <div className="auth-logo">
-          <Music2 size={28} />
+        <div className="auth-modal-top">
+          <div className="auth-logo">
+            <Music2 size={28} />
+          </div>
+
+          <span className="auth-brand">
+            FENIX MUSIC
+          </span>
         </div>
 
-        <h1>
-          {mode === "register"
-            ? "Создать аккаунт"
-            : "С возвращением"}
-        </h1>
+        <div className="auth-heading">
+          <h1>
+            {mode === "register"
+              ? "Создать аккаунт"
+              : "С возвращением"}
+          </h1>
 
-        <p>
-          {mode === "register"
-            ? "Создай аккаунт FENIX MUSIC"
-            : "Войди в свой аккаунт"}
-        </p>
+          <p>
+            {mode === "register"
+              ? "Создай свой профиль и собери личную музыкальную библиотеку."
+              : "Войди в свой аккаунт FENIX MUSIC и продолжи слушать музыку."}
+          </p>
+        </div>
 
-        <form onSubmit={submit}>
-          {mode === "register" && (
-            <label>
-              Имя пользователя
-              <input
-                value={values.username}
-                onChange={(event) =>
-                  update("username", event.target.value)
-                }
-                placeholder="FenixUser"
-                required
-              />
+        <div className="auth-tabs">
+          <button
+            type="button"
+            className={
+              mode === "login"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setMode("login")
+            }
+          >
+            <LogIn size={16} />
+            Войти
+          </button>
+
+          <button
+            type="button"
+            className={
+              mode === "register"
+                ? "active"
+                : ""
+            }
+            onClick={() =>
+              setMode(
+                "register"
+              )
+            }
+          >
+            <UserPlus size={16} />
+            Регистрация
+          </button>
+        </div>
+
+        <form
+          className="auth-form"
+          onSubmit={submit}
+        >
+          {mode ===
+            "register" && (
+            <label className="auth-field">
+              <span>
+                Имя пользователя
+              </span>
+
+              <div className="auth-input-wrap">
+                <User size={17} />
+
+                <input
+                  value={
+                    values.username
+                  }
+                  onChange={(event) =>
+                    update(
+                      "username",
+                      event.target.value
+                    )
+                  }
+                  placeholder="Например, FenixUser"
+                  autoComplete="username"
+                  required
+                />
+              </div>
             </label>
           )}
 
-          <label>
-            Email
-            <input
-              type="email"
-              value={values.email}
-              onChange={(event) =>
-                update("email", event.target.value)
-              }
-              placeholder="you@example.com"
-              required
-            />
-          </label>
+          <label className="auth-field">
+            <span>Email</span>
 
-          <label>
-            Пароль
-            <input
-              type="password"
-              value={values.password}
-              onChange={(event) =>
-                update("password", event.target.value)
-              }
-              placeholder="Минимум 6 символов"
-              required
-            />
-          </label>
+            <div className="auth-input-wrap">
+              <span className="auth-input-symbol">
+                @
+              </span>
 
-          {mode === "register" && (
-            <label>
-              Повторите пароль
               <input
-                type="password"
-                value={values.confirmPassword}
+                type="email"
+                value={
+                  values.email
+                }
                 onChange={(event) =>
                   update(
-                    "confirmPassword",
+                    "email",
                     event.target.value
                   )
                 }
-                placeholder="Повторите пароль"
+                placeholder="you@example.com"
+                autoComplete="email"
                 required
               />
-            </label>
+            </div>
+          </label>
+
+          <label className="auth-field">
+            <span>Пароль</span>
+
+            <div className="auth-input-wrap">
+              <Settings size={17} />
+
+              <input
+                type="password"
+                value={
+                  values.password
+                }
+                onChange={(event) =>
+                  update(
+                    "password",
+                    event.target.value
+                  )
+                }
+                placeholder="Введите пароль"
+                autoComplete={
+                  mode ===
+                  "register"
+                    ? "new-password"
+                    : "current-password"
+                }
+                required
+              />
+            </div>
+          </label>
+
+          {mode ===
+            "register" && (
+            <>
+              <label className="auth-field">
+                <span>
+                  Повторите пароль
+                </span>
+
+                <div className="auth-input-wrap">
+                  <Check size={17} />
+
+                  <input
+                    type="password"
+                    value={
+                      values.confirmPassword
+                    }
+                    onChange={(
+                      event
+                    ) =>
+                      update(
+                        "confirmPassword",
+                        event.target
+                          .value
+                      )
+                    }
+                    placeholder="Введите пароль ещё раз"
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+              </label>
+
+              <div className="password-rules">
+                <div
+                  className={
+                    passwordLength
+                      ? "passed"
+                      : ""
+                  }
+                >
+                  <Check size={14} />
+                  Минимум 6 символов
+                </div>
+
+                <div
+                  className={
+                    passwordNumber
+                      ? "passed"
+                      : ""
+                  }
+                >
+                  <Check size={14} />
+                  Хотя бы одна цифра
+                </div>
+
+                <div
+                  className={
+                    values.password &&
+                    values.confirmPassword &&
+                    values.password ===
+                      values.confirmPassword
+                      ? "passed"
+                      : ""
+                  }
+                >
+                  <Check size={14} />
+                  Пароли совпадают
+                </div>
+              </div>
+            </>
           )}
 
-          {error && <div className="form-error">{error}</div>}
+          {error && (
+            <div className="form-error">
+              <X size={17} />
+              <span>{error}</span>
+            </div>
+          )}
 
           <button
             className="primary-button auth-submit"
@@ -2165,39 +2858,69 @@ function AuthModal({
           >
             {loading ? (
               <>
-                <RefreshCw className="spin" size={18} />
+                <RefreshCw
+                  className="spin"
+                  size={18}
+                />
                 Подождите...
               </>
-            ) : mode === "register" ? (
+            ) : mode ===
+              "register" ? (
               <>
                 <UserPlus size={18} />
-                Зарегистрироваться
+                Создать аккаунт
               </>
             ) : (
               <>
                 <LogIn size={18} />
-                Войти
+                Войти в FENIX
               </>
             )}
           </button>
         </form>
 
-        <div className="auth-switch">
-          {mode === "register" ? (
+        <div className="auth-bottom">
+          {mode ===
+          "register" ? (
             <>
-              Уже есть аккаунт?
-              <button onClick={() => setMode("login")}>
+              <span>
+                Уже есть аккаунт?
+              </span>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setMode("login")
+                }
+              >
                 Войти
               </button>
             </>
           ) : (
             <>
-              Нет аккаунта?
-              <button onClick={() => setMode("register")}>
-                Регистрация
+              <span>
+                Впервые в FENIX?
+              </span>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setMode(
+                    "register"
+                  )
+                }
+              >
+                Создать аккаунт
               </button>
             </>
           )}
+        </div>
+
+        <div className="auth-security">
+          <Check size={15} />
+          <span>
+            Твои данные защищены
+          </span>
         </div>
       </div>
     </div>
@@ -2208,17 +2931,29 @@ function AuthModal({
    CREATE PLAYLIST
 ========================================================= */
 
-function CreatePlaylistModal({ onClose, onCreated }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+function CreatePlaylistModal({
+  onClose,
+  onCreated,
+}) {
+  const [name, setName] =
+    useState("");
+
+  const [description, setDescription] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   async function submit(event) {
     event.preventDefault();
 
     if (!name.trim()) {
-      setError("Введите название плейлиста");
+      setError(
+        "Введите название плейлиста"
+      );
       return;
     }
 
@@ -2226,16 +2961,22 @@ function CreatePlaylistModal({ onClose, onCreated }) {
     setError("");
 
     try {
-      const data = await api("/api/playlists", {
-        method: "POST",
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim(),
-          is_public: true,
-        }),
-      });
+      const data = await api(
+        "/api/playlists",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: name.trim(),
+            description:
+              description.trim(),
+            is_public: true,
+          }),
+        }
+      );
 
-      onCreated(data.playlist || data);
+      onCreated(
+        data.playlist || data
+      );
     } catch (err) {
       setError(err.message);
     } finally {
@@ -2248,8 +2989,13 @@ function CreatePlaylistModal({ onClose, onCreated }) {
       <div className="modal">
         <div className="modal-header">
           <div>
-            <h2>Новый плейлист</h2>
-            <span>Создай свою подборку</span>
+            <h2>
+              Новый плейлист
+            </h2>
+
+            <span>
+              Создай свою подборку
+            </span>
           </div>
 
           <button
@@ -2260,12 +3006,18 @@ function CreatePlaylistModal({ onClose, onCreated }) {
           </button>
         </div>
 
-        <form onSubmit={submit}>
+        <form
+          onSubmit={submit}
+        >
           <label>
             Название
             <input
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) =>
+                setName(
+                  event.target.value
+                )
+              }
               placeholder="Мой плейлист"
               autoFocus
             />
@@ -2274,16 +3026,24 @@ function CreatePlaylistModal({ onClose, onCreated }) {
           <label>
             Описание
             <textarea
-              value={description}
+              value={
+                description
+              }
               onChange={(event) =>
-                setDescription(event.target.value)
+                setDescription(
+                  event.target.value
+                )
               }
               placeholder="Например: музыка для дороги"
               rows={4}
             />
           </label>
 
-          {error && <div className="form-error">{error}</div>}
+          {error && (
+            <div className="form-error">
+              {error}
+            </div>
+          )}
 
           <div className="modal-actions">
             <button
@@ -2318,17 +3078,26 @@ function SettingsModal({
   onClose,
   onUpdated,
 }) {
-  const [username, setUsername] = useState(
-    user?.username || ""
-  );
+  const [username, setUsername] =
+    useState(
+      user?.username || ""
+    );
 
-  const [bio, setBio] = useState(user?.bio || "");
-  const [avatarUrl, setAvatarUrl] = useState(
-    user?.avatar_url || ""
-  );
+  const [bio, setBio] =
+    useState(
+      user?.bio || ""
+    );
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [avatarUrl, setAvatarUrl] =
+    useState(
+      user?.avatar_url || ""
+    );
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   async function save(event) {
     event.preventDefault();
@@ -2337,16 +3106,25 @@ function SettingsModal({
     setError("");
 
     try {
-      const data = await api("/api/auth/me", {
-        method: "PATCH",
-        body: JSON.stringify({
-          username: username.trim(),
-          bio,
-          avatar_url: avatarUrl.trim() || null,
-        }),
-      });
+      const data = await api(
+        "/api/auth/me",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            username:
+              username.trim(),
+            bio,
+            avatar_url:
+              avatarUrl.trim() ||
+              null,
+          }),
+        }
+      );
 
-      onUpdated(data.user || data);
+      onUpdated(
+        data.user || data
+      );
+
       onClose();
     } catch (err) {
       setError(err.message);
@@ -2360,8 +3138,13 @@ function SettingsModal({
       <div className="modal">
         <div className="modal-header">
           <div>
-            <h2>Настройки профиля</h2>
-            <span>Измени данные своего аккаунта</span>
+            <h2>
+              Настройки профиля
+            </h2>
+
+            <span>
+              Измени данные своего аккаунта
+            </span>
           </div>
 
           <button
@@ -2372,13 +3155,17 @@ function SettingsModal({
           </button>
         </div>
 
-        <form onSubmit={save}>
+        <form
+          onSubmit={save}
+        >
           <label>
             Имя пользователя
             <input
               value={username}
               onChange={(event) =>
-                setUsername(event.target.value)
+                setUsername(
+                  event.target.value
+                )
               }
             />
           </label>
@@ -2387,7 +3174,11 @@ function SettingsModal({
             О себе
             <textarea
               value={bio}
-              onChange={(event) => setBio(event.target.value)}
+              onChange={(event) =>
+                setBio(
+                  event.target.value
+                )
+              }
               rows={4}
               placeholder="Расскажи немного о себе"
             />
@@ -2398,13 +3189,19 @@ function SettingsModal({
             <input
               value={avatarUrl}
               onChange={(event) =>
-                setAvatarUrl(event.target.value)
+                setAvatarUrl(
+                  event.target.value
+                )
               }
               placeholder="https://..."
             />
           </label>
 
-          {error && <div className="form-error">{error}</div>}
+          {error && (
+            <div className="form-error">
+              {error}
+            </div>
+          )}
 
           <div className="modal-actions">
             <button
@@ -2420,7 +3217,9 @@ function SettingsModal({
               className="primary-button"
               disabled={loading}
             >
-              {loading ? "Сохранение..." : "Сохранить"}
+              {loading
+                ? "Сохранение..."
+                : "Сохранить"}
             </button>
           </div>
         </form>
@@ -2433,22 +3232,35 @@ function SettingsModal({
    COMMON
 ========================================================= */
 
-function PageHeader({ title, subtitle }) {
+function PageHeader({
+  title,
+  subtitle,
+}) {
   return (
     <div className="page-header">
-      <span className="eyebrow">FENIX MUSIC</span>
+      <span className="eyebrow">
+        FENIX MUSIC
+      </span>
 
       <h1>{title}</h1>
 
-      {subtitle && <p>{subtitle}</p>}
+      {subtitle && (
+        <p>{subtitle}</p>
+      )}
     </div>
   );
 }
 
-function EmptyState({ icon, text }) {
+function EmptyState({
+  icon,
+  text,
+}) {
   return (
     <div className="empty-state">
-      <div className="empty-icon">{icon}</div>
+      <div className="empty-icon">
+        {icon}
+      </div>
+
       <strong>{text}</strong>
     </div>
   );
