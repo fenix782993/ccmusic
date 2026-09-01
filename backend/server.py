@@ -45,13 +45,16 @@ from passlib.context import CryptContext
 # APP
 # ============================================================
 
-APP_VERSION = "8.0.0"
+APP_VERSION = "8.0.1"
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
 MEDIA_DIR = Path(
-    os.getenv("MEDIA_DIR", str(BASE_DIR / "media"))
+    os.getenv(
+        "MEDIA_DIR",
+        str(BASE_DIR / "media"),
+    )
 )
 
 AUDIO_DIR = MEDIA_DIR / "audio"
@@ -59,8 +62,16 @@ MUSIC_DIR = MEDIA_DIR / "music"
 UPLOAD_DIR = MEDIA_DIR / "uploads"
 COVER_DIR = MEDIA_DIR / "covers"
 
-for d in (AUDIO_DIR, MUSIC_DIR, UPLOAD_DIR, COVER_DIR):
-    d.mkdir(parents=True, exist_ok=True)
+for directory in (
+    AUDIO_DIR,
+    MUSIC_DIR,
+    UPLOAD_DIR,
+    COVER_DIR,
+):
+    directory.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
 
 # ============================================================
@@ -69,7 +80,7 @@ for d in (AUDIO_DIR, MUSIC_DIR, UPLOAD_DIR, COVER_DIR):
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite:///./fenix_music.db"
+    "sqlite:///./fenix_music.db",
 )
 
 if DATABASE_URL.startswith("postgres://"):
@@ -112,7 +123,10 @@ SECRET_KEY = os.getenv(
 ALGORITHM = "HS256"
 
 ACCESS_MINUTES = int(
-    os.getenv("ACCESS_MINUTES", "10080")
+    os.getenv(
+        "ACCESS_MINUTES",
+        "10080",
+    )
 )
 
 ADMIN_EMAIL = os.getenv(
@@ -130,7 +144,9 @@ pwd = CryptContext(
     deprecated="auto",
 )
 
-bearer = HTTPBearer(auto_error=False)
+bearer = HTTPBearer(
+    auto_error=False,
+)
 
 
 # ============================================================
@@ -140,7 +156,10 @@ bearer = HTTPBearer(auto_error=False)
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True)
+    id = Column(
+        Integer,
+        primary_key=True,
+    )
 
     email = Column(
         String(255),
@@ -177,7 +196,6 @@ class User(Base):
         nullable=False,
     )
 
-    # Telegram account
     telegram_id = Column(
         String(64),
         unique=True,
@@ -185,7 +203,6 @@ class User(Base):
         index=True,
     )
 
-    # Temporary secure linking token
     telegram_link_token = Column(
         String(128),
         unique=True,
@@ -267,17 +284,11 @@ class Track(Base):
         nullable=False,
     )
 
-    # Lyrics
     lyrics = Column(
         Text,
         nullable=True,
     )
 
-    # JSON:
-    # [
-    #   {"time": 0, "text": "Intro"},
-    #   {"time": 12.5, "text": "Hello"}
-    # ]
     lyrics_sync = Column(
         Text,
         nullable=True,
@@ -445,6 +456,10 @@ class PlaylistTrack(Base):
     )
 
 
+# ============================================================
+# CREATE TABLES
+# ============================================================
+
 Base.metadata.create_all(engine)
 
 
@@ -457,15 +472,18 @@ app = FastAPI(
     version=APP_VERSION,
 )
 
+cors_origins = [
+    x.strip()
+    for x in os.getenv(
+        "CORS_ORIGINS",
+        "*",
+    ).split(",")
+    if x.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        x.strip()
-        for x in os.getenv(
-            "CORS_ORIGINS",
-            "*",
-        ).split(",")
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -478,6 +496,18 @@ app.add_middleware(
 
 def utcnow():
     return datetime.now(timezone.utc)
+
+
+def normalize_datetime(value):
+    if value is None:
+        return None
+
+    if value.tzinfo is None:
+        return value.replace(
+            tzinfo=timezone.utc
+        )
+
+    return value
 
 
 def migration():
@@ -519,13 +549,11 @@ def migration():
     }
 
     with engine.begin() as conn:
-
         tables = set(
             inspect(conn).get_table_names()
         )
 
-        for table, cols in table_specs.items():
-
+        for table, columns in table_specs.items():
             if table not in tables:
                 continue
 
@@ -534,26 +562,31 @@ def migration():
                 for c in inspect(conn).get_columns(table)
             }
 
-            for name, definition in cols.items():
-
+            for name, definition in columns.items():
                 if name not in existing:
-
-                    conn.execute(
-                        text(
-                            f'ALTER TABLE "{table}" '
-                            f'ADD COLUMN "{name}" {definition}'
+                    try:
+                        conn.execute(
+                            text(
+                                f'ALTER TABLE "{table}" '
+                                f'ADD COLUMN "{name}" {definition}'
+                            )
                         )
-                    )
-
-        # ----------------------------------------------------
-        # USERS
-        # ----------------------------------------------------
+                        print(
+                            f"[DB] Added column "
+                            f"{table}.{name}"
+                        )
+                    except Exception as exc:
+                        print(
+                            f"[DB] Could not add "
+                            f"{table}.{name}: {exc}"
+                        )
 
         if "users" in tables:
-
             cols = {
                 c["name"]
-                for c in inspect(conn).get_columns("users")
+                for c in inspect(conn).get_columns(
+                    "users"
+                )
             }
 
             for name in cols - {
@@ -563,34 +596,37 @@ def migration():
                 "password_hash",
                 "is_admin",
             }:
-
                 try:
-                    conn.execute(
-                        text(
-                            f'ALTER TABLE "users" '
-                            f'ALTER COLUMN "{name}" DROP NOT NULL'
+                    if not DATABASE_URL.startswith(
+                        "sqlite"
+                    ):
+                        conn.execute(
+                            text(
+                                f'ALTER TABLE "users" '
+                                f'ALTER COLUMN "{name}" '
+                                f'DROP NOT NULL'
+                            )
                         )
-                    )
                 except Exception:
                     pass
 
-            conn.execute(
-                text(
-                    "UPDATE users "
-                    "SET bio = COALESCE(bio, '') "
-                    "WHERE bio IS NULL"
+            try:
+                conn.execute(
+                    text(
+                        "UPDATE users "
+                        "SET bio = COALESCE(bio, '') "
+                        "WHERE bio IS NULL"
+                    )
                 )
-            )
-
-        # ----------------------------------------------------
-        # TRACKS
-        # ----------------------------------------------------
+            except Exception:
+                pass
 
         if "tracks" in tables:
-
             cols = {
                 c["name"]
-                for c in inspect(conn).get_columns("tracks")
+                for c in inspect(conn).get_columns(
+                    "tracks"
+                )
             }
 
             for name in cols - {
@@ -602,65 +638,82 @@ def migration():
                 "duration",
                 "plays",
             }:
-
                 try:
-                    conn.execute(
-                        text(
-                            f'ALTER TABLE "tracks" '
-                            f'ALTER COLUMN "{name}" DROP NOT NULL'
+                    if not DATABASE_URL.startswith(
+                        "sqlite"
+                    ):
+                        conn.execute(
+                            text(
+                                f'ALTER TABLE "tracks" '
+                                f'ALTER COLUMN "{name}" '
+                                f'DROP NOT NULL'
+                            )
                         )
-                    )
                 except Exception:
                     pass
 
-            conn.execute(
-                text(
-                    "UPDATE tracks "
-                    "SET title = COALESCE(NULLIF(title,''),'Unknown Track') "
-                    "WHERE title IS NULL OR title=''"
+            try:
+                conn.execute(
+                    text(
+                        "UPDATE tracks "
+                        "SET title = COALESCE("
+                        "NULLIF(title,''),"
+                        "'Unknown Track') "
+                        "WHERE title IS NULL OR title=''"
+                    )
                 )
-            )
 
-            conn.execute(
-                text(
-                    "UPDATE tracks "
-                    "SET artist = COALESCE(NULLIF(artist,''),'Unknown Artist') "
-                    "WHERE artist IS NULL OR artist=''"
+                conn.execute(
+                    text(
+                        "UPDATE tracks "
+                        "SET artist = COALESCE("
+                        "NULLIF(artist,''),"
+                        "'Unknown Artist') "
+                        "WHERE artist IS NULL OR artist=''"
+                    )
                 )
-            )
 
-            conn.execute(
-                text(
-                    "UPDATE tracks "
-                    "SET album = COALESCE(NULLIF(album,''),'Unknown Album') "
-                    "WHERE album IS NULL OR album=''"
+                conn.execute(
+                    text(
+                        "UPDATE tracks "
+                        "SET album = COALESCE("
+                        "NULLIF(album,''),"
+                        "'Unknown Album') "
+                        "WHERE album IS NULL OR album=''"
+                    )
                 )
-            )
 
-            conn.execute(
-                text(
-                    "UPDATE tracks "
-                    "SET genre = COALESCE(NULLIF(genre,''),'Pop') "
-                    "WHERE genre IS NULL OR genre=''"
+                conn.execute(
+                    text(
+                        "UPDATE tracks "
+                        "SET genre = COALESCE("
+                        "NULLIF(genre,''),"
+                        "'Pop') "
+                        "WHERE genre IS NULL OR genre=''"
+                    )
                 )
-            )
 
-            conn.execute(
-                text(
-                    "UPDATE tracks "
-                    "SET duration = COALESCE(duration,0), "
-                    "plays = COALESCE(plays,0)"
+                conn.execute(
+                    text(
+                        "UPDATE tracks "
+                        "SET duration = COALESCE(duration,0), "
+                        "plays = COALESCE(plays,0)"
+                    )
                 )
-            )
 
-            # Старые пустые записи без аудио удаляем.
-            conn.execute(
-                text(
-                    "DELETE FROM tracks "
-                    "WHERE audio_path IS NULL "
-                    "OR BTRIM(audio_path) = ''"
+                # Только старые пустые записи без аудио.
+                conn.execute(
+                    text(
+                        "DELETE FROM tracks "
+                        "WHERE audio_path IS NULL "
+                        "OR TRIM(audio_path) = ''"
+                    )
                 )
-            )
+
+            except Exception as exc:
+                print(
+                    f"[DB] Track normalization error: {exc}"
+                )
 
 
 def resolve_audio_path(
@@ -686,12 +739,14 @@ def resolve_audio_path(
         )
 
     for candidate in candidates:
-
         try:
-            c = candidate.resolve()
+            resolved = candidate.resolve()
 
-            if c.exists() and c.is_file():
-                return c
+            if (
+                resolved.exists()
+                and resolved.is_file()
+            ):
+                return resolved
 
         except Exception:
             pass
@@ -699,16 +754,16 @@ def resolve_audio_path(
     return None
 
 
-def normalize_saved_path(path: Path) -> str:
+def normalize_saved_path(
+    path: Path,
+) -> str:
 
     try:
-
         return path.resolve().relative_to(
             PROJECT_DIR.resolve()
         ).as_posix()
 
     except Exception:
-
         return path.resolve().as_posix()
 
 
@@ -740,7 +795,6 @@ def metadata_from_file(path: Path):
     duration = 0
 
     try:
-
         from mutagen import File as MutagenFile
 
         audio = MutagenFile(
@@ -749,7 +803,6 @@ def metadata_from_file(path: Path):
         )
 
         if audio:
-
             duration = int(
                 float(
                     getattr(
@@ -766,26 +819,22 @@ def metadata_from_file(path: Path):
             if tags:
 
                 def tag(*names):
-
                     for name in names:
-
                         try:
-
                             if name in tags:
-
-                                v = tags[name]
+                                value = tags[name]
 
                                 if isinstance(
-                                    v,
+                                    value,
                                     (list, tuple),
                                 ):
                                     return (
-                                        str(v[0])
-                                        if v
+                                        str(value[0])
+                                        if value
                                         else None
                                     )
 
-                                return str(v)
+                                return str(value)
 
                         except Exception:
                             pass
@@ -835,7 +884,6 @@ def metadata_from_file(path: Path):
         artist == "Unknown Artist"
         and " - " in path.stem
     ):
-
         a, t = path.stem.split(
             " - ",
             1,
@@ -857,10 +905,11 @@ def metadata_from_file(path: Path):
     )
 
 
-def extract_cover(path: Path) -> Optional[Path]:
+def extract_cover(
+    path: Path,
+) -> Optional[Path]:
 
     try:
-
         from mutagen import File as MutagenFile
 
         audio = MutagenFile(
@@ -876,11 +925,9 @@ def extract_cover(path: Path) -> Optional[Path]:
         tags = audio.tags
 
         if hasattr(tags, "getall"):
-
             pics = tags.getall("APIC")
 
             if pics:
-
                 data = pics[0].data
 
                 mime = getattr(
@@ -896,11 +943,9 @@ def extract_cover(path: Path) -> Optional[Path]:
                 )
 
         if data is None and "covr" in tags:
-
             covr = tags["covr"]
 
             if covr:
-
                 data = bytes(covr[0])
                 ext = ".jpg"
 
@@ -939,14 +984,14 @@ def scan_music(db: Session):
         MUSIC_DIR,
         UPLOAD_DIR,
     ):
-
         if root.exists():
-
             files.extend(
                 p
                 for p in root.rglob("*")
-                if p.is_file()
-                and p.suffix.lower() in allowed
+                if (
+                    p.is_file()
+                    and p.suffix.lower() in allowed
+                )
             )
 
     unique = {
@@ -962,9 +1007,7 @@ def scan_music(db: Session):
     updated = 0
 
     for path in files:
-
         try:
-
             normalized = normalize_saved_path(
                 path
             )
@@ -980,14 +1023,12 @@ def scan_music(db: Session):
             track = (
                 db.query(Track)
                 .filter(
-                    Track.audio_path
-                    == normalized
+                    Track.audio_path == normalized
                 )
                 .first()
             )
 
             if not track:
-
                 track = (
                     db.query(Track)
                     .filter(
@@ -998,7 +1039,6 @@ def scan_music(db: Session):
                 )
 
             if track:
-
                 track.title = title
                 track.artist = artist
                 track.album = album
@@ -1007,11 +1047,9 @@ def scan_music(db: Session):
                 track.audio_path = normalized
 
                 if not track.cover_url:
-
                     cover = extract_cover(path)
 
                     if cover:
-
                         track.cover_url = (
                             f"/api/media/covers/"
                             f"{cover.name}"
@@ -1020,7 +1058,6 @@ def scan_music(db: Session):
                 updated += 1
 
             else:
-
                 cover = extract_cover(path)
 
                 track = Track(
@@ -1040,11 +1077,9 @@ def scan_music(db: Session):
                 )
 
                 db.add(track)
-
                 added += 1
 
         except Exception as exc:
-
             print(
                 f"[SCAN ERROR] "
                 f"{path} ({exc})"
@@ -1063,17 +1098,19 @@ def scan_music(db: Session):
 # JSON SERIALIZERS
 # ============================================================
 
-def user_json(u):
+def user_json(user):
 
     return {
-        "id": u.id,
-        "email": u.email,
-        "username": u.username,
-        "avatar_url": u.avatar_url,
-        "bio": u.bio or "",
-        "is_admin": bool(u.is_admin),
-        "telegram_linked": bool(u.telegram_id),
-        "created_at": u.created_at,
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "avatar_url": user.avatar_url,
+        "bio": user.bio or "",
+        "is_admin": bool(user.is_admin),
+        "telegram_linked": bool(
+            user.telegram_id
+        ),
+        "created_at": user.created_at,
     }
 
 
@@ -1083,7 +1120,6 @@ def parse_lyrics_sync(value):
         return []
 
     try:
-
         parsed = json.loads(value)
 
         if isinstance(parsed, list):
@@ -1095,41 +1131,41 @@ def parse_lyrics_sync(value):
     return []
 
 
-def track_json(t):
+def track_json(track):
 
     return {
-        "id": t.id,
-        "title": t.title,
-        "artist": t.artist,
-        "album": t.album,
-        "genre": t.genre or "Pop",
-        "duration": int(t.duration or 0),
-
-        "duration_label": (
-            f"{int(t.duration or 0) // 60}:"
-            f"{int(t.duration or 0) % 60:02d}"
+        "id": track.id,
+        "title": track.title,
+        "artist": track.artist,
+        "album": track.album,
+        "genre": track.genre or "Pop",
+        "duration": int(
+            track.duration or 0
         ),
-
-        "cover_url": t.cover_url,
-
+        "duration_label": (
+            f"{int(track.duration or 0) // 60}:"
+            f"{int(track.duration or 0) % 60:02d}"
+        ),
+        "cover_url": track.cover_url,
         "audio_url": (
-            f"/api/tracks/{t.id}/stream"
+            f"/api/tracks/{track.id}/stream"
             if (
-                t.audio_path
-                and resolve_audio_path(t.audio_path)
+                track.audio_path
+                and resolve_audio_path(
+                    track.audio_path
+                )
             )
             else None
         ),
-
-        "plays": int(t.plays or 0),
-
-        "has_lyrics": bool(
-            (t.lyrics or "").strip()
+        "plays": int(
+            track.plays or 0
         ),
-
+        "has_lyrics": bool(
+            (track.lyrics or "").strip()
+        ),
         "has_synced_lyrics": bool(
             parse_lyrics_sync(
-                t.lyrics_sync
+                track.lyrics_sync
             )
         ),
     }
@@ -1199,9 +1235,11 @@ def make_token(user):
         {
             "sub": str(user.id),
             "iat": now,
-            "exp": now
-            + timedelta(
-                minutes=ACCESS_MINUTES
+            "exp": (
+                now
+                + timedelta(
+                    minutes=ACCESS_MINUTES
+                )
             ),
         },
         SECRET_KEY,
@@ -1218,12 +1256,11 @@ def current_user(
 
     if not creds:
         raise HTTPException(
-            401,
-            "Authorization required",
+            status_code=401,
+            detail="Authorization required",
         )
 
     try:
-
         payload = jwt.decode(
             creds.credentials,
             SECRET_KEY,
@@ -1238,11 +1275,11 @@ def current_user(
         JWTError,
         ValueError,
         KeyError,
+        TypeError,
     ):
-
         raise HTTPException(
-            401,
-            "Invalid or expired token",
+            status_code=401,
+            detail="Invalid or expired token",
         )
 
     user = db.get(
@@ -1251,10 +1288,9 @@ def current_user(
     )
 
     if not user:
-
         raise HTTPException(
-            401,
-            "User not found",
+            status_code=401,
+            detail="User not found",
         )
 
     return user
@@ -1265,10 +1301,9 @@ def admin_user(
 ):
 
     if not user.is_admin:
-
         raise HTTPException(
-            403,
-            "Admin access required",
+            status_code=403,
+            detail="Admin access required",
         )
 
     return user
@@ -1293,8 +1328,12 @@ def startup():
         f"[START] MEDIA_DIR: {MEDIA_DIR}"
     )
 
-    try:
+    print(
+        f"[START] DATABASE: "
+        f"{DATABASE_URL.split(':')[0]}"
+    )
 
+    try:
         migration()
 
         print(
@@ -1302,7 +1341,6 @@ def startup():
         )
 
     except Exception as exc:
-
         print(
             f"[DB MIGRATION ERROR] {exc}"
         )
@@ -1310,7 +1348,6 @@ def startup():
     db = SessionLocal()
 
     try:
-
         admin = (
             db.query(User)
             .filter(
@@ -1320,7 +1357,6 @@ def startup():
         )
 
         if not admin:
-
             admin = User(
                 email=ADMIN_EMAIL,
                 username="admin",
@@ -1339,7 +1375,6 @@ def startup():
             )
 
         else:
-
             admin.is_admin = True
             admin.bio = admin.bio or ""
 
@@ -1360,7 +1395,6 @@ def startup():
         )
 
     except Exception as exc:
-
         db.rollback()
 
         print(
@@ -1368,7 +1402,6 @@ def startup():
         )
 
     finally:
-
         db.close()
 
 
@@ -1395,7 +1428,6 @@ def health():
 def me(
     user=Depends(current_user),
 ):
-
     return user_json(user)
 
 
@@ -1409,20 +1441,18 @@ def register(
     email = body.email.lower()
 
     if len(username) < 3:
-
         raise HTTPException(
-            400,
-            "Username must be at least 3 characters",
+            status_code=400,
+            detail="Username must be at least 3 characters",
         )
 
     if len(body.password) < 6:
-
         raise HTTPException(
-            400,
-            "Password must be at least 6 characters",
+            status_code=400,
+            detail="Password must be at least 6 characters",
         )
 
-    if (
+    exists = (
         db.query(User)
         .filter(
             or_(
@@ -1431,14 +1461,15 @@ def register(
             )
         )
         .first()
-    ):
+    )
 
+    if exists:
         raise HTTPException(
-            409,
-            "Email or username already exists",
+            status_code=409,
+            detail="Email or username already exists",
         )
 
-    u = User(
+    user = User(
         email=email,
         username=username,
         password_hash=pwd.hash(
@@ -1448,13 +1479,13 @@ def register(
         is_admin=False,
     )
 
-    db.add(u)
+    db.add(user)
     db.commit()
-    db.refresh(u)
+    db.refresh(user)
 
     return {
-        "token": make_token(u),
-        "user": user_json(u),
+        "token": make_token(user),
+        "user": user_json(user),
     }
 
 
@@ -1470,7 +1501,7 @@ def login(
         or ""
     ).strip()
 
-    u = (
+    user = (
         db.query(User)
         .filter(
             or_(
@@ -1484,29 +1515,29 @@ def login(
     )
 
     if (
-        not u
+        not user
         or not pwd.verify(
             body.password,
-            u.password_hash,
+            user.password_hash,
         )
     ):
-
         raise HTTPException(
-            401,
-            "Invalid email/username or password",
+            status_code=401,
+            detail="Invalid email/username or password",
         )
 
-    u.last_login = utcnow()
+    user.last_login = utcnow()
 
     db.commit()
 
     return {
-        "token": make_token(u),
-        "user": user_json(u),
+        "token": make_token(user),
+        "user": user_json(user),
     }
 
 
 @app.patch("/api/auth/me")
+@app.patch("/api/profile")
 def update_me(
     body: ProfileBody,
     user=Depends(current_user),
@@ -1518,10 +1549,9 @@ def update_me(
         username = body.username.strip()
 
         if len(username) < 3:
-
             raise HTTPException(
-                400,
-                "Username must be at least 3 characters",
+                status_code=400,
+                detail="Username must be at least 3 characters",
             )
 
         exists = (
@@ -1534,29 +1564,31 @@ def update_me(
         )
 
         if exists:
-
             raise HTTPException(
-                409,
-                "Username already exists",
+                status_code=409,
+                detail="Username already exists",
             )
 
         user.username = username
 
     if body.avatar_url is not None:
-
         user.avatar_url = (
             body.avatar_url.strip()
             or None
         )
 
     if body.bio is not None:
-
         user.bio = body.bio[:1000]
 
     user.updated_at = utcnow()
 
     db.commit()
     db.refresh(user)
+
+    print(
+        f"[PROFILE] Updated user "
+        f"id={user.id}"
+    )
 
     return user_json(user)
 
@@ -1565,15 +1597,182 @@ def update_me(
 # TELEGRAM LINKING
 # ============================================================
 
+def telegram_status_response(user):
+
+    expires_at = normalize_datetime(
+        user.telegram_link_expires_at
+    )
+
+    token = user.telegram_link_token
+
+    if (
+        expires_at
+        and expires_at <= utcnow()
+        and token
+    ):
+        token = None
+        expires_at = None
+
+    return {
+        "linked": bool(
+            user.telegram_id
+        ),
+        "telegram_id": user.telegram_id,
+        "code": token,
+        "token": token,
+        "link_token": token,
+        "telegram_link_token": token,
+        "expires_at": (
+            expires_at.isoformat()
+            if expires_at
+            else None
+        ),
+        "expires": (
+            expires_at.isoformat()
+            if expires_at
+            else None
+        ),
+        "expires_in": (
+            max(
+                0,
+                int(
+                    (
+                        expires_at
+                        - utcnow()
+                    ).total_seconds()
+                ),
+            )
+            if expires_at
+            else 0
+        ),
+    }
+
+
+@app.get("/api/profile/telegram")
+def profile_telegram_status(
+    user=Depends(current_user),
+    db: Session = Depends(db_dep),
+):
+
+    # Remove expired token automatically.
+    expires_at = normalize_datetime(
+        user.telegram_link_expires_at
+    )
+
+    if (
+        user.telegram_link_token
+        and expires_at
+        and expires_at <= utcnow()
+    ):
+        user.telegram_link_token = None
+        user.telegram_link_expires_at = None
+        db.commit()
+
+    return telegram_status_response(
+        user
+    )
+
+
+@app.post("/api/profile/telegram/link")
+def profile_telegram_link(
+    user=Depends(current_user),
+    db: Session = Depends(db_dep),
+):
+
+    # If already linked, don't generate a useless token.
+    if user.telegram_id:
+        return {
+            **telegram_status_response(user),
+            "ok": True,
+            "message": "Telegram already linked",
+        }
+
+    # Invalidate old token.
+    user.telegram_link_token = None
+    user.telegram_link_expires_at = None
+
+    # Secure random token.
+    token = secrets.token_urlsafe(32)
+
+    expires_at = (
+        utcnow()
+        + timedelta(
+            minutes=10
+        )
+    )
+
+    user.telegram_link_token = token
+    user.telegram_link_expires_at = expires_at
+
+    db.commit()
+    db.refresh(user)
+
+    print(
+        f"[TELEGRAM] Link token created "
+        f"user_id={user.id}"
+    )
+
+    return {
+        "ok": True,
+        "linked": False,
+        "telegram_id": None,
+
+        # Frontend compatibility.
+        "code": token,
+        "token": token,
+        "link_token": token,
+        "telegram_link_token": token,
+
+        "expires_at": expires_at.isoformat(),
+        "expires": expires_at.isoformat(),
+        "expires_in": 600,
+
+        "command": f"/link {token}",
+    }
+
+
+@app.post("/api/profile/telegram/unlink")
+def profile_telegram_unlink(
+    user=Depends(current_user),
+    db: Session = Depends(db_dep),
+):
+
+    old_telegram_id = user.telegram_id
+
+    user.telegram_id = None
+    user.telegram_link_token = None
+    user.telegram_link_expires_at = None
+
+    db.commit()
+    db.refresh(user)
+
+    print(
+        f"[TELEGRAM] Unlinked "
+        f"user_id={user.id} "
+        f"telegram_id={old_telegram_id}"
+    )
+
+    return {
+        "ok": True,
+        "linked": False,
+        "telegram_id": None,
+    }
+
+
+# ------------------------------------------------------------
+# Old Telegram API routes — compatibility
+# ------------------------------------------------------------
+
 @app.get("/api/telegram/status")
 def telegram_status(
     user=Depends(current_user),
+    db: Session = Depends(db_dep),
 ):
 
-    return {
-        "linked": bool(user.telegram_id),
-        "telegram_id": user.telegram_id,
-    }
+    return profile_telegram_status(
+        user=user,
+        db=db,
+    )
 
 
 @app.post("/api/telegram/link-token")
@@ -1582,27 +1781,10 @@ def telegram_link_token(
     db: Session = Depends(db_dep),
 ):
 
-    # Delete old token first.
-    user.telegram_link_token = None
-    user.telegram_link_expires_at = None
-
-    token = secrets.token_urlsafe(32)
-
-    user.telegram_link_token = token
-
-    user.telegram_link_expires_at = (
-        utcnow()
-        + timedelta(minutes=10)
+    return profile_telegram_link(
+        user=user,
+        db=db,
     )
-
-    db.commit()
-
-    return {
-        "token": token,
-        "expires_in": 600,
-        "expires_at": user.telegram_link_expires_at,
-        "command": f"/link {token}",
-    }
 
 
 @app.post("/api/telegram/unlink")
@@ -1611,16 +1793,10 @@ def telegram_unlink(
     db: Session = Depends(db_dep),
 ):
 
-    user.telegram_id = None
-    user.telegram_link_token = None
-    user.telegram_link_expires_at = None
-
-    db.commit()
-
-    return {
-        "ok": True,
-        "linked": False,
-    }
+    return profile_telegram_unlink(
+        user=user,
+        db=db,
+    )
 
 
 # ============================================================
@@ -1640,7 +1816,6 @@ def tracks(
     query = db.query(Track)
 
     if q:
-
         pattern = f"%{q}%"
 
         query = query.filter(
@@ -1652,35 +1827,33 @@ def tracks(
         )
 
     if genre:
-
         query = query.filter(
             Track.genre.ilike(genre)
         )
 
     if shuffle:
-
         query = query.order_by(
             func.random()
         )
-
     else:
-
         query = query.order_by(
             Track.created_at.desc(),
             Track.id.desc(),
         )
 
     return [
-        track_json(t)
-        for t in query
-        .offset(offset)
-        .limit(
-            min(
-                max(limit, 1),
-                500,
+        track_json(track)
+        for track in (
+            query
+            .offset(offset)
+            .limit(
+                min(
+                    max(limit, 1),
+                    500,
+                )
             )
+            .all()
         )
-        .all()
     ]
 
 
@@ -1690,19 +1863,18 @@ def get_track(
     db: Session = Depends(db_dep),
 ):
 
-    t = db.get(
+    track = db.get(
         Track,
         track_id,
     )
 
-    if not t:
-
+    if not track:
         raise HTTPException(
-            404,
-            "Track not found",
+            status_code=404,
+            detail="Track not found",
         )
 
-    return track_json(t)
+    return track_json(track)
 
 
 # ============================================================
@@ -1715,26 +1887,25 @@ def stream(
     db: Session = Depends(db_dep),
 ):
 
-    t = db.get(
+    track = db.get(
         Track,
         track_id,
     )
 
     path = resolve_audio_path(
-        t.audio_path
-        if t
+        track.audio_path
+        if track
         else None
     )
 
-    if not t or not path:
-
+    if not track or not path:
         raise HTTPException(
-            404,
-            "Audio file not found",
+            status_code=404,
+            detail="Audio file not found",
         )
 
-    t.plays = (
-        int(t.plays or 0)
+    track.plays = (
+        int(track.plays or 0)
         + 1
     )
 
@@ -1768,13 +1939,15 @@ def stream(
 
 @app.get("/api/search")
 def search(
-    q: str = Query(min_length=1),
+    q: str = Query(
+        min_length=1
+    ),
     db: Session = Depends(db_dep),
 ):
 
     pattern = f"%{q}%"
 
-    ts = (
+    tracks_result = (
         db.query(Track)
         .filter(
             or_(
@@ -1790,14 +1963,20 @@ def search(
 
     return {
         "tracks": [
-            track_json(t)
-            for t in ts
+            track_json(track)
+            for track in tracks_result
         ],
         "artists": sorted(
-            {t.artist for t in ts}
+            {
+                track.artist
+                for track in tracks_result
+            }
         ),
         "albums": sorted(
-            {t.album for t in ts}
+            {
+                track.album
+                for track in tracks_result
+            }
         ),
         "playlists": [],
     }
@@ -1814,15 +1993,18 @@ def recommendations(
 ):
 
     return [
-        track_json(t)
-        for t in (
+        track_json(track)
+        for track in (
             db.query(Track)
             .order_by(
                 Track.plays.desc(),
                 Track.created_at.desc(),
             )
             .limit(
-                min(limit, 50)
+                min(
+                    max(limit, 1),
+                    50,
+                )
             )
             .all()
         )
@@ -1836,7 +2018,11 @@ def recommendations(
 @app.get("/api/charts")
 def charts(
     period: str = Query("all"),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(
+        50,
+        ge=1,
+        le=100,
+    ),
     db: Session = Depends(db_dep),
 ):
 
@@ -1868,11 +2054,12 @@ def charts(
         }.get(period)
 
         if not days:
-
             raise HTTPException(
-                400,
-                "Invalid chart period. "
-                "Use all, day, week or month.",
+                status_code=400,
+                detail=(
+                    "Invalid chart period. "
+                    "Use all, day, week or month."
+                ),
             )
 
         cutoff = (
@@ -1950,10 +2137,9 @@ def get_lyrics(
     )
 
     if not track:
-
         raise HTTPException(
-            404,
-            "Track not found",
+            status_code=404,
+            detail="Track not found",
         )
 
     return {
@@ -1976,8 +2162,8 @@ def likes(
 ):
 
     ids = [
-        x.track_id
-        for x in (
+        item.track_id
+        for item in (
             db.query(Like)
             .filter_by(
                 user_id=user.id
@@ -1986,7 +2172,7 @@ def likes(
         )
     ]
 
-    ts = (
+    tracks_result = (
         db.query(Track)
         .filter(
             Track.id.in_(ids)
@@ -1999,8 +2185,8 @@ def likes(
     return {
         "track_ids": ids,
         "tracks": [
-            track_json(t)
-            for t in ts
+            track_json(track)
+            for track in tracks_result
         ],
     }
 
@@ -2017,13 +2203,12 @@ def set_like(
         Track,
         track_id,
     ):
-
         raise HTTPException(
-            404,
-            "Track not found",
+            status_code=404,
+            detail="Track not found",
         )
 
-    x = (
+    item = (
         db.query(Like)
         .filter_by(
             user_id=user.id,
@@ -2032,7 +2217,7 @@ def set_like(
         .first()
     )
 
-    if body.liked and not x:
+    if body.liked and not item:
 
         db.add(
             Like(
@@ -2041,9 +2226,9 @@ def set_like(
             )
         )
 
-    elif not body.liked and x:
+    elif not body.liked and item:
 
-        db.delete(x)
+        db.delete(item)
 
     db.commit()
 
@@ -2068,10 +2253,9 @@ def add_history(
         Track,
         track_id,
     ):
-
         raise HTTPException(
-            404,
-            "Track not found",
+            status_code=404,
+            detail="Track not found",
         )
 
     db.add(
@@ -2084,7 +2268,7 @@ def add_history(
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -2106,25 +2290,24 @@ def history(
         .all()
     )
 
-    out = []
+    result = []
 
-    for r in rows:
+    for row in rows:
 
-        t = db.get(
+        track = db.get(
             Track,
-            r.track_id,
+            row.track_id,
         )
 
-        if t:
-
-            out.append(
+        if track:
+            result.append(
                 {
-                    "played_at": r.played_at,
-                    "track": track_json(t),
+                    "played_at": row.played_at,
+                    "track": track_json(track),
                 }
             )
 
-    return out
+    return result
 
 
 # ============================================================
@@ -2137,7 +2320,7 @@ def playlists(
     db: Session = Depends(db_dep),
 ):
 
-    ps = (
+    playlist_items = (
         db.query(Playlist)
         .filter_by(
             user_id=user.id
@@ -2148,35 +2331,52 @@ def playlists(
         .all()
     )
 
-    return [
-        {
-            "id": p.id,
-            "name": p.name,
-            "description": p.description,
-            "cover_url": p.cover_url,
-            "is_public": p.is_public,
-            "tracks": [
-                track_json(t)
-                for x in (
-                    db.query(PlaylistTrack)
-                    .filter_by(
-                        playlist_id=p.id
-                    )
-                    .order_by(
-                        PlaylistTrack.position
-                    )
-                    .all()
+    result = []
+
+    for playlist in playlist_items:
+
+        playlist_tracks = (
+            db.query(PlaylistTrack)
+            .filter_by(
+                playlist_id=playlist.id
+            )
+            .order_by(
+                PlaylistTrack.position
+            )
+            .all()
+        )
+
+        tracks_result = []
+
+        for playlist_track in playlist_tracks:
+
+            track = db.get(
+                Track,
+                playlist_track.track_id,
+            )
+
+            if track:
+                tracks_result.append(
+                    track_json(track)
                 )
-                if (
-                    t := db.get(
-                        Track,
-                        x.track_id,
-                    )
-                )
-            ],
-        }
-        for p in ps
-    ]
+
+        result.append(
+            {
+                "id": playlist.id,
+                "name": playlist.name,
+                "description": (
+                    playlist.description
+                    or ""
+                ),
+                "cover_url": playlist.cover_url,
+                "is_public": bool(
+                    playlist.is_public
+                ),
+                "tracks": tracks_result,
+            }
+        )
+
+    return result
 
 
 @app.post("/api/playlists")
@@ -2186,20 +2386,28 @@ def create_playlist(
     db: Session = Depends(db_dep),
 ):
 
-    p = Playlist(
+    name = body.name.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Playlist name is required",
+        )
+
+    playlist = Playlist(
         user_id=user.id,
-        name=body.name.strip(),
-        description=body.description,
+        name=name[:255],
+        description=body.description[:5000],
         is_public=body.is_public,
     )
 
-    db.add(p)
+    db.add(playlist)
     db.commit()
-    db.refresh(p)
+    db.refresh(playlist)
 
     return {
-        "id": p.id,
-        "name": p.name,
+        "id": playlist.id,
+        "name": playlist.name,
     }
 
 
@@ -2211,7 +2419,7 @@ def update_playlist(
     db: Session = Depends(db_dep),
 ):
 
-    p = (
+    playlist = (
         db.query(Playlist)
         .filter_by(
             id=pid,
@@ -2220,21 +2428,28 @@ def update_playlist(
         .first()
     )
 
-    if not p:
-
+    if not playlist:
         raise HTTPException(
-            404,
-            "Playlist not found",
+            status_code=404,
+            detail="Playlist not found",
         )
 
-    p.name = body.name.strip()
-    p.description = body.description
-    p.is_public = body.is_public
+    name = body.name.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Playlist name is required",
+        )
+
+    playlist.name = name[:255]
+    playlist.description = body.description[:5000]
+    playlist.is_public = body.is_public
 
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -2245,7 +2460,7 @@ def delete_playlist(
     db: Session = Depends(db_dep),
 ):
 
-    p = (
+    playlist = (
         db.query(Playlist)
         .filter_by(
             id=pid,
@@ -2254,18 +2469,17 @@ def delete_playlist(
         .first()
     )
 
-    if not p:
-
+    if not playlist:
         raise HTTPException(
-            404,
-            "Playlist not found",
+            status_code=404,
+            detail="Playlist not found",
         )
 
-    db.delete(p)
+    db.delete(playlist)
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -2277,7 +2491,7 @@ def playlist_add(
     db: Session = Depends(db_dep),
 ):
 
-    p = (
+    playlist = (
         db.query(Playlist)
         .filter_by(
             id=pid,
@@ -2286,30 +2500,29 @@ def playlist_add(
         .first()
     )
 
-    t = db.get(
+    track = db.get(
         Track,
         body.track_id,
     )
 
-    if not p or not t:
-
+    if not playlist or not track:
         raise HTTPException(
-            404,
-            "Playlist or track not found",
+            status_code=404,
+            detail="Playlist or track not found",
         )
 
     exists = (
         db.query(PlaylistTrack)
         .filter_by(
             playlist_id=pid,
-            track_id=t.id,
+            track_id=track.id,
         )
         .first()
     )
 
     if not exists:
 
-        pos = (
+        position = (
             db.query(
                 func.count(
                     PlaylistTrack.id
@@ -2325,15 +2538,15 @@ def playlist_add(
         db.add(
             PlaylistTrack(
                 playlist_id=pid,
-                track_id=t.id,
-                position=pos,
+                track_id=track.id,
+                position=position,
             )
         )
 
         db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -2347,7 +2560,7 @@ def playlist_remove(
     db: Session = Depends(db_dep),
 ):
 
-    p = (
+    playlist = (
         db.query(Playlist)
         .filter_by(
             id=pid,
@@ -2356,7 +2569,7 @@ def playlist_remove(
         .first()
     )
 
-    x = (
+    item = (
         db.query(PlaylistTrack)
         .filter_by(
             playlist_id=pid,
@@ -2365,18 +2578,17 @@ def playlist_remove(
         .first()
     )
 
-    if not p or not x:
-
+    if not playlist or not item:
         raise HTTPException(
-            404,
-            "Not found",
+            status_code=404,
+            detail="Not found",
         )
 
-    db.delete(x)
+    db.delete(item)
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -2412,11 +2624,15 @@ def artists(
 
     return [
         {
-            "name": a,
-            "plays": int(p or 0),
-            "tracks": int(c),
+            "name": artist,
+            "plays": int(
+                plays or 0
+            ),
+            "tracks": int(
+                count
+            ),
         }
-        for a, p, c in rows
+        for artist, plays, count in rows
     ]
 
 
@@ -2442,11 +2658,13 @@ def albums(
 
     return [
         {
-            "album": a,
-            "artist": ar,
-            "tracks": int(c),
+            "album": album,
+            "artist": artist,
+            "tracks": int(
+                count
+            ),
         }
-        for a, ar, c in rows
+        for album, artist, count in rows
     ]
 
 
@@ -2524,7 +2742,9 @@ def profile_stats(
 # ADMIN — LYRICS
 # ============================================================
 
-@app.patch("/api/admin/tracks/{track_id}/lyrics")
+@app.patch(
+    "/api/admin/tracks/{track_id}/lyrics"
+)
 def admin_update_lyrics(
     track_id: int,
     body: LyricsBody,
@@ -2538,10 +2758,9 @@ def admin_update_lyrics(
     )
 
     if not track:
-
         raise HTTPException(
-            404,
-            "Track not found",
+            status_code=404,
+            detail="Track not found",
         )
 
     track.lyrics = (
@@ -2551,14 +2770,11 @@ def admin_update_lyrics(
     )
 
     if body.lyrics_sync is None:
-
         track.lyrics_sync = None
 
     else:
 
         try:
-
-            # Normalize sync entries.
             normalized = []
 
             for item in body.lyrics_sync:
@@ -2606,10 +2822,11 @@ def admin_update_lyrics(
             )
 
         except Exception as exc:
-
             raise HTTPException(
-                400,
-                f"Invalid lyrics_sync: {exc}",
+                status_code=400,
+                detail=(
+                    f"Invalid lyrics_sync: {exc}"
+                ),
             )
 
     db.commit()
@@ -2641,48 +2858,73 @@ async def admin_upload_track(
     db: Session = Depends(db_dep),
 ):
 
+    original_name = (
+        audio.filename
+        or "audio.mp3"
+    )
+
     filename = (
         f"{uuid.uuid4().hex}_"
-        f"{clean_filename(audio.filename or 'audio.mp3', 'audio.mp3')}"
+        f"{clean_filename(original_name, 'audio.mp3')}"
     )
 
     path = AUDIO_DIR / filename
 
-    with path.open("wb") as f:
+    with path.open("wb") as file:
 
-        while chunk := await audio.read(
-            1024 * 1024
-        ):
+        while True:
 
-            f.write(chunk)
+            chunk = await audio.read(
+                1024 * 1024
+            )
+
+            if not chunk:
+                break
+
+            file.write(chunk)
 
     cover_url = None
 
     if cover:
 
-        cp = (
-            COVER_DIR
-            / f"{uuid.uuid4().hex}_"
-            f"{clean_filename(cover.filename or 'cover.jpg', 'cover.jpg')}"
+        cover_name = (
+            f"{uuid.uuid4().hex}_"
+            f"{clean_filename("
+                f"cover.filename or 'cover.jpg', "
+                f"'cover.jpg'"
+            )}"
         )
 
-        with cp.open("wb") as f:
+        cover_path = (
+            COVER_DIR / cover_name
+        )
 
-            while chunk := await cover.read(
-                1024 * 1024
-            ):
+        with cover_path.open("wb") as file:
 
-                f.write(chunk)
+            while True:
+
+                chunk = await cover.read(
+                    1024 * 1024
+                )
+
+                if not chunk:
+                    break
+
+                file.write(chunk)
 
         cover_url = (
-            f"/api/media/covers/{cp.name}"
+            f"/api/media/covers/"
+            f"{cover_path.name}"
         )
 
-    t = Track(
+    track = Track(
         title=title.strip()[:255],
         artist=artist.strip()[:255],
         album=album.strip()[:255],
-        genre=genre.strip()[:100] or "Pop",
+        genre=(
+            genre.strip()[:100]
+            or "Pop"
+        ),
         duration=max(
             0,
             duration,
@@ -2694,11 +2936,17 @@ async def admin_upload_track(
         plays=0,
     )
 
-    db.add(t)
+    db.add(track)
     db.commit()
-    db.refresh(t)
+    db.refresh(track)
 
-    return track_json(t)
+    print(
+        f"[ADMIN] Track uploaded "
+        f"id={track.id} "
+        f"title={track.title}"
+    )
+
+    return track_json(track)
 
 
 # ============================================================
@@ -2712,8 +2960,8 @@ def admin_users(
 ):
 
     return [
-        user_json(u)
-        for u in (
+        user_json(item)
+        for item in (
             db.query(User)
             .order_by(
                 User.created_at.desc()
@@ -2731,8 +2979,14 @@ def admin_stats(
 ):
 
     return {
-        "users": db.query(User).count(),
-        "tracks": db.query(Track).count(),
+        "users": db.query(
+            User
+        ).count(),
+
+        "tracks": db.query(
+            Track
+        ).count(),
+
         "plays": int(
             db.query(
                 func.coalesce(
@@ -2744,21 +2998,31 @@ def admin_stats(
             ).scalar()
             or 0
         ),
-        "likes": db.query(Like).count(),
+
+        "likes": db.query(
+            Like
+        ).count(),
+
         "playlists": db.query(
             Playlist
         ).count(),
-        "telegram_linked": db.query(
-            User
-        ).filter(
-            User.telegram_id.isnot(None)
-        ).count(),
-        "tracks_with_lyrics": db.query(
-            Track
-        ).filter(
-            Track.lyrics.isnot(None),
-            Track.lyrics != "",
-        ).count(),
+
+        "telegram_linked": (
+            db.query(User)
+            .filter(
+                User.telegram_id.isnot(None)
+            )
+            .count()
+        ),
+
+        "tracks_with_lyrics": (
+            db.query(Track)
+            .filter(
+                Track.lyrics.isnot(None),
+                Track.lyrics != "",
+            )
+            .count()
+        ),
     }
 
 
@@ -2766,54 +3030,64 @@ def admin_stats(
 # ADMIN — DELETE TRACK
 # ============================================================
 
-@app.delete("/api/admin/tracks/{track_id}")
+@app.delete(
+    "/api/admin/tracks/{track_id}"
+)
 def admin_delete_track(
     track_id: int,
     user=Depends(admin_user),
     db: Session = Depends(db_dep),
 ):
 
-    t = db.get(
+    track = db.get(
         Track,
         track_id,
     )
 
-    if not t:
-
+    if not track:
         raise HTTPException(
-            404,
-            "Track not found",
+            status_code=404,
+            detail="Track not found",
         )
 
     path = resolve_audio_path(
-        t.audio_path
+        track.audio_path
     )
 
     if path:
-
-        path.unlink(
-            missing_ok=True
-        )
+        try:
+            path.unlink(
+                missing_ok=True
+            )
+        except Exception as exc:
+            print(
+                f"[DELETE] Audio delete error: "
+                f"{exc}"
+            )
 
     if (
-        t.cover_url
-        and t.cover_url.startswith(
+        track.cover_url
+        and track.cover_url.startswith(
             "/api/media/covers/"
         )
     ):
+        try:
+            (
+                COVER_DIR
+                / Path(
+                    track.cover_url
+                ).name
+            ).unlink(
+                missing_ok=True
+            )
+        except Exception:
+            pass
 
-        (
-            COVER_DIR
-            / Path(t.cover_url).name
-        ).unlink(
-            missing_ok=True
-        )
-
-    db.delete(t)
+    db.delete(track)
     db.commit()
 
     return {
-        "ok": True
+        "ok": True,
     }
 
 
@@ -2827,31 +3101,71 @@ def admin_scan(
     db: Session = Depends(db_dep),
 ):
 
-    return scan_music(db)
+    result = scan_music(db)
+
+    print(
+        f"[ADMIN SCAN] {result}"
+    )
+
+    return result
 
 
 # ============================================================
 # MEDIA
 # ============================================================
 
-@app.get("/api/media/covers/{filename}")
+@app.get(
+    "/api/media/covers/{filename}"
+)
 def media_cover(
     filename: str,
 ):
 
-    p = (
+    path = (
         COVER_DIR
         / Path(filename).name
     )
 
-    if not p.exists():
-
+    if not path.exists():
         raise HTTPException(
-            404,
-            "Cover not found",
+            status_code=404,
+            detail="Cover not found",
         )
 
-    return FileResponse(p)
+    return FileResponse(
+        path
+    )
+
+
+# ============================================================
+# DEBUG — CURRENT USER / TELEGRAM
+# ============================================================
+
+@app.get("/api/debug/session")
+def debug_session(
+    user=Depends(current_user),
+):
+
+    return {
+        "ok": True,
+        "user_id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "telegram_id": user.telegram_id,
+        "telegram_linked": bool(
+            user.telegram_id
+        ),
+        "has_link_token": bool(
+            user.telegram_link_token
+        ),
+        "link_token_expires_at": (
+            normalize_datetime(
+                user.telegram_link_expires_at
+            ).isoformat()
+            if user.telegram_link_expires_at
+            else None
+        ),
+    }
 
 
 # ============================================================
@@ -2866,13 +3180,19 @@ DIST_DIR = (
 
 if DIST_DIR.exists():
 
-    app.mount(
-        "/assets",
-        StaticFiles(
-            directory=DIST_DIR / "assets"
-        ),
-        name="assets",
+    ASSETS_DIR = (
+        DIST_DIR / "assets"
     )
+
+    if ASSETS_DIR.exists():
+
+        app.mount(
+            "/assets",
+            StaticFiles(
+                directory=ASSETS_DIR
+            ),
+            name="assets",
+        )
 
 
 @app.get(
@@ -2910,11 +3230,12 @@ def spa_fallback(
     full_path: str,
 ):
 
-    if full_path.startswith("api/"):
-
+    if full_path.startswith(
+        "api/"
+    ):
         raise HTTPException(
-            404,
-            "Not found",
+            status_code=404,
+            detail="Not found",
         )
 
     candidate = (
@@ -2926,12 +3247,14 @@ def spa_fallback(
 
         candidate = candidate.resolve()
 
-        if (
+        dist_resolved = (
             DIST_DIR.resolve()
-            in candidate.parents
+        )
+
+        if (
+            dist_resolved in candidate.parents
             and candidate.is_file()
         ):
-
             return FileResponse(
                 candidate
             )
@@ -2953,6 +3276,6 @@ def spa_fallback(
         )
 
     raise HTTPException(
-        404,
-        "Not found",
+        status_code=404,
+        detail="Not found",
     )
