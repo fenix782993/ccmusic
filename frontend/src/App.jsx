@@ -1,2287 +1,3411 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Search,
-  Home,
-  Library,
-  Heart,
-  History,
-  ListMusic,
-  User,
-  Settings,
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  Shuffle,
-  Repeat,
-  Volume2,
-  VolumeX,
-  Maximize2,
-  ChevronLeft,
-  ChevronRight,
-  Plus,
-  MoreHorizontal,
-  Music2,
-  Disc3,
-  Mic2,
-  LogIn,
-  LogOut,
-  UserPlus,
-  X,
-  Check,
-  RefreshCw,
-} from "lucide-react";
+import "./App.css";
 
-import "./styles.css";
+/*
+  FENIX MUSIC
+  Full frontend App.js
+  Без lucide-react.
+*/
 
-const API_BASE =
-  import.meta.env.VITE_API_URL ||
-  (window.location.hostname === "localhost"
-    ? "http://localhost:8000"
-    : "");
+const API =
+  process.env.REACT_APP_API_URL ||
+  process.env.PUBLIC_API_URL ||
+  "";
 
-const TOKEN_KEY = "fenix_token";
+const DEFAULT_COVER =
+  "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=800";
 
-function apiUrl(path) {
-  if (!path) return API_BASE;
-  if (path.startsWith("http://") || path.startsWith("https://")) return path;
-  return `${API_BASE}${path}`;
+const DEMO_TRACKS = [
+  {
+    id: "demo-1",
+    title: "Neon Horizon",
+    artist_name: "CyberPulse",
+    album_name: "Cyber Odyssey",
+    genre: "Synthwave",
+    duration: 214,
+    plays: 1420932,
+    cover_url:
+      "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800",
+    audio_url:
+      "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+  },
+  {
+    id: "demo-2",
+    title: "Midnight Rain",
+    artist_name: "Aura",
+    album_name: "Lost Frequencies",
+    genre: "Lo-Fi",
+    duration: 198,
+    plays: 980000,
+    cover_url:
+      "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800",
+    audio_url:
+      "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+  },
+  {
+    id: "demo-3",
+    title: "Electric Dreams",
+    artist_name: "Vektor",
+    album_name: "Neon Grid",
+    genre: "Electro",
+    duration: 245,
+    plays: 3200000,
+    cover_url:
+      "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=800",
+    audio_url:
+      "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3",
+  },
+  {
+    id: "demo-4",
+    title: "After Midnight",
+    artist_name: "Nova",
+    album_name: "Night Drive",
+    genre: "Chill",
+    duration: 231,
+    plays: 740000,
+    cover_url:
+      "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=800",
+    audio_url:
+      "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3",
+  },
+];
+
+const ICONS = {
+  home: "⌂",
+  search: "⌕",
+  library: "▤",
+  heart: "♡",
+  heartFill: "♥",
+  play: "▶",
+  pause: "Ⅱ",
+  previous: "◀◀",
+  next: "▶▶",
+  shuffle: "⇄",
+  repeat: "↻",
+  volume: "🔊",
+  mute: "🔇",
+  user: "●",
+  menu: "☰",
+  close: "×",
+  settings: "⚙",
+  bell: "🔔",
+  clock: "◷",
+  crown: "♛",
+  telegram: "➤",
+  plus: "+",
+  trash: "⌫",
+  edit: "✎",
+  lock: "🔒",
+  shield: "◇",
+  refresh: "↻",
+  check: "✓",
+  arrow: "→",
+  music: "♫",
+  album: "◉",
+  radio: "◉",
+  upload: "↑",
+  download: "↓",
+  more: "⋯",
+};
+
+function Icon({ name, className = "" }) {
+  return (
+    <span className={`fenix-icon ${className}`} aria-hidden="true">
+      {ICONS[name] || "•"}
+    </span>
+  );
 }
 
-async function api(path, options = {}) {
-  const token = localStorage.getItem(TOKEN_KEY);
+function formatTime(value) {
+  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  const minutes = Math.floor(seconds / 60);
+  const secondsPart = String(seconds % 60).padStart(2, "0");
 
-  const headers = new Headers(options.headers || {});
+  return `${minutes}:${secondsPart}`;
+}
 
-  if (!(options.body instanceof FormData)) {
-    headers.set("Content-Type", "application/json");
-  }
+function apiUrl(path) {
+  return `${API}${path}`;
+}
+
+async function apiRequest(path, options = {}) {
+  const token = localStorage.getItem("fenix_token");
+  const headers = {
+    ...(options.body ? { "Content-Type": "application/json" } : {}),
+    ...(options.headers || {}),
+  };
 
   if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+    headers.Authorization = `Bearer ${token}`;
   }
 
   const response = await fetch(apiUrl(path), {
     ...options,
+    credentials: "include",
     headers,
   });
 
-  let data = null;
-
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
+  const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
     throw new Error(
-      data?.detail ||
-        data?.message ||
-        `Ошибка сервера: ${response.status}`
+      data.error ||
+        data.message ||
+        `Ошибка API (${response.status})`
     );
   }
 
   return data;
 }
 
-function formatTime(seconds) {
-  const value = Number(seconds || 0);
+function readStorage(key, fallback) {
+  try {
+    const value = localStorage.getItem(key);
 
-  if (!Number.isFinite(value) || value < 0) {
-    return "0:00";
-  }
-
-  const minutes = Math.floor(value / 60);
-  const secs = Math.floor(value % 60);
-
-  return `${minutes}:${String(secs).padStart(2, "0")}`;
-}
-
-function getCover(track) {
-  if (!track?.cover_url) return null;
-  return apiUrl(track.cover_url);
-}
-
-function getAudio(track) {
-  if (!track) return "";
-  return apiUrl(track.audio_url || `/api/tracks/${track.id}/stream`);
-}
-
-function uniqueTracks(items) {
-  const map = new Map();
-
-  for (const item of items || []) {
-    if (item?.id != null) {
-      map.set(item.id, item);
+    if (!value) {
+      return fallback;
     }
-  }
 
-  return [...map.values()];
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
 }
 
-function App() {
+function saveStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // localStorage может быть отключён браузером.
+  }
+}
+
+function randomCaptcha() {
+  return Math.random()
+    .toString(36)
+    .substring(2, 8)
+    .toUpperCase();
+}
+
+function normalizeTrack(track) {
+  return {
+    ...track,
+    id: track.id ?? track.track_id,
+    title: track.title || track.name || "Без названия",
+    artist_name:
+      track.artist_name ||
+      track.artist ||
+      track.author ||
+      "Неизвестный артист",
+    album_name:
+      track.album_name ||
+      track.album ||
+      "Без альбома",
+    genre: track.genre || "Music",
+    duration: Number(track.duration || 0),
+    plays: Number(track.plays || track.play_count || 0),
+    cover_url:
+      track.cover_url ||
+      track.cover ||
+      track.album_cover_url ||
+      DEFAULT_COVER,
+    audio_url:
+      track.audio_url ||
+      track.stream_url ||
+      track.url ||
+      "",
+  };
+}
+
+/* =========================
+   MAIN APP
+========================= */
+
+export default function App() {
   const audioRef = useRef(null);
 
-  const [user, setUser] = useState(null);
-  const [authMode, setAuthMode] = useState(null);
-
   const [page, setPage] = useState("home");
-  const [search, setSearch] = useState("");
 
   const [tracks, setTracks] = useState([]);
-  const [popular, setPopular] = useState([]);
-  const [newTracks, setNewTracks] = useState([]);
-  const [recommendations, setRecommendations] = useState([]);
-  const [artists, setArtists] = useState([]);
-  const [albums, setAlbums] = useState([]);
-  const [genres, setGenres] = useState([]);
-
-  const [likes, setLikes] = useState([]);
-  const [history, setHistory] = useState([]);
-  const [playlists, setPlaylists] = useState([]);
+  const [loadingTracks, setLoadingTracks] = useState(true);
+  const [apiError, setApiError] = useState("");
 
   const [currentTrack, setCurrentTrack] = useState(null);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [playing, setPlaying] = useState(false);
 
-  const [progress, setProgress] = useState(0);
+  const [search, setSearch] = useState("");
+
+  const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(
+    Number(localStorage.getItem("fenix_volume") || 0.8)
+  );
 
   const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState(false);
+  const [repeat, setRepeat] = useState("off");
 
   const [queue, setQueue] = useState([]);
-  const [queueIndex, setQueueIndex] = useState(-1);
+  const [queueOpen, setQueueOpen] = useState(false);
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [fullPlayer, setFullPlayer] = useState(false);
 
-  const [showQueue, setShowQueue] = useState(false);
-  const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [favorites, setFavorites] = useState(() =>
+    readStorage("fenix_favorites", [])
+  );
 
-  const [profile, setProfile] = useState(null);
-  const [toast, setToast] = useState("");
+  const [history, setHistory] = useState(() =>
+    readStorage("fenix_history", [])
+  );
+
+  const [playlists, setPlaylists] = useState(() =>
+    readStorage("fenix_playlists", [])
+  );
+
+  const [notifications, setNotifications] = useState(() =>
+    readStorage("fenix_notifications", [])
+  );
+
+  const [settings, setSettings] = useState(() =>
+    readStorage("fenix_settings", {
+      theme: "dark",
+      quality: "high",
+      autoplay: true,
+      autoNext: true,
+      notifications: true,
+      language: "ru",
+    })
+  );
+
+  const [user, setUser] = useState(() =>
+    readStorage("fenix_user", null)
+  );
+
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+
+  const [mobileMenu, setMobileMenu] = useState(false);
+
+  /* =========================
+     STORAGE
+  ========================= */
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
+    saveStorage("fenix_user", user);
+  }, [user]);
 
-    if (token) {
-      loadCurrentUser();
+  useEffect(() => {
+    saveStorage("fenix_favorites", favorites);
+  }, [favorites]);
+
+  useEffect(() => {
+    saveStorage("fenix_history", history);
+  }, [history]);
+
+  useEffect(() => {
+    saveStorage("fenix_playlists", playlists);
+  }, [playlists]);
+
+  useEffect(() => {
+    saveStorage("fenix_notifications", notifications);
+  }, [notifications]);
+
+  useEffect(() => {
+    saveStorage("fenix_settings", settings);
+  }, [settings]);
+
+  useEffect(() => {
+    localStorage.setItem("fenix_volume", String(volume));
+  }, [volume]);
+
+  /* =========================
+     LOAD TRACKS
+  ========================= */
+
+  const loadTracks = async () => {
+    try {
+      setApiError("");
+
+      const response = await fetch(apiUrl("/api/tracks"), {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error("Ошибка API");
+      }
+
+      const data = await response.json();
+
+      let list = [];
+
+      if (Array.isArray(data)) {
+        list = data;
+      } else if (Array.isArray(data.tracks)) {
+        list = data.tracks;
+      } else if (Array.isArray(data.items)) {
+        list = data.items;
+      }
+
+      setTracks(list.map(normalizeTrack));
+    } catch {
+      setTracks((previous) =>
+        previous.length ? previous : DEMO_TRACKS
+      );
+
+      setApiError(
+        "API музыки временно недоступен. Показана локальная библиотека."
+      );
+    } finally {
+      setLoadingTracks(false);
     }
+  };
 
-    loadInitialData();
+  useEffect(() => {
+    loadTracks();
+
+    const timer = setInterval(() => {
+      loadTracks();
+    }, 10000);
+
+    return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (!toast) return;
-
-    const timer = setTimeout(() => {
-      setToast("");
-    }, 2500);
-
-    return () => clearTimeout(timer);
-  }, [toast]);
+  /* =========================
+     AUDIO
+  ========================= */
 
   useEffect(() => {
-    if (!audioRef.current) return;
+    if (!audioRef.current) {
+      return;
+    }
+
     audioRef.current.volume = volume;
   }, [volume]);
 
   useEffect(() => {
-    if (!currentTrack || !audioRef.current) return;
-
-    const audio = audioRef.current;
-    const src = getAudio(currentTrack);
-
-    if (!src) return;
-
-    audio.src = src;
-    audio.load();
-
-    if (isPlaying) {
-      audio.play().catch(() => {
-        setIsPlaying(false);
-      });
-    }
-  }, [currentTrack]);
-
-  async function loadCurrentUser() {
-    try {
-      const data = await api("/api/auth/me");
-      setUser(data.user || data);
-    } catch {
-      localStorage.removeItem(TOKEN_KEY);
-      setUser(null);
-    }
-  }
-
-  async function loadInitialData() {
-    setLoading(true);
-    setError("");
-
-    try {
-      const [
-        tracksData,
-        popularData,
-        newData,
-        recommendationsData,
-        artistsData,
-        albumsData,
-      ] = await Promise.all([
-        api("/api/tracks?limit=100"),
-        api("/api/tracks?sort=popular&limit=30").catch(() => null),
-        api("/api/tracks?sort=new&limit=30").catch(() => null),
-        api("/api/recommendations?limit=30").catch(() => null),
-        api("/api/artists").catch(() => null),
-        api("/api/albums").catch(() => null),
-      ]);
-
-      const mainTracks =
-        tracksData?.tracks ||
-        tracksData?.items ||
-        (Array.isArray(tracksData) ? tracksData : []);
-
-      setTracks(mainTracks);
-
-      setPopular(
-        popularData?.tracks ||
-          popularData?.items ||
-          (Array.isArray(popularData) ? popularData : mainTracks)
-      );
-
-      setNewTracks(
-        newData?.tracks ||
-          newData?.items ||
-          (Array.isArray(newData) ? newData : mainTracks)
-      );
-
-      setRecommendations(
-        recommendationsData?.tracks ||
-          recommendationsData?.items ||
-          (Array.isArray(recommendationsData)
-            ? recommendationsData
-            : mainTracks)
-      );
-
-      setArtists(
-        artistsData?.artists ||
-          artistsData?.items ||
-          (Array.isArray(artistsData) ? artistsData : [])
-      );
-
-      setAlbums(
-        albumsData?.albums ||
-          albumsData?.items ||
-          (Array.isArray(albumsData) ? albumsData : [])
-      );
-
-      setGenres([
-        ...new Set(
-          mainTracks.map((track) => track.genre).filter(Boolean)
-        ),
-      ]);
-    } catch (err) {
-      console.error(err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function loadUserData() {
-    if (!localStorage.getItem(TOKEN_KEY)) return;
-
-    try {
-      const [likesData, historyData, playlistsData, profileData] =
-        await Promise.all([
-          api("/api/library/likes").catch(() => null),
-          api("/api/history").catch(() => null),
-          api("/api/playlists").catch(() => null),
-          api("/api/profile/stats").catch(() => null),
-        ]);
-
-      setLikes(
-        likesData?.tracks ||
-          likesData?.items ||
-          (Array.isArray(likesData) ? likesData : [])
-      );
-
-      setHistory(
-        historyData?.tracks ||
-          historyData?.items ||
-          (Array.isArray(historyData) ? historyData : [])
-      );
-
-      setPlaylists(
-        playlistsData?.playlists ||
-          playlistsData?.items ||
-          (Array.isArray(playlistsData) ? playlistsData : [])
-      );
-
-      setProfile(profileData);
-    } catch (err) {
-      console.error(err);
-    }
-  }
-
-  useEffect(() => {
-    if (user) {
-      loadUserData();
-    }
-  }, [user]);
-
-  function showToast(message) {
-    setToast(message);
-  }
-
-  function playTrack(track, list = null) {
-    if (!track) return;
-
-    const nextQueue = uniqueTracks(
-      list?.length ? list : tracks
-    );
-
-    setQueue(nextQueue);
-
-    const index = nextQueue.findIndex(
-      (item) => item.id === track.id
-    );
-
-    setQueueIndex(index >= 0 ? index : 0);
-    setCurrentTrack(track);
-    setIsPlaying(true);
-
-    setTimeout(() => {
-      audioRef.current?.play().catch(() => {});
-    }, 50);
-  }
-
-  function togglePlay() {
     const audio = audioRef.current;
 
     if (!audio || !currentTrack) {
-      if (tracks.length) {
+      return;
+    }
+
+    const source =
+      currentTrack.audio_url ||
+      `${API}/api/tracks/${currentTrack.id}/audio`;
+
+    if (source && audio.src !== new URL(source, window.location.origin).href) {
+      audio.src = source;
+      audio.load();
+    }
+
+    if (playing) {
+      audio.play().catch(() => {
+        setPlaying(false);
+      });
+    } else {
+      audio.pause();
+    }
+  }, [currentTrack, playing]);
+
+  const playTrack = (track, list = tracks) => {
+    const normalized = normalizeTrack(track);
+
+    setCurrentTrack(normalized);
+    setPlaying(true);
+
+    setQueue(
+      list && list.length
+        ? list.map(normalizeTrack)
+        : [normalized]
+    );
+
+    setHistory((previous) => {
+      const cleaned = previous.filter(
+        (item) => String(item.id) !== String(normalized.id)
+      );
+
+      return [
+        {
+          ...normalized,
+          played_at: Date.now(),
+        },
+        ...cleaned,
+      ].slice(0, 100);
+    });
+  };
+
+  const nextTrack = () => {
+    if (!currentTrack) {
+      return;
+    }
+
+    const list = queue.length ? queue : tracks;
+
+    if (!list.length) {
+      return;
+    }
+
+    if (repeat === "one") {
+      const audio = audioRef.current;
+
+      if (audio) {
+        audio.currentTime = 0;
+        audio.play().catch(() => {});
+      }
+
+      setPlaying(true);
+      return;
+    }
+
+    let index = list.findIndex(
+      (item) => String(item.id) === String(currentTrack.id)
+    );
+
+    if (index < 0) {
+      index = 0;
+    }
+
+    if (shuffle) {
+      index = Math.floor(Math.random() * list.length);
+    } else {
+      index += 1;
+    }
+
+    if (index >= list.length) {
+      if (repeat === "all") {
+        index = 0;
+      } else {
+        setPlaying(false);
+        return;
+      }
+    }
+
+    playTrack(list[index], list);
+  };
+
+  const previousTrack = () => {
+    const list = queue.length ? queue : tracks;
+
+    if (!list.length) {
+      return;
+    }
+
+    let index = list.findIndex(
+      (item) => String(item.id) === String(currentTrack?.id)
+    );
+
+    if (index < 0) {
+      index = 0;
+    }
+
+    index -= 1;
+
+    if (index < 0) {
+      index = list.length - 1;
+    }
+
+    playTrack(list[index], list);
+  };
+
+  const togglePlaying = () => {
+    if (!currentTrack) {
+      if (tracks[0]) {
         playTrack(tracks[0], tracks);
       }
 
       return;
     }
 
-    if (audio.paused) {
-      audio.play().catch(() => {});
-      setIsPlaying(true);
-    } else {
-      audio.pause();
-      setIsPlaying(false);
-    }
-  }
+    setPlaying((value) => !value);
+  };
 
-  async function registerPlay(track) {
-    if (!track?.id) return;
+  const seek = (event) => {
+    const value = Number(event.target.value);
 
-    try {
-      await api(`/api/history/${track.id}`, {
-        method: "POST",
-      });
-    } catch {
-      // История не должна блокировать воспроизведение.
-    }
-  }
-
-  function handleAudioPlay() {
-    setIsPlaying(true);
-
-    if (currentTrack) {
-      registerPlay(currentTrack);
-    }
-  }
-
-  function nextTrack() {
-    if (!queue.length) return;
-
-    let nextIndex;
-
-    if (shuffle) {
-      if (queue.length === 1) {
-        nextIndex = 0;
-      } else {
-        do {
-          nextIndex = Math.floor(
-            Math.random() * queue.length
-          );
-        } while (nextIndex === queueIndex);
-      }
-    } else {
-      nextIndex = queueIndex + 1;
-
-      if (nextIndex >= queue.length) {
-        if (!repeat) {
-          setIsPlaying(false);
-          return;
-        }
-
-        nextIndex = 0;
-      }
-    }
-
-    setQueueIndex(nextIndex);
-    setCurrentTrack(queue[nextIndex]);
-    setIsPlaying(true);
-  }
-
-  function previousTrack() {
-    if (!queue.length) return;
-
-    if (
-      audioRef.current &&
-      audioRef.current.currentTime > 5
-    ) {
-      audioRef.current.currentTime = 0;
+    if (!audioRef.current || !audioRef.current.duration) {
       return;
     }
 
-    let previousIndex = queueIndex - 1;
+    audioRef.current.currentTime =
+      value * audioRef.current.duration;
 
-    if (previousIndex < 0) {
-      previousIndex = repeat
-        ? queue.length - 1
-        : 0;
-    }
+    setPosition(value * audioRef.current.duration);
+  };
 
-    setQueueIndex(previousIndex);
-    setCurrentTrack(queue[previousIndex]);
-    setIsPlaying(true);
-  }
-
-  function handleEnded() {
-    if (
-      repeat &&
-      currentTrack &&
-      audioRef.current
-    ) {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(() => {});
+  const handleTimeUpdate = () => {
+    if (!audioRef.current) {
       return;
     }
 
-    nextTrack();
-  }
+    setPosition(audioRef.current.currentTime || 0);
+  };
 
-  function seek(value) {
-    if (!audioRef.current) return;
-
-    const position = Number(value);
-
-    audioRef.current.currentTime = position;
-    setProgress(position);
-  }
-
-  async function toggleLike(track) {
-    if (!user) {
-      openPage("profile");
-      setAuthMode("login");
+  const handleLoadedMetadata = () => {
+    if (!audioRef.current) {
       return;
     }
 
-    const liked = likes.some(
-      (item) => item.id === track.id
+    setDuration(
+      Number(
+        audioRef.current.duration ||
+          currentTrack?.duration ||
+          0
+      )
     );
+  };
 
-    try {
-      await api(`/api/library/likes/${track.id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          liked: !liked,
-        }),
-      });
+  const handleEnded = () => {
+    if (repeat === "one") {
+      if (audioRef.current) {
+        audioRef.current.currentTime = 0;
+        audioRef.current.play().catch(() => {});
+      }
 
-      if (liked) {
-        setLikes((items) =>
-          items.filter(
-            (item) => item.id !== track.id
-          )
+      return;
+    }
+
+    if (settings.autoNext) {
+      nextTrack();
+    } else {
+      setPlaying(false);
+    }
+  };
+
+  /* =========================
+     FAVORITES
+  ========================= */
+
+  const isFavorite = (track) => {
+    if (!track) {
+      return false;
+    }
+
+    return favorites.some(
+      (item) => String(item.id) === String(track.id)
+    );
+  };
+
+  const toggleFavorite = (track) => {
+    const normalized = normalizeTrack(track);
+
+    setFavorites((previous) => {
+      const exists = previous.some(
+        (item) => String(item.id) === String(normalized.id)
+      );
+
+      if (exists) {
+        return previous.filter(
+          (item) => String(item.id) !== String(normalized.id)
         );
-
-        showToast("Удалено из избранного");
-      } else {
-        setLikes((items) => [
-          ...items,
-          track,
-        ]);
-
-        showToast("Добавлено в избранное");
       }
-    } catch (err) {
-      showToast(err.message);
-    }
-  }
 
-  function isLiked(track) {
-    return likes.some(
-      (item) => item.id === track?.id
-    );
-  }
+      return [...previous, normalized];
+    });
+  };
 
-  function handleAuthSuccess(account) {
-    setUser(account);
-    setAuthMode(null);
-    setPage("profile");
-    loadUserData();
-    showToast("Добро пожаловать в FENIX MUSIC");
-  }
+  /* =========================
+     SEARCH
+  ========================= */
 
-  function logout() {
-    localStorage.removeItem(TOKEN_KEY);
-
-    setUser(null);
-    setLikes([]);
-    setHistory([]);
-    setPlaylists([]);
-    setProfile(null);
-    setPage("home");
-
-    showToast("Вы вышли из аккаунта");
-  }
-
-  const searchResults = useMemo(() => {
+  const filteredTracks = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    if (!query) return [];
+    if (!query) {
+      return tracks;
+    }
 
     return tracks.filter((track) => {
-      return (
-        String(track.title || "")
-          .toLowerCase()
-          .includes(query) ||
-        String(track.artist || "")
-          .toLowerCase()
-          .includes(query) ||
-        String(track.album || "")
-          .toLowerCase()
-          .includes(query) ||
-        String(track.genre || "")
-          .toLowerCase()
-          .includes(query)
-      );
-    });
-  }, [search, tracks]);
+      const text = [
+        track.title,
+        track.artist_name,
+        track.album_name,
+        track.genre,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
 
-  function openPage(nextPage) {
-    setPage(nextPage);
-    setSearch("");
-  }
+      return text.includes(query);
+    });
+  }, [tracks, search]);
+
+  /* =========================
+     USER
+  ========================= */
+
+  const logout = () => {
+    localStorage.removeItem("fenix_token");
+    localStorage.removeItem("fenix_user");
+
+    setUser(null);
+    setPage("home");
+  };
+
+  /* =========================
+     RENDER
+  ========================= */
 
   return (
-    <div className="fenix-app">
-      <audio
-        ref={audioRef}
-        onPlay={handleAudioPlay}
-        onPause={() => setIsPlaying(false)}
-        onEnded={handleEnded}
-        onTimeUpdate={() => {
-          if (audioRef.current) {
-            setProgress(
-              audioRef.current.currentTime
-            );
-          }
-        }}
-        onLoadedMetadata={() => {
-          if (audioRef.current) {
-            setDuration(
-              audioRef.current.duration || 0
-            );
-          }
-        }}
-      />
+    <div className={`fenix-app theme-${settings.theme}`}>
+      <aside
+        className={`sidebar ${
+          mobileMenu ? "sidebar-open" : ""
+        }`}
+      >
+        <div className="brand">
+          <div className="brand-logo">FX</div>
 
-      <Sidebar
-        page={page}
-        openPage={openPage}
-        user={user}
-        onLogout={logout}
-        onSettings={() =>
-          setShowSettings(true)
-        }
-      />
+          <div className="brand-text">
+            <strong>FENIX MUSIC</strong>
+            <small>HI-RES STREAMING</small>
+          </div>
+
+          <button
+            className="sidebar-close"
+            onClick={() => setMobileMenu(false)}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+
+        <div className="nav-group">
+          <span className="nav-label">Меню</span>
+
+          <NavItem
+            icon="home"
+            label="Главная"
+            active={page === "home"}
+            onClick={() => {
+              setPage("home");
+              setMobileMenu(false);
+            }}
+          />
+
+          <NavItem
+            icon="search"
+            label="Поиск"
+            active={page === "search"}
+            onClick={() => {
+              setPage("search");
+              setMobileMenu(false);
+            }}
+          />
+
+          <NavItem
+            icon="radio"
+            label="Рекомендации"
+            active={page === "recommendations"}
+            onClick={() => {
+              setPage("recommendations");
+              setMobileMenu(false);
+            }}
+          />
+        </div>
+
+        <div className="nav-group">
+          <span className="nav-label">Медиатека</span>
+
+          <NavItem
+            icon="library"
+            label="Библиотека"
+            active={page === "library"}
+            onClick={() => setPage("library")}
+          />
+
+          <NavItem
+            icon="heart"
+            label="Избранное"
+            active={page === "favorites"}
+            badge={favorites.length}
+            onClick={() => setPage("favorites")}
+          />
+
+          <NavItem
+            icon="clock"
+            label="История"
+            active={page === "history"}
+            onClick={() => setPage("history")}
+          />
+
+          <NavItem
+            icon="music"
+            label="Плейлисты"
+            active={page === "playlists"}
+            onClick={() => setPage("playlists")}
+          />
+
+          <NavItem
+            icon="album"
+            label="Альбомы"
+            active={page === "albums"}
+            onClick={() => setPage("albums")}
+          />
+
+          <NavItem
+            icon="user"
+            label="Артисты"
+            active={page === "artists"}
+            onClick={() => setPage("artists")}
+          />
+        </div>
+
+        <div className="sidebar-bottom">
+          <button
+            className="premium-side"
+            onClick={() => setPage("premium")}
+          >
+            <Icon name="crown" />
+            <span>Fenix Premium</span>
+          </button>
+
+          <button
+            className="sidebar-account"
+            onClick={() =>
+              setPage(user ? "profile" : "login")
+            }
+          >
+            <div className="mini-avatar">
+              {(user?.username || "FX")
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+
+            <span>
+              <b>{user?.username || "Гость"}</b>
+              <small>
+                {user ? "Открыть профиль" : "Войти в аккаунт"}
+              </small>
+            </span>
+          </button>
+
+          <button
+            className="settings-side"
+            onClick={() => setPage("settings")}
+          >
+            <Icon name="settings" />
+            Настройки
+          </button>
+        </div>
+      </aside>
 
       <main className="main-content">
         <header className="topbar">
-          <div className="navigation-buttons">
-            <button
-              className="icon-button"
-              onClick={() =>
-                window.history.back()
-              }
-            >
-              <ChevronLeft size={20} />
-            </button>
+          <button
+            className="mobile-menu-button"
+            onClick={() => setMobileMenu(!mobileMenu)}
+          >
+            <Icon name={mobileMenu ? "close" : "menu"} />
+          </button>
 
-            <button
-              className="icon-button"
-              onClick={() =>
-                window.history.forward()
-              }
-            >
-              <ChevronRight size={20} />
-            </button>
+          <div className="mobile-brand">
+            <span>FENIX</span>
           </div>
 
-          <div className="search-box">
-            <Search size={19} />
+          <div className="top-search">
+            <Icon name="search" />
 
             <input
               value={search}
-              onChange={(event) =>
-                setSearch(event.target.value)
-              }
-              placeholder="Что хочешь послушать?"
-            />
+              onChange={(event) => {
+                setSearch(event.target.value);
 
-            {search && (
-              <button
-                className="search-clear"
-                onClick={() => setSearch("")}
-              >
-                <X size={16} />
-              </button>
-            )}
+                if (event.target.value.trim()) {
+                  setPage("search");
+                }
+              }}
+              placeholder="Что хотите послушать?"
+            />
           </div>
 
-          <div className="topbar-user">
-            {user ? (
-              <button
-                className="user-chip"
-                onClick={() =>
-                  openPage("profile")
-                }
-              >
-                <Avatar user={user} />
-                <span>{user.username}</span>
-              </button>
-            ) : (
-              <button
-                className="secondary-button"
-                onClick={() =>
-                  openPage("profile")
-                }
-              >
-                <User size={17} />
-                Профиль
-              </button>
-            )}
+          <div className="top-actions">
+            <button
+              className="telegram-button"
+              onClick={() => setPage("telegram")}
+            >
+              <Icon name="telegram" />
+              Telegram
+            </button>
+
+            <button
+              className="notification-button"
+              onClick={() => setPage("notifications")}
+            >
+              <Icon name="bell" />
+
+              {notifications.length > 0 && (
+                <i>{notifications.length}</i>
+              )}
+            </button>
+
+            <button
+              className="premium-button"
+              onClick={() => setPage("premium")}
+            >
+              💎 Premium
+            </button>
+
+            <button
+              className="top-avatar"
+              onClick={() =>
+                setPage(user ? "profile" : "login")
+              }
+            >
+              {(user?.username || "FX")
+                .slice(0, 2)
+                .toUpperCase()}
+            </button>
           </div>
         </header>
 
-        <div className="content">
-          {search ? (
-            <SearchPage
-              query={search}
-              results={searchResults}
-              onPlay={playTrack}
-              onLike={toggleLike}
-              isLiked={isLiked}
+        <div className="page-container">
+          {apiError && (
+            <div className="api-warning">
+              {apiError}
+            </div>
+          )}
+
+          {page === "home" && (
+            <HomePage
+              tracks={tracks}
+              visibleTracks={filteredTracks}
+              history={history}
+              loading={loadingTracks}
+              playTrack={playTrack}
+              toggleFavorite={toggleFavorite}
+              isFavorite={isFavorite}
+              setPage={setPage}
             />
-          ) : (
-            <>
-              {page === "home" && (
-                <HomePage
-                  user={user}
-                  recommendations={
-                    recommendations
-                  }
-                  popular={popular}
-                  newTracks={newTracks}
-                  tracks={tracks}
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                  openPage={openPage}
-                />
-              )}
+          )}
 
-              {page === "popular" && (
-                <TrackPage
-                  title="Популярное"
-                  subtitle="Треки, которые сейчас слушают"
-                  tracks={popular}
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                />
-              )}
+          {page === "search" && (
+            <SearchPage
+              search={search}
+              setSearch={setSearch}
+              tracks={filteredTracks}
+              playTrack={playTrack}
+              toggleFavorite={toggleFavorite}
+              isFavorite={isFavorite}
+            />
+          )}
 
-              {page === "new" && (
-                <TrackPage
-                  title="Новинки"
-                  subtitle="Свежая музыка в FENIX MUSIC"
-                  tracks={newTracks}
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                />
-              )}
+          {page === "recommendations" && (
+            <RecommendationsPage
+              tracks={tracks}
+              history={history}
+              playTrack={playTrack}
+              toggleFavorite={toggleFavorite}
+              isFavorite={isFavorite}
+            />
+          )}
 
-              {page === "recommendations" && (
-                <TrackPage
-                  title="Для вас"
-                  subtitle="Персональные рекомендации"
-                  tracks={recommendations}
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                />
-              )}
+          {page === "library" && (
+            <LibraryPage
+              favorites={favorites}
+              history={history}
+              playlists={playlists}
+              tracks={tracks}
+              playTrack={playTrack}
+              setPage={setPage}
+            />
+          )}
 
-              {page === "tracks" && (
-                <TrackPage
-                  title="Вся музыка"
-                  subtitle={`${tracks.length} треков`}
-                  tracks={tracks}
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                />
-              )}
+          {page === "favorites" && (
+            <TrackListPage
+              title="Избранное"
+              subtitle={`${favorites.length} сохранённых треков`}
+              tracks={favorites}
+              playTrack={playTrack}
+              toggleFavorite={toggleFavorite}
+              isFavorite={isFavorite}
+            />
+          )}
 
-              {page === "likes" && (
-                <TrackPage
-                  title="Избранное"
-                  subtitle="Музыка, которую ты сохранил"
-                  tracks={likes}
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                  emptyText={
-                    user
-                      ? "Здесь пока нет любимых треков"
-                      : "Войди в аккаунт через Профиль"
-                  }
-                />
-              )}
+          {page === "history" && (
+            <TrackListPage
+              title="История"
+              subtitle="Недавно прослушанные треки"
+              tracks={history}
+              playTrack={playTrack}
+              toggleFavorite={toggleFavorite}
+              isFavorite={isFavorite}
+            />
+          )}
 
-              {page === "history" && (
-                <TrackPage
-                  title="История"
-                  subtitle="Недавно прослушанные треки"
-                  tracks={history}
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                  emptyText="История прослушиваний пока пуста"
-                />
-              )}
+          {page === "playlists" && (
+            <PlaylistsPage
+              playlists={playlists}
+              setPlaylists={setPlaylists}
+              tracks={tracks}
+              playTrack={playTrack}
+            />
+          )}
 
-              {page === "library" && (
-                <LibraryPage
-                  playlists={playlists}
-                  likes={likes}
-                  history={history}
-                  user={user}
-                  onCreate={() =>
-                    setShowCreatePlaylist(true)
-                  }
-                  onPlay={playTrack}
-                  onLike={toggleLike}
-                  isLiked={isLiked}
-                  openPage={openPage}
-                />
-              )}
+          {page === "albums" && (
+            <AlbumsPage
+              tracks={tracks}
+              playTrack={playTrack}
+            />
+          )}
 
-              {page === "artists" && (
-                <ArtistsPage
-                  artists={artists}
-                />
-              )}
+          {page === "artists" && (
+            <ArtistsPage
+              tracks={tracks}
+              playTrack={playTrack}
+            />
+          )}
 
-              {page === "albums" && (
-                <AlbumsPage
-                  albums={albums}
-                />
-              )}
+          {page === "notifications" && (
+            <NotificationsPage
+              notifications={notifications}
+              setNotifications={setNotifications}
+            />
+          )}
 
-              {page === "profile" && (
-                <ProfilePage
-                  user={user}
-                  profile={profile}
-                  likes={likes}
-                  history={history}
-                  playlists={playlists}
-                  onLogin={() =>
-                    setAuthMode("login")
-                  }
-                  onRegister={() =>
-                    setAuthMode("register")
-                  }
-                  onLogout={logout}
-                  onSettings={() =>
-                    setShowSettings(true)
-                  }
-                />
-              )}
-            </>
+          {page === "telegram" && <TelegramPage user={user} setUser={setUser} setPage={setPage} />}
+
+          {page === "premium" && <PremiumPage />}
+
+          {page === "profile" && (
+            <ProfilePage
+              user={user}
+              setUser={setUser}
+              history={history}
+              favorites={favorites}
+              logout={logout}
+              setPage={setPage}
+            />
+          )}
+
+          {page === "settings" && (
+            <SettingsPage
+              settings={settings}
+              setSettings={setSettings}
+              logout={logout}
+            />
+          )}
+
+          {page === "security" && (
+            <SecurityPage
+              user={user}
+              openAuth={() => {
+                setAuthMode("login");
+                setAuthOpen(true);
+              }}
+            />
+          )}
+
+          {page === "login" && (
+            <LoginPage
+              onLogin={() => {
+                setAuthMode("login");
+                setAuthOpen(true);
+              }}
+              onRegister={() => {
+                setAuthMode("register");
+                setAuthOpen(true);
+              }}
+            />
           )}
         </div>
       </main>
 
-      <Player
-        track={currentTrack}
-        playing={isPlaying}
-        progress={progress}
-        duration={duration}
-        volume={volume}
-        shuffle={shuffle}
-        repeat={repeat}
-        liked={isLiked(currentTrack)}
-        onTogglePlay={togglePlay}
-        onPrevious={previousTrack}
-        onNext={nextTrack}
-        onSeek={seek}
-        onVolume={setVolume}
-        onShuffle={() =>
-          setShuffle((value) => !value)
-        }
-        onRepeat={() =>
-          setRepeat((value) => !value)
-        }
-        onLike={() =>
-          currentTrack &&
-          toggleLike(currentTrack)
-        }
-        onQueue={() =>
-          setShowQueue(true)
-        }
+      <MobileNavigation
+        page={page}
+        setPage={setPage}
       />
 
-      {showQueue && (
+      {currentTrack && (
+        <PlayerBar
+          track={currentTrack}
+          playing={playing}
+          position={position}
+          duration={
+            duration ||
+            currentTrack.duration ||
+            0
+          }
+          volume={volume}
+          setVolume={setVolume}
+          shuffle={shuffle}
+          setShuffle={setShuffle}
+          repeat={repeat}
+          setRepeat={setRepeat}
+          togglePlaying={togglePlaying}
+          nextTrack={nextTrack}
+          previousTrack={previousTrack}
+          seek={seek}
+          openFull={() => setFullPlayer(true)}
+          openQueue={() => setQueueOpen(true)}
+        />
+      )}
+
+      {currentTrack && queueOpen && (
         <QueuePanel
-          queue={queue}
+          queue={queue.length ? queue : tracks}
           currentTrack={currentTrack}
-          onPlay={(track) =>
-            playTrack(track, queue)
-          }
-          onClose={() =>
-            setShowQueue(false)
-          }
+          playTrack={playTrack}
+          close={() => setQueueOpen(false)}
         />
       )}
 
-      {showCreatePlaylist && (
-        <CreatePlaylistModal
-          onClose={() =>
-            setShowCreatePlaylist(false)
+      {currentTrack && fullPlayer && (
+        <FullPlayer
+          track={currentTrack}
+          playing={playing}
+          position={position}
+          duration={
+            duration ||
+            currentTrack.duration ||
+            0
           }
-          onCreated={(playlist) => {
-            setPlaylists((items) => [
-              ...items,
-              playlist,
-            ]);
-
-            setShowCreatePlaylist(false);
-            showToast("Плейлист создан");
-          }}
+          shuffle={shuffle}
+          setShuffle={setShuffle}
+          repeat={repeat}
+          setRepeat={setRepeat}
+          togglePlaying={togglePlaying}
+          nextTrack={nextTrack}
+          previousTrack={previousTrack}
+          seek={seek}
+          close={() => setFullPlayer(false)}
         />
       )}
 
-      {showSettings && (
-        <SettingsModal
-          user={user}
-          onClose={() =>
-            setShowSettings(false)
-          }
-          onUpdated={(updated) => {
-            setUser(updated);
-            showToast("Профиль обновлён");
-          }}
-        />
-      )}
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        onTimeUpdate={handleTimeUpdate}
+        onLoadedMetadata={handleLoadedMetadata}
+        onEnded={handleEnded}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+      />
 
-      {authMode && (
+      {authOpen && (
         <AuthModal
           mode={authMode}
           setMode={setAuthMode}
-          onClose={() =>
-            setAuthMode(null)
-          }
-          onSuccess={handleAuthSuccess}
+          close={() => setAuthOpen(false)}
+          onSuccess={(account, token) => {
+            if (token) {
+              localStorage.setItem(
+                "fenix_token",
+                token
+              );
+            }
+
+            setUser(account);
+            setAuthOpen(false);
+            setPage("home");
+          }}
         />
-      )}
-
-      {loading && (
-        <div className="loading-screen">
-          <div className="loading-logo">
-            <Music2 size={30} />
-          </div>
-
-          <div className="spinner" />
-
-          <span>
-            Загрузка FENIX MUSIC...
-          </span>
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="error-toast">
-          <span>{error}</span>
-
-          <button onClick={loadInitialData}>
-            <RefreshCw size={16} />
-          </button>
-
-          <button
-            onClick={() => setError("")}
-          >
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {toast && (
-        <div className="toast">
-          {toast}
-        </div>
       )}
     </div>
   );
 }
 
-/* =========================================================
-   SIDEBAR
-========================================================= */
-
-function Sidebar({
-  page,
-  openPage,
-  user,
-  onLogout,
-  onSettings,
-}) {
-  return (
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="brand-icon">
-          <Music2 size={25} />
-        </div>
-
-        <div>
-          <strong>FENIX</strong>
-          <span>MUSIC</span>
-        </div>
-      </div>
-
-      <nav className="side-nav">
-        <NavItem
-          icon={<Home size={19} />}
-          label="Главная"
-          active={page === "home"}
-          onClick={() =>
-            openPage("home")
-          }
-        />
-
-        <NavItem
-          icon={<Search size={19} />}
-          label="Поиск"
-          active={false}
-          onClick={() =>
-            document
-              .querySelector(
-                ".search-box input"
-              )
-              ?.focus()
-          }
-        />
-
-        <NavItem
-          icon={<Library size={19} />}
-          label="Моя библиотека"
-          active={page === "library"}
-          onClick={() =>
-            openPage("library")
-          }
-        />
-
-        <NavItem
-          icon={<User size={19} />}
-          label="Профиль"
-          active={page === "profile"}
-          onClick={() =>
-            openPage("profile")
-          }
-        />
-      </nav>
-
-      <div className="side-section">
-        <div className="side-title">
-          МУЗЫКА
-        </div>
-
-        <NavItem
-          icon={<ListMusic size={18} />}
-          label="Все треки"
-          active={page === "tracks"}
-          onClick={() =>
-            openPage("tracks")
-          }
-        />
-
-        <NavItem
-          icon={<Heart size={18} />}
-          label="Избранное"
-          active={page === "likes"}
-          onClick={() =>
-            openPage("likes")
-          }
-        />
-
-        <NavItem
-          icon={<History size={18} />}
-          label="История"
-          active={page === "history"}
-          onClick={() =>
-            openPage("history")
-          }
-        />
-
-        <NavItem
-          icon={<Mic2 size={18} />}
-          label="Исполнители"
-          active={page === "artists"}
-          onClick={() =>
-            openPage("artists")
-          }
-        />
-
-        <NavItem
-          icon={<Disc3 size={18} />}
-          label="Альбомы"
-          active={page === "albums"}
-          onClick={() =>
-            openPage("albums")
-          }
-        />
-      </div>
-
-      <div className="side-section">
-        <div className="side-title">
-          ОТКРЫТЬ
-        </div>
-
-        <NavItem
-          icon={<Music2 size={18} />}
-          label="Для вас"
-          active={
-            page === "recommendations"
-          }
-          onClick={() =>
-            openPage("recommendations")
-          }
-        />
-
-        <NavItem
-          icon={<Play size={18} />}
-          label="Популярное"
-          active={page === "popular"}
-          onClick={() =>
-            openPage("popular")
-          }
-        />
-
-        <NavItem
-          icon={<RefreshCw size={18} />}
-          label="Новинки"
-          active={page === "new"}
-          onClick={() =>
-            openPage("new")
-          }
-        />
-      </div>
-
-      <div className="sidebar-bottom">
-        {user ? (
-          <>
-            <button
-              className="sidebar-account"
-              onClick={() =>
-                openPage("profile")
-              }
-            >
-              <Avatar user={user} />
-
-              <div>
-                <strong>
-                  {user.username}
-                </strong>
-
-                <span>
-                  Профиль
-                </span>
-              </div>
-            </button>
-
-            <NavItem
-              icon={<Settings size={18} />}
-              label="Настройки"
-              active={false}
-              onClick={onSettings}
-            />
-
-            <NavItem
-              icon={<LogOut size={18} />}
-              label="Выйти"
-              active={false}
-              onClick={onLogout}
-            />
-          </>
-        ) : (
-          <button
-            className="sidebar-auth"
-            onClick={() =>
-              openPage("profile")
-            }
-            type="button"
-          >
-            <div className="sidebar-auth-icon">
-              <User size={22} />
-            </div>
-
-            <div className="sidebar-auth-text">
-              <strong>
-                Профиль FENIX MUSIC
-              </strong>
-
-              <span>
-                Войти или зарегистрироваться
-              </span>
-            </div>
-
-            <ChevronRight size={18} />
-          </button>
-        )}
-      </div>
-    </aside>
-  );
-}
+/* =========================
+   NAVIGATION
+========================= */
 
 function NavItem({
   icon,
   label,
   active,
   onClick,
+  badge,
 }) {
   return (
     <button
-      className={`nav-item ${
-        active ? "active" : ""
-      }`}
+      className={`nav-item ${active ? "active" : ""}`}
       onClick={onClick}
-      type="button"
     >
-      {icon}
+      <Icon name={icon} />
+
       <span>{label}</span>
+
+      {badge > 0 && (
+        <em>{badge}</em>
+      )}
     </button>
   );
 }
 
-/* =========================================================
-   HOME
-========================================================= */
-
-function HomePage({
-  user,
-  recommendations,
-  popular,
-  newTracks,
-  tracks,
-  onPlay,
-  onLike,
-  isLiked,
-  openPage,
+function MobileNavigation({
+  page,
+  setPage,
 }) {
   return (
-    <div className="home-page">
-      <section className="hero">
-        <div className="hero-content">
-          <span className="eyebrow">
-            FENIX MUSIC
-          </span>
+    <nav className="mobile-navigation">
+      <button
+        className={page === "home" ? "active" : ""}
+        onClick={() => setPage("home")}
+      >
+        <Icon name="home" />
+        <span>Главная</span>
+      </button>
 
-          <h1>
-            Музыка.
-            <br />
-            <span>Без границ.</span>
-          </h1>
+      <button
+        className={page === "search" ? "active" : ""}
+        onClick={() => setPage("search")}
+      >
+        <Icon name="search" />
+        <span>Поиск</span>
+      </button>
 
-          <p>
-            Слушай любимые треки, находи новых
-            исполнителей и создавай свою
-            музыкальную библиотеку.
-          </p>
+      <button
+        className={page === "library" ? "active" : ""}
+        onClick={() => setPage("library")}
+      >
+        <Icon name="library" />
+        <span>Моя музыка</span>
+      </button>
 
-          <div className="hero-actions">
-            <button
-              className="primary-button large"
-              onClick={() => {
-                if (tracks.length) {
-                  onPlay(
-                    tracks[0],
-                    tracks
-                  );
-                }
-              }}
-            >
-              <Play
-                size={18}
-                fill="currentColor"
-              />
-              Слушать музыку
-            </button>
+      <button
+        className={page === "favorites" ? "active" : ""}
+        onClick={() => setPage("favorites")}
+      >
+        <Icon name="heart" />
+        <span>Избранное</span>
+      </button>
 
-            {!user && (
-              <button
-                className="secondary-button large"
-                onClick={() =>
-                  openPage("profile")
-                }
-              >
-                <User size={18} />
-                Создать аккаунт
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="hero-decoration">
-          <div className="hero-disc">
-            <Disc3
-              size={190}
-              strokeWidth={1}
-            />
-          </div>
-        </div>
-      </section>
-
-      <TrackSection
-        title="Для вас"
-        subtitle="Подобрано специально для тебя"
-        tracks={recommendations.slice(0, 6)}
-        onPlay={onPlay}
-        onLike={onLike}
-        isLiked={isLiked}
-        onMore={() =>
-          openPage("recommendations")
-        }
-      />
-
-      <TrackSection
-        title="Популярное"
-        subtitle="Сейчас слушают чаще всего"
-        tracks={popular.slice(0, 6)}
-        onPlay={onPlay}
-        onLike={onLike}
-        isLiked={isLiked}
-        onMore={() =>
-          openPage("popular")
-        }
-      />
-
-      <TrackSection
-        title="Новинки"
-        subtitle="Свежие треки"
-        tracks={newTracks.slice(0, 6)}
-        onPlay={onPlay}
-        onLike={onLike}
-        isLiked={isLiked}
-        onMore={() =>
-          openPage("new")
-        }
-      />
-    </div>
+      <button
+        className={page === "profile" ? "active" : ""}
+        onClick={() => setPage("profile")}
+      >
+        <Icon name="user" />
+        <span>Профиль</span>
+      </button>
+    </nav>
   );
 }
 
-/* =========================================================
-   TRACK PAGE
-========================================================= */
+/* =========================
+   HOME
+========================= */
 
-function TrackPage({
-  title,
-  subtitle,
+function HomePage({
   tracks,
-  onPlay,
-  onLike,
-  isLiked,
-  emptyText = "Музыка пока отсутствует",
+  visibleTracks,
+  history,
+  loading,
+  playTrack,
+  toggleFavorite,
+  isFavorite,
+  setPage,
 }) {
   return (
     <div className="page">
-      <PageHeader
-        title={title}
-        subtitle={subtitle}
-      />
+      <section className="hero">
+        <div className="hero-content">
+          <span className="eyebrow">
+            ✦ FENIX MUSIC
+          </span>
 
-      {tracks.length ? (
-        <div className="track-list">
-          {tracks.map(
-            (track, index) => (
-              <TrackRow
-                key={`${track.id}-${index}`}
-                track={track}
-                index={index + 1}
-                onPlay={() =>
-                  onPlay(
-                    track,
-                    tracks
+          <h1>
+            Твоя музыка.
+            <br />
+            <span>Твоя вселенная.</span>
+          </h1>
+
+          <p>
+            Слушай любимые треки, открывай новых
+            артистов и собирай собственную музыкальную
+            библиотеку.
+          </p>
+
+          <div className="hero-buttons">
+            {visibleTracks[0] && (
+              <button
+                className="primary-button"
+                onClick={() =>
+                  playTrack(
+                    visibleTracks[0],
+                    visibleTracks
                   )
                 }
-                onLike={() =>
-                  onLike(track)
-                }
-                liked={isLiked(track)}
-              />
-            )
+              >
+                <Icon name="play" />
+                Слушать сейчас
+              </button>
+            )}
+
+            <button
+              className="secondary-button"
+              onClick={() =>
+                setPage("recommendations")
+              }
+            >
+              ✦ Для вас
+            </button>
+          </div>
+        </div>
+
+        <div className="hero-art">
+          {tracks[0] && (
+            <img
+              src={tracks[0].cover_url}
+              alt=""
+            />
           )}
         </div>
-      ) : (
-        <EmptyState
-          icon={<Music2 size={35} />}
-          text={emptyText}
+      </section>
+
+      <MusicSection
+        title="Для вас"
+        subtitle="Персональные рекомендации"
+        tracks={visibleTracks.slice(0, 6)}
+        playTrack={playTrack}
+        toggleFavorite={toggleFavorite}
+        isFavorite={isFavorite}
+      />
+
+      <MusicSection
+        title="Новинки"
+        subtitle="Свежие релизы"
+        tracks={tracks.slice(0, 6)}
+        playTrack={playTrack}
+        toggleFavorite={toggleFavorite}
+        isFavorite={isFavorite}
+      />
+
+      <MusicSection
+        title="Популярное"
+        subtitle="Сейчас слушают чаще всего"
+        tracks={[...tracks]
+          .sort(
+            (a, b) =>
+              Number(b.plays || 0) -
+              Number(a.plays || 0)
+          )
+          .slice(0, 6)}
+        playTrack={playTrack}
+        toggleFavorite={toggleFavorite}
+        isFavorite={isFavorite}
+      />
+
+      <MusicSection
+        title="Миксы"
+        subtitle="Подборки специально для тебя"
+        tracks={[...tracks]
+          .reverse()
+          .slice(0, 6)}
+        playTrack={playTrack}
+        toggleFavorite={toggleFavorite}
+        isFavorite={isFavorite}
+      />
+
+      {history.length > 0 && (
+        <MusicSection
+          title="Недавно прослушанное"
+          subtitle="Продолжить слушать"
+          tracks={history.slice(0, 6)}
+          playTrack={playTrack}
+          toggleFavorite={toggleFavorite}
+          isFavorite={isFavorite}
         />
+      )}
+
+      {loading && (
+        <div className="empty-state">
+          Загрузка музыкального каталога…
+        </div>
       )}
     </div>
   );
 }
 
-function TrackSection({
+function MusicSection({
   title,
   subtitle,
   tracks,
-  onPlay,
-  onLike,
-  isLiked,
-  onMore,
+  playTrack,
+  toggleFavorite,
+  isFavorite,
 }) {
-  if (!tracks.length) return null;
-
   return (
-    <section className="track-section">
+    <section className="music-section">
       <div className="section-heading">
         <div>
           <h2>{title}</h2>
 
           {subtitle && (
-            <p>{subtitle}</p>
+            <span>{subtitle}</span>
           )}
         </div>
 
-        {onMore && (
-          <button
-            className="text-button"
-            onClick={onMore}
-          >
-            Показать всё
-          </button>
-        )}
+        <button>
+          Показать всё →
+        </button>
       </div>
 
-      <div className="track-grid">
-        {tracks.map((track) => (
-          <TrackCard
-            key={track.id}
-            track={track}
-            onPlay={() =>
-              onPlay(
-                track,
-                tracks
-              )
-            }
-            onLike={() =>
-              onLike(track)
-            }
-            liked={isLiked(track)}
-          />
-        ))}
-      </div>
+      {tracks.length > 0 ? (
+        <div className="track-grid">
+          {tracks.map((track) => (
+            <TrackCard
+              key={track.id}
+              track={track}
+              playTrack={playTrack}
+              toggleFavorite={toggleFavorite}
+              isFavorite={isFavorite}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="empty-state small">
+          Пока нет треков.
+        </div>
+      )}
     </section>
   );
 }
 
 function TrackCard({
   track,
-  onPlay,
-  onLike,
-  liked,
+  playTrack,
+  toggleFavorite,
+  isFavorite,
 }) {
   return (
     <article className="track-card">
-      <div className="track-cover-wrap">
-        {track.cover_url ? (
-          <img
-            className="track-cover"
-            src={getCover(track)}
-            alt={track.title}
-          />
-        ) : (
-          <CoverPlaceholder />
-        )}
+      <button
+        className="track-cover"
+        onClick={() => playTrack(track)}
+      >
+        <img
+          src={track.cover_url || DEFAULT_COVER}
+          alt=""
+        />
 
+        <span className="track-play">
+          <Icon name="play" />
+        </span>
+      </button>
+
+      <div className="track-card-info">
         <button
-          className="card-play"
-          onClick={onPlay}
+          className="track-title"
+          onClick={() => playTrack(track)}
         >
-          <Play
-            size={21}
-            fill="currentColor"
-          />
+          {track.title}
         </button>
 
+        <span>
+          {track.artist_name}
+        </span>
+
+        <div className="track-meta">
+          <small>{track.genre}</small>
+          <small>
+            {formatTime(track.duration)}
+          </small>
+        </div>
+
         <button
-          className={`card-like ${
-            liked ? "liked" : ""
+          className={`favorite-button ${
+            isFavorite(track)
+              ? "liked"
+              : ""
           }`}
-          onClick={(event) => {
-            event.stopPropagation();
-            onLike();
-          }}
+          onClick={() =>
+            toggleFavorite(track)
+          }
         >
-          <Heart
-            size={17}
-            fill={
-              liked
-                ? "currentColor"
-                : "none"
+          <Icon
+            name={
+              isFavorite(track)
+                ? "heartFill"
+                : "heart"
             }
           />
         </button>
-      </div>
-
-      <div className="track-card-info">
-        <strong title={track.title}>
-          {track.title}
-        </strong>
-
-        <span title={track.artist}>
-          {track.artist ||
-            "Неизвестный исполнитель"}
-        </span>
       </div>
     </article>
   );
 }
 
-function TrackRow({
-  track,
-  index,
-  onPlay,
-  onLike,
-  liked,
-}) {
-  return (
-    <div className="track-row">
-      <div className="track-number">
-        <span>{index}</span>
-
-        <button
-          className="row-play"
-          onClick={onPlay}
-        >
-          <Play
-            size={16}
-            fill="currentColor"
-          />
-        </button>
-      </div>
-
-      <div className="row-cover">
-        {track.cover_url ? (
-          <img
-            src={getCover(track)}
-            alt={track.title}
-          />
-        ) : (
-          <CoverPlaceholder small />
-        )}
-      </div>
-
-      <div className="row-main">
-        <strong>{track.title}</strong>
-        <span>
-          {track.artist ||
-            "Неизвестный исполнитель"}
-        </span>
-      </div>
-
-      <div className="row-album">
-        {track.album || "Singles"}
-      </div>
-
-      <div className="row-genre">
-        {track.genre || "Unknown"}
-      </div>
-
-      <button
-        className={`row-like ${
-          liked ? "liked" : ""
-        }`}
-        onClick={onLike}
-      >
-        <Heart
-          size={17}
-          fill={
-            liked
-              ? "currentColor"
-              : "none"
-          }
-        />
-      </button>
-
-      <span className="row-duration">
-        {track.duration_label ||
-          formatTime(track.duration)}
-      </span>
-
-      <button className="row-more">
-        <MoreHorizontal size={18} />
-      </button>
-    </div>
-  );
-}
-
-function CoverPlaceholder({
-  small = false,
-}) {
-  return (
-    <div
-      className={`cover-placeholder ${
-        small ? "small" : ""
-      }`}
-    >
-      <Music2
-        size={small ? 19 : 32}
-      />
-    </div>
-  );
-}
-
-/* =========================================================
+/* =========================
    SEARCH
-========================================================= */
+========================= */
 
 function SearchPage({
-  query,
-  results,
-  onPlay,
-  onLike,
-  isLiked,
+  search,
+  setSearch,
+  tracks,
+  playTrack,
+  toggleFavorite,
+  isFavorite,
 }) {
   return (
     <div className="page">
-      <PageHeader
-        title="Результаты поиска"
-        subtitle={`По запросу «${query}» найдено: ${results.length}`}
-      />
+      <div className="page-title">
+        <span className="eyebrow">
+          FENIX SEARCH
+        </span>
 
-      {results.length ? (
-        <div className="track-list">
-          {results.map(
-            (track, index) => (
-              <TrackRow
-                key={track.id}
-                track={track}
-                index={index + 1}
-                onPlay={() =>
-                  onPlay(
-                    track,
-                    results
-                  )
-                }
-                onLike={() =>
-                  onLike(track)
-                }
-                liked={isLiked(track)}
-              />
-            )
-          )}
-        </div>
-      ) : (
-        <EmptyState
-          icon={<Search size={35} />}
-          text="Ничего не найдено"
+        <h1>Поиск</h1>
+
+        <p>
+          Найди трек, артиста, альбом или
+          свою любимую музыку.
+        </p>
+      </div>
+
+      <div className="large-search">
+        <Icon name="search" />
+
+        <input
+          autoFocus
+          value={search}
+          onChange={(event) =>
+            setSearch(event.target.value)
+          }
+          placeholder="Трек, артист, альбом, жанр…"
         />
+      </div>
+
+      {search && (
+        <p className="search-result-count">
+          Найдено: {tracks.length}
+        </p>
+      )}
+
+      <div className="track-grid">
+        {tracks.map((track) => (
+          <TrackCard
+            key={track.id}
+            track={track}
+            playTrack={playTrack}
+            toggleFavorite={toggleFavorite}
+            isFavorite={isFavorite}
+          />
+        ))}
+      </div>
+
+      {!tracks.length && (
+        <div className="empty-state">
+          Ничего не найдено.
+        </div>
       )}
     </div>
   );
 }
 
-/* =========================================================
+/* =========================
+   RECOMMENDATIONS
+========================= */
+
+function RecommendationsPage({
+  tracks,
+  history,
+  playTrack,
+  toggleFavorite,
+  isFavorite,
+}) {
+  const genres = [
+    ...new Set(
+      history
+        .map((item) => item.genre)
+        .filter(Boolean)
+    ),
+  ];
+
+  const recommendations = genres.length
+    ? tracks.filter((track) =>
+        genres.includes(track.genre)
+      )
+    : tracks;
+
+  return (
+    <div className="page">
+      <div className="page-title">
+        <span className="eyebrow">
+          PERSONAL MIX
+        </span>
+
+        <h1>Для вас</h1>
+
+        <p>
+          Рекомендации формируются на основе
+          истории прослушиваний.
+        </p>
+      </div>
+
+      {genres.length > 0 && (
+        <div className="genre-tags">
+          {genres.map((genre) => (
+            <span key={genre}>
+              {genre}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="track-grid">
+        {recommendations.map((track) => (
+          <TrackCard
+            key={track.id}
+            track={track}
+            playTrack={playTrack}
+            toggleFavorite={toggleFavorite}
+            isFavorite={isFavorite}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =========================
    LIBRARY
-========================================================= */
+========================= */
 
 function LibraryPage({
-  playlists,
-  likes,
+  favorites,
   history,
-  user,
-  onCreate,
-  onPlay,
-  onLike,
-  isLiked,
-  openPage,
+  playlists,
+  tracks,
+  playTrack,
+  setPage,
 }) {
   return (
     <div className="page">
-      <PageHeader
-        title="Моя библиотека"
-        subtitle={
-          user
-            ? "Твоя музыка, избранное и плейлисты"
-            : "Войди через Профиль, чтобы сохранять свою библиотеку"
-        }
-      />
+      <div className="page-title">
+        <span className="eyebrow">
+          YOUR LIBRARY
+        </span>
 
-      <div className="library-actions">
-        <button
-          className="primary-button"
-          onClick={onCreate}
-          disabled={!user}
-        >
-          <Plus size={18} />
-          Новый плейлист
-        </button>
+        <h1>Библиотека</h1>
+
+        <p>
+          Всё сохранённое и недавно прослушанное.
+        </p>
       </div>
 
-      <div className="library-stats">
-        <button
-          onClick={() =>
-            openPage("likes")
-          }
-        >
-          <Heart size={24} />
-          <strong>{likes.length}</strong>
-          <span>
-            Избранных треков
-          </span>
-        </button>
-
-        <button
-          onClick={() =>
-            openPage("history")
-          }
-        >
-          <History size={24} />
-          <strong>
-            {history.length}
-          </strong>
-          <span>В истории</span>
-        </button>
-
-        <div>
-          <ListMusic size={24} />
-          <strong>
-            {playlists.length}
-          </strong>
-          <span>Плейлистов</span>
-        </div>
-      </div>
-
-      <div className="section-heading library-heading">
-        <div>
-          <h2>Плейлисты</h2>
-          <p>Твои подборки</p>
-        </div>
-      </div>
-
-      {playlists.length ? (
-        <div className="playlist-grid">
-          {playlists.map(
-            (playlist) => (
-              <PlaylistCard
-                key={playlist.id}
-                playlist={playlist}
-              />
-            )
-          )}
-        </div>
-      ) : (
-        <EmptyState
-          icon={<ListMusic size={35} />}
-          text={
-            user
-              ? "У тебя пока нет плейлистов"
-              : "Войди через Профиль, чтобы создавать плейлисты"
-          }
-        />
-      )}
-
-      {likes.length > 0 && (
-        <TrackSection
+      <div className="library-grid">
+        <LibraryTile
+          icon="heart"
           title="Избранное"
-          subtitle="Твои любимые треки"
-          tracks={likes.slice(0, 6)}
-          onPlay={onPlay}
-          onLike={onLike}
-          isLiked={isLiked}
-          onMore={() =>
-            openPage("likes")
-          }
+          description={`${favorites.length} треков`}
+          onClick={() => setPage("favorites")}
         />
-      )}
+
+        <LibraryTile
+          icon="clock"
+          title="История"
+          description={`${history.length} прослушанных`}
+          onClick={() => setPage("history")}
+        />
+
+        <LibraryTile
+          icon="music"
+          title="Плейлисты"
+          description={`${playlists.length} плейлистов`}
+          onClick={() => setPage("playlists")}
+        />
+
+        <LibraryTile
+          icon="album"
+          title="Альбомы"
+          description="Музыкальные альбомы"
+          onClick={() => setPage("albums")}
+        />
+      </div>
+
+      <MusicSection
+        title="Продолжить слушать"
+        subtitle="Музыка из каталога"
+        tracks={tracks.slice(0, 6)}
+        playTrack={playTrack}
+        toggleFavorite={() => {}}
+        isFavorite={() => false}
+      />
     </div>
   );
 }
 
-function PlaylistCard({
-  playlist,
+function LibraryTile({
+  icon,
+  title,
+  description,
+  onClick,
 }) {
   return (
-    <div className="playlist-card">
-      <div className="playlist-cover">
-        {playlist.cover_url ? (
-          <img
-            src={apiUrl(
-              playlist.cover_url
-            )}
-            alt={playlist.name}
-          />
-        ) : (
-          <ListMusic size={45} />
+    <button
+      className="library-tile"
+      onClick={onClick}
+    >
+      <Icon name={icon} />
+
+      <strong>{title}</strong>
+
+      <small>{description}</small>
+
+      <span>Открыть →</span>
+    </button>
+  );
+}
+
+/* =========================
+   TRACK LIST
+========================= */
+
+function TrackListPage({
+  title,
+  subtitle,
+  tracks,
+  playTrack,
+  toggleFavorite,
+  isFavorite,
+}) {
+  return (
+    <div className="page">
+      <div className="page-title">
+        <span className="eyebrow">
+          FENIX MUSIC
+        </span>
+
+        <h1>{title}</h1>
+
+        <p>{subtitle}</p>
+
+        {tracks[0] && (
+          <button
+            className="primary-button"
+            onClick={() =>
+              playTrack(tracks[0], tracks)
+            }
+          >
+            <Icon name="play" />
+            Слушать всё
+          </button>
         )}
       </div>
 
-      <strong>
-        {playlist.name}
-      </strong>
+      <div className="track-list">
+        {tracks.map((track, index) => (
+          <div
+            className="track-list-row"
+            key={`${track.id}-${index}`}
+          >
+            <span className="track-number">
+              {index + 1}
+            </span>
 
-      <span>
-        {playlist.description ||
-          "Плейлист FENIX MUSIC"}
-      </span>
+            <img
+              src={track.cover_url || DEFAULT_COVER}
+              alt=""
+            />
+
+            <button
+              className="track-list-main"
+              onClick={() =>
+                playTrack(track, tracks)
+              }
+            >
+              <b>{track.title}</b>
+              <small>
+                {track.artist_name}
+              </small>
+            </button>
+
+            <span className="track-list-grow" />
+
+            <span className="track-list-duration">
+              {formatTime(track.duration)}
+            </span>
+
+            <button
+              className={`icon-button ${
+                isFavorite(track)
+                  ? "liked"
+                  : ""
+              }`}
+              onClick={() =>
+                toggleFavorite(track)
+              }
+            >
+              <Icon
+                name={
+                  isFavorite(track)
+                    ? "heartFill"
+                    : "heart"
+                }
+              />
+            </button>
+
+            <button
+              className="round-play"
+              onClick={() =>
+                playTrack(track, tracks)
+              }
+            >
+              <Icon name="play" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {!tracks.length && (
+        <div className="empty-state">
+          Здесь пока ничего нет.
+        </div>
+      )}
     </div>
   );
 }
 
-/* =========================================================
-   ARTISTS / ALBUMS
-========================================================= */
+/* =========================
+   PLAYLISTS
+========================= */
+
+function PlaylistsPage({
+  playlists,
+  setPlaylists,
+  tracks,
+  playTrack,
+}) {
+  const [name, setName] = useState("");
+  const [publicPlaylist, setPublicPlaylist] =
+    useState(false);
+
+  const createPlaylist = () => {
+    const cleanName = name.trim();
+
+    if (!cleanName) {
+      return;
+    }
+
+    const playlist = {
+      id: Date.now(),
+      name: cleanName,
+      public: publicPlaylist,
+      tracks: [],
+      created_at: Date.now(),
+    };
+
+    setPlaylists((previous) => [
+      ...previous,
+      playlist,
+    ]);
+
+    setName("");
+    setPublicPlaylist(false);
+  };
+
+  const deletePlaylist = (id) => {
+    setPlaylists((previous) =>
+      previous.filter(
+        (playlist) => playlist.id !== id
+      )
+    );
+  };
+
+  return (
+    <div className="page">
+      <div className="page-title">
+        <span className="eyebrow">
+          YOUR PLAYLISTS
+        </span>
+
+        <h1>Плейлисты</h1>
+
+        <p>
+          Создавай публичные и приватные
+          музыкальные подборки.
+        </p>
+      </div>
+
+      <div className="create-playlist">
+        <input
+          value={name}
+          onChange={(event) =>
+            setName(event.target.value)
+          }
+          placeholder="Название нового плейлиста"
+        />
+
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={publicPlaylist}
+            onChange={(event) =>
+              setPublicPlaylist(
+                event.target.checked
+              )
+            }
+          />
+          <span>Публичный</span>
+        </label>
+
+        <button
+          className="primary-button"
+          onClick={createPlaylist}
+        >
+          <Icon name="plus" />
+          Создать
+        </button>
+      </div>
+
+      <div className="playlist-grid">
+        {playlists.map((playlist) => (
+          <article
+            className="playlist-card"
+            key={playlist.id}
+          >
+            <div className="playlist-cover">
+              <Icon name="music" />
+            </div>
+
+            <h3>{playlist.name}</h3>
+
+            <span>
+              {playlist.public
+                ? "Публичный"
+                : "Приватный"}
+              {" · "}
+              {playlist.tracks?.length || 0}{" "}
+              треков
+            </span>
+
+            <div className="playlist-actions">
+              {playlist.tracks?.length > 0 && (
+                <button
+                  onClick={() =>
+                    playTrack(
+                      playlist.tracks[0],
+                      playlist.tracks
+                    )
+                  }
+                >
+                  ▶ Слушать
+                </button>
+              )}
+
+              <button
+                className="danger-text"
+                onClick={() =>
+                  deletePlaylist(playlist.id)
+                }
+              >
+                Удалить
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {!playlists.length && (
+        <div className="empty-state">
+          Создай свой первый плейлист.
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =========================
+   ARTISTS
+========================= */
 
 function ArtistsPage({
-  artists,
+  tracks,
+  playTrack,
 }) {
+  const artists = useMemo(() => {
+    const map = new Map();
+
+    tracks.forEach((track) => {
+      const name =
+        track.artist_name ||
+        "Неизвестный артист";
+
+      if (!map.has(name)) {
+        map.set(name, track);
+      }
+    });
+
+    return [...map.values()];
+  }, [tracks]);
+
   return (
     <div className="page">
-      <PageHeader
-        title="Исполнители"
-        subtitle="Исполнители твоей музыкальной библиотеки"
-      />
+      <div className="page-title">
+        <span className="eyebrow">
+          ARTISTS
+        </span>
 
-      {artists.length ? (
-        <div className="artist-grid">
-          {artists.map(
-            (artist, index) => {
-              const name =
-                typeof artist === "string"
-                  ? artist
-                  : artist.name ||
-                    artist.artist ||
-                    "Unknown";
+        <h1>Артисты</h1>
 
-              return (
-                <div
-                  className="artist-card"
-                  key={`${name}-${index}`}
-                >
-                  <div className="artist-avatar">
-                    <Mic2 size={38} />
-                  </div>
+        <p>
+          Исполнители из твоего музыкального
+          каталога.
+        </p>
+      </div>
 
-                  <strong>
-                    {name}
-                  </strong>
-
-                  {artist.track_count != null && (
-                    <span>
-                      {artist.track_count} треков
-                    </span>
-                  )}
-                </div>
-              );
+      <div className="artist-grid">
+        {artists.map((track) => (
+          <article
+            className="artist-card"
+            key={
+              track.artist_name ||
+              track.id
             }
-          )}
-        </div>
-      ) : (
-        <EmptyState
-          icon={<Mic2 size={35} />}
-          text="Исполнители пока отсутствуют"
-        />
-      )}
+            onClick={() =>
+              playTrack(track, tracks)
+            }
+          >
+            <img
+              src={
+                track.artist_avatar ||
+                track.cover_url ||
+                DEFAULT_COVER
+              }
+              alt=""
+            />
+
+            <h3>
+              {track.artist_name}
+            </h3>
+
+            <span>
+              Слушать артиста →
+            </span>
+          </article>
+        ))}
+      </div>
     </div>
   );
 }
+
+/* =========================
+   ALBUMS
+========================= */
 
 function AlbumsPage({
-  albums,
+  tracks,
+  playTrack,
+}) {
+  const albums = useMemo(() => {
+    const map = new Map();
+
+    tracks.forEach((track) => {
+      const name =
+        track.album_name ||
+        "Без альбома";
+
+      if (!map.has(name)) {
+        map.set(name, track);
+      }
+    });
+
+    return [...map.values()];
+  }, [tracks]);
+
+  return (
+    <div className="page">
+      <div className="page-title">
+        <span className="eyebrow">
+          ALBUMS
+        </span>
+
+        <h1>Альбомы</h1>
+
+        <p>
+          Все доступные релизы.
+        </p>
+      </div>
+
+      <div className="album-grid">
+        {albums.map((track) => (
+          <article
+            className="album-card"
+            key={track.album_name || track.id}
+            onClick={() =>
+              playTrack(track, tracks)
+            }
+          >
+            <img
+              src={
+                track.album_cover_url ||
+                track.cover_url ||
+                DEFAULT_COVER
+              }
+              alt=""
+            />
+
+            <h3>
+              {track.album_name}
+            </h3>
+
+            <span>
+              {track.artist_name}
+            </span>
+
+            <small>
+              {track.year || "—"}
+            </small>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+   NOTIFICATIONS
+========================= */
+
+function NotificationsPage({
+  notifications,
+  setNotifications,
 }) {
   return (
     <div className="page">
-      <PageHeader
-        title="Альбомы"
-        subtitle="Музыкальные альбомы"
-      />
+      <div className="page-title-row">
+        <div>
+          <span className="eyebrow">
+            NOTIFICATIONS
+          </span>
 
-      {albums.length ? (
-        <div className="album-grid">
-          {albums.map(
-            (album, index) => {
-              const name =
-                typeof album === "string"
-                  ? album
-                  : album.name ||
-                    album.album ||
-                    "Singles";
+          <h1>Уведомления</h1>
+        </div>
 
-              const artist =
-                typeof album ===
-                "object"
-                  ? album.artist || ""
-                  : "";
-
-              return (
-                <div
-                  className="album-card"
-                  key={`${name}-${index}`}
-                >
-                  <div className="album-cover">
-                    {album.cover_url ? (
-                      <img
-                        src={apiUrl(
-                          album.cover_url
-                        )}
-                        alt={name}
-                      />
-                    ) : (
-                      <Disc3 size={50} />
-                    )}
-                  </div>
-
-                  <strong>
-                    {name}
-                  </strong>
-
-                  {artist && (
-                    <span>
-                      {artist}
-                    </span>
-                  )}
-                </div>
-              );
+        {notifications.length > 0 && (
+          <button
+            className="secondary-button"
+            onClick={() =>
+              setNotifications([])
             }
+          >
+            Очистить
+          </button>
+        )}
+      </div>
+
+      {notifications.length > 0 ? (
+        <div className="notification-list">
+          {notifications.map(
+            (notification, index) => (
+              <article
+                className="notification-card"
+                key={
+                  notification.id ||
+                  index
+                }
+              >
+                <div className="notification-icon">
+                  <Icon name="bell" />
+                </div>
+
+                <div>
+                  <b>
+                    {notification.title ||
+                      "Новое уведомление"}
+                  </b>
+
+                  <p>
+                    {notification.text ||
+                      "В Fenix Music появилось что-то новое."}
+                  </p>
+                </div>
+              </article>
+            )
           )}
         </div>
       ) : (
-        <EmptyState
-          icon={<Disc3 size={35} />}
-          text="Альбомы пока отсутствуют"
-        />
+        <div className="empty-state">
+          Новых уведомлений нет.
+        </div>
       )}
     </div>
   );
 }
 
-/* =========================================================
-   PROFILE
-========================================================= */
+/* =========================
+   TELEGRAM
+========================= */
 
-function ProfilePage({
-  user,
-  profile,
-  likes,
-  history,
-  playlists,
-  onLogin,
-  onRegister,
-  onLogout,
-  onSettings,
-}) {
+function TelegramPage({ user, setUser, setPage }) {
+  const [linkCode, setLinkCode] = useState("");
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  const telegramId = user?.telegram_id || user?.telegramId || null;
+
+  const loadTelegramStatus = async () => {
+    if (!user) return;
+    try {
+      const data = await apiRequest("/api/profile/telegram");
+      const account = data.user || data.account;
+      if (account) setUser((previous) => ({ ...(previous || {}), ...account }));
+      setLinkCode(data.code || data.token || data.link_token || "");
+      setExpiresAt(data.expires_at || data.expires || null);
+    } catch {
+      // Старые backend-версии могут не иметь GET статуса.
+    }
+  };
+
+  useEffect(() => {
+    loadTelegramStatus();
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!expiresAt) {
+      setSecondsLeft(0);
+      return undefined;
+    }
+
+    const tick = () => {
+      const value = Math.max(0, Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 1000));
+      setSecondsLeft(value);
+      if (value <= 0) setLinkCode("");
+    };
+
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [expiresAt]);
+
+  const createLinkCode = async () => {
+    if (!user) {
+      setPage("login");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const data = await apiRequest("/api/profile/telegram/link", {
+        method: "POST",
+      });
+
+      const code = data.code || data.token || data.link_token || data.telegram_link_token;
+      if (!code) throw new Error("Backend не вернул код привязки.");
+
+      setLinkCode(String(code));
+      setExpiresAt(data.expires_at || data.expires || new Date(Date.now() + 10 * 60 * 1000).toISOString());
+      setMessage("Код создан. Отправь его боту командой /link КОД.");
+    } catch (err) {
+      setError(err.message || "Не удалось создать код привязки.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyCode = async () => {
+    if (!linkCode) return;
+    try {
+      await navigator.clipboard.writeText(`/link ${linkCode}`);
+      setMessage("Команда скопирована в буфер обмена.");
+    } catch {
+      setMessage(`Скопируй вручную: /link ${linkCode}`);
+    }
+  };
+
+  const unlinkTelegram = async () => {
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const data = await apiRequest("/api/profile/telegram/unlink", { method: "POST" });
+      const account = data.user || data.account;
+      setUser((previous) => ({ ...(previous || {}), ...(account || {}), telegram_id: null }));
+      setLinkCode("");
+      setExpiresAt(null);
+      setMessage("Telegram отвязан от аккаунта.");
+    } catch (err) {
+      setError(err.message || "Не удалось отвязать Telegram.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const timeLabel = secondsLeft > 0
+    ? `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}`
+    : "истёк";
+
   if (!user) {
     return (
-      <div className="page profile-login">
-        <div className="profile-login-card">
-          <div className="profile-big-icon">
-            <User size={50} />
-          </div>
-
-          <span className="eyebrow">
-            FENIX MUSIC
-          </span>
-
-          <h1>
-            Твой профиль
-          </h1>
-
-          <p>
-            Войди в аккаунт или создай
-            новый, чтобы сохранять
-            любимую музыку, историю
-            прослушивания и плейлисты.
-          </p>
-
-          <div className="profile-login-actions">
-            <button
-              className="primary-button large"
-              onClick={onLogin}
-            >
-              <LogIn size={19} />
-              Войти
-            </button>
-
-            <button
-              className="secondary-button large"
-              onClick={onRegister}
-            >
-              <UserPlus size={19} />
-              Создать аккаунт
-            </button>
-          </div>
-
-          <div className="profile-login-features">
-            <div>
-              <Heart size={18} />
-              <span>
-                Избранное
-              </span>
-            </div>
-
-            <div>
-              <History size={18} />
-              <span>
-                История
-              </span>
-            </div>
-
-            <div>
-              <ListMusic size={18} />
-              <span>
-                Плейлисты
-              </span>
-            </div>
-          </div>
+      <div className="page">
+        <div className="page-title">
+          <span className="eyebrow">TELEGRAM</span>
+          <h1>Привязка Telegram</h1>
+          <p>Войди в аккаунт FENIX MUSIC, чтобы создать код привязки.</p>
         </div>
+        <button className="primary-button" onClick={() => setPage("login")}>Войти в аккаунт</button>
       </div>
     );
   }
 
-  const totalSeconds =
-    profile?.total_listening_seconds ||
-    profile?.listening_seconds ||
-    0;
+  return (
+    <div className="page telegram-page">
+      <div className="telegram-hero">
+        <div className="telegram-big-icon"><Icon name="telegram" /></div>
+        <div>
+          <span className="eyebrow">TELEGRAM INTEGRATION</span>
+          <h1>Telegram ↔ FENIX MUSIC</h1>
+          <p>Привяжи Telegram к своему аккаунту и используй одного пользователя для сайта и музыкального бота.</p>
+        </div>
+      </div>
+
+      <div className="telegram-link-card">
+        <div className="telegram-status-row">
+          <div>
+            <span className="eyebrow">СТАТУС</span>
+            <h2>{telegramId ? "Telegram подключён" : "Telegram не подключён"}</h2>
+          </div>
+          <span className={`telegram-status ${telegramId ? "connected" : "disconnected"}`}>
+            {telegramId ? "● Подключён" : "● Не подключён"}
+          </span>
+        </div>
+
+        {telegramId ? (
+          <div className="telegram-connected-box">
+            <strong>Telegram ID: {telegramId}</strong>
+            <p>Аккаунт Telegram уже связан с FENIX MUSIC.</p>
+            <button className="danger-button" disabled={busy} onClick={unlinkTelegram}>
+              🔓 Отвязать Telegram
+            </button>
+          </div>
+        ) : (
+          <>
+            <p className="telegram-description">
+              Нажми кнопку ниже. Сайт создаст одноразовый код, который действует ограниченное время.
+            </p>
+
+            {linkCode && secondsLeft > 0 && (
+              <div className="telegram-code-box">
+                <span>ТВОЙ КОД</span>
+                <strong>{linkCode}</strong>
+                <small>Действует ещё {timeLabel}</small>
+                <code>/link {linkCode}</code>
+                <button className="secondary-button" onClick={copyCode}>📋 Скопировать /link</button>
+              </div>
+            )}
+
+            <button className="primary-button wide" disabled={busy} onClick={createLinkCode}>
+              {busy ? "Создаём код…" : linkCode && secondsLeft > 0 ? "🔄 Создать новый код" : "🔑 Создать код привязки"}
+            </button>
+
+            {linkCode && secondsLeft > 0 && (
+              <div className="telegram-instructions">
+                <b>Что делать дальше:</b>
+                <span>1️⃣ Скопируй команду выше.</span>
+                <span>2️⃣ Открой бота FENIX MUSIC.</span>
+                <span>3️⃣ Отправь ему <code>/link {linkCode}</code>.</span>
+              </div>
+            )}
+          </>
+        )}
+
+        {error && <div className="auth-error">{error}</div>}
+        {message && <div className="integration-note"><Icon name="check" /><span>{message}</span></div>}
+      </div>
+
+      <div className="integration-steps">
+        <IntegrationStep number="01" title="Создай код" text="Нажми «Создать код привязки» на этой странице." />
+        <IntegrationStep number="02" title="Открой бота" text="Перейди в Telegram-бот FENIX MUSIC." />
+        <IntegrationStep number="03" title="Отправь /link" text="Отправь боту команду /link и полученный код." />
+        <IntegrationStep number="04" title="Готово" text="После успешной привязки Telegram ID появится здесь." />
+      </div>
+    </div>
+  );
+}
+
+function IntegrationStep({
+  number,
+  title,
+  text,
+}) {
+  return (
+    <article className="integration-step">
+      <b>{number}</b>
+      <h3>{title}</h3>
+      <p>{text}</p>
+    </article>
+  );
+}
+
+/* =========================
+   PREMIUM
+========================= */
+
+function PremiumPage() {
+  return (
+    <div className="page premium-page">
+      <div className="premium-heading">
+        <div className="premium-crown">
+          <Icon name="crown" />
+        </div>
+
+        <span className="eyebrow">
+          FENIX PREMIUM
+        </span>
+
+        <h1>
+          Музыка без ограничений.
+        </h1>
+
+        <p>
+          Больше качества. Больше музыки.
+          Больше возможностей.
+        </p>
+      </div>
+
+      <div className="plans">
+        <PremiumPlan
+          name="FREE"
+          price="0 ₽"
+          features={[
+            "Рекомендации",
+            "Обычное качество",
+            "История прослушиваний",
+          ]}
+        />
+
+        <PremiumPlan
+          name="PREMIUM"
+          price="299 ₽ / месяц"
+          hot
+          features={[
+            "Без рекламы",
+            "Высокое качество",
+            "Эксклюзивные подборки",
+            "Расширенная статистика",
+            "Приоритетные функции",
+          ]}
+        />
+
+        <PremiumPlan
+          name="PREMIUM+"
+          price="499 ₽ / месяц"
+          features={[
+            "Максимальное качество",
+            "AI-рекомендации",
+            "Расширенная статистика",
+            "Эксклюзивные релизы",
+            "Все Premium-возможности",
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PremiumPlan({
+  name,
+  price,
+  features,
+  hot,
+}) {
+  return (
+    <article
+      className={`premium-plan ${
+        hot ? "hot" : ""
+      }`}
+    >
+      {hot && (
+        <span className="popular-badge">
+          ПОПУЛЯРНЫЙ
+        </span>
+      )}
+
+      <h3>{name}</h3>
+
+      <strong>{price}</strong>
+
+      <div className="premium-features">
+        {features.map((feature) => (
+          <span key={feature}>
+            <Icon name="check" />
+            {feature}
+          </span>
+        ))}
+      </div>
+
+      <button
+        className={
+          hot
+            ? "primary-button"
+            : "secondary-button"
+        }
+      >
+        Выбрать
+      </button>
+    </article>
+  );
+}
+
+/* =========================
+   PROFILE
+========================= */
+
+function ProfilePage({
+  user,
+  setUser,
+  history,
+  favorites,
+  logout,
+  setPage,
+}) {
+  const [username, setUsername] =
+    useState(user?.username || "");
+
+  const [bio, setBio] =
+    useState(user?.bio || "");
+
+  const saveProfile = async () => {
+    try {
+      const data = await apiRequest("/api/profile", {
+        method: "PATCH",
+        body: JSON.stringify({ username, bio }),
+      });
+
+      setUser(data.user || { ...(user || {}), username, bio });
+    } catch {
+      setUser({ ...(user || {}), username, bio });
+    }
+  };
+
+  if (!user) {
+    return (
+      <LoginPage
+        onLogin={() => setPage("login")}
+        onRegister={() => setPage("login")}
+      />
+    );
+  }
+
+  const totalSeconds = history.reduce(
+    (total, track) =>
+      total +
+      Number(track.duration || 0),
+    0
+  );
 
   return (
     <div className="page">
       <div className="profile-header">
-        <Avatar
-          user={user}
-          large
-        />
+        <div className="profile-avatar">
+          {(
+            username ||
+            "FX"
+          )
+            .slice(0, 2)
+            .toUpperCase()}
+        </div>
 
-        <div className="profile-info">
-          <span>ПРОФИЛЬ</span>
+        <div>
+          <span className="eyebrow">
+            PROFILE
+          </span>
 
           <h1>
-            {user.username}
+            {username || "Пользователь"}
           </h1>
 
           <p>
-            {user.email}
+            {user.email ||
+              "Аккаунт Fenix Music"}
           </p>
-
-          {user.created_at && (
-            <small>
-              В FENIX MUSIC с{" "}
-              {new Date(
-                user.created_at
-              ).toLocaleDateString(
-                "ru-RU"
-              )}
-            </small>
-          )}
-        </div>
-
-        <div className="profile-actions">
-          <button
-            className="secondary-button"
-            onClick={onSettings}
-          >
-            <Settings size={17} />
-            Настройки
-          </button>
-
-          <button
-            className="ghost-button"
-            onClick={onLogout}
-          >
-            <LogOut size={17} />
-            Выйти
-          </button>
         </div>
       </div>
 
-      <div className="profile-stat-grid">
+      <div className="profile-stats">
         <div>
-          <Heart size={22} />
-          <strong>
-            {likes.length}
-          </strong>
-          <span>
-            Избранное
-          </span>
-        </div>
-
-        <div>
-          <History size={22} />
           <strong>
             {history.length}
           </strong>
-          <span>
-            Прослушиваний
-          </span>
+          <span>прослушиваний</span>
         </div>
 
         <div>
-          <ListMusic size={22} />
           <strong>
-            {playlists.length}
+            {favorites.length}
           </strong>
-          <span>
-            Плейлистов
-          </span>
+          <span>избранных</span>
         </div>
 
         <div>
-          <Music2 size={22} />
           <strong>
-            {formatTime(
-              totalSeconds
-            )}
+            {formatTime(totalSeconds)}
           </strong>
-          <span>
-            Время прослушивания
-          </span>
+          <span>времени</span>
         </div>
       </div>
 
-      {user.bio && (
-        <div className="bio-card">
+      <div className="form-card">
+        <h2>
+          Редактирование профиля
+        </h2>
+
+        <label>
+          Username
+
+          <input
+            value={username}
+            onChange={(event) =>
+              setUsername(
+                event.target.value
+              )
+            }
+          />
+        </label>
+
+        <label>
+          Описание
+
+          <textarea
+            value={bio}
+            onChange={(event) =>
+              setBio(event.target.value)
+            }
+            placeholder="Расскажи о себе"
+          />
+        </label>
+
+        <button
+          className="primary-button"
+          onClick={saveProfile}
+        >
+          Сохранить
+        </button>
+      </div>
+
+      <div className="profile-links">
+        <button
+          onClick={() => setPage("telegram")}
+        >
+          <Icon name="telegram" />
+          Telegram
+          {user.telegram_id ? " · подключён" : " · подключить"}
+        </button>
+
+        <button
+          onClick={() =>
+            setPage("settings")
+          }
+        >
+          <Icon name="settings" />
+          Настройки
+        </button>
+
+        <button
+          onClick={() =>
+            setPage("security")
+          }
+        >
+          <Icon name="shield" />
+          Безопасность
+        </button>
+
+        <button
+          className="danger-button"
+          onClick={logout}
+        >
+          Выйти
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* =========================
+   SETTINGS
+========================= */
+
+function SettingsPage({
+  settings,
+  setSettings,
+  logout,
+}) {
+  const update = (key, value) => {
+    setSettings((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
+  };
+
+  return (
+    <div className="page">
+      <div className="page-title">
+        <span className="eyebrow">
+          SETTINGS
+        </span>
+
+        <h1>Настройки</h1>
+
+        <p>
+          Настрой Fenix Music под себя.
+        </p>
+      </div>
+
+      <div className="settings-card">
+        <SettingRow title="Тема">
+          <select
+            value={settings.theme}
+            onChange={(event) =>
+              update(
+                "theme",
+                event.target.value
+              )
+            }
+          >
+            <option value="dark">
+              Тёмная
+            </option>
+
+            <option value="light">
+              Светлая
+            </option>
+          </select>
+        </SettingRow>
+
+        <SettingRow title="Качество звука">
+          <select
+            value={settings.quality}
+            onChange={(event) =>
+              update(
+                "quality",
+                event.target.value
+              )
+            }
+          >
+            <option value="normal">
+              Обычное
+            </option>
+
+            <option value="high">
+              Высокое
+            </option>
+
+            <option value="max">
+              Максимальное
+            </option>
+          </select>
+        </SettingRow>
+
+        <ToggleRow
+          title="Автоплей"
+          value={settings.autoplay}
+          onChange={(value) =>
+            update("autoplay", value)
+          }
+        />
+
+        <ToggleRow
+          title="Автоматический переход"
+          value={settings.autoNext}
+          onChange={(value) =>
+            update("autoNext", value)
+          }
+        />
+
+        <ToggleRow
+          title="Уведомления"
+          value={settings.notifications}
+          onChange={(value) =>
+            update(
+              "notifications",
+              value
+            )
+          }
+        />
+
+        <SettingRow title="Язык">
+          <select
+            value={settings.language}
+            onChange={(event) =>
+              update(
+                "language",
+                event.target.value
+              )
+            }
+          >
+            <option value="ru">
+              Русский
+            </option>
+
+            <option value="en">
+              English
+            </option>
+          </select>
+        </SettingRow>
+      </div>
+
+      <button
+        className="danger-button"
+        onClick={logout}
+      >
+        Выйти из аккаунта
+      </button>
+    </div>
+  );
+}
+
+function SettingRow({
+  title,
+  children,
+}) {
+  return (
+    <div className="setting-row">
+      <span>{title}</span>
+      {children}
+    </div>
+  );
+}
+
+function ToggleRow({
+  title,
+  value,
+  onChange,
+}) {
+  return (
+    <div className="setting-row">
+      <span>{title}</span>
+
+      <button
+        className={`toggle ${
+          value ? "on" : ""
+        }`}
+        onClick={() =>
+          onChange(!value)
+        }
+      >
+        <i />
+      </button>
+    </div>
+  );
+}
+
+/* =========================
+   SECURITY
+========================= */
+
+function SecurityPage({
+  user,
+  openAuth,
+}) {
+  return (
+    <div className="page">
+      <div className="page-title">
+        <span className="eyebrow">
+          SECURITY
+        </span>
+
+        <h1>Безопасность</h1>
+
+        <p>
+          Управление доступом к аккаунту.
+        </p>
+      </div>
+
+      <div className="security-grid">
+        <article>
+          <Icon name="shield" />
+
           <h3>
-            О себе
+            Защита сессии
           </h3>
 
           <p>
-            {user.bio}
+            Сессия сохраняется после
+            входа и не требует повторной
+            регистрации каждый раз.
           </p>
+
+          <button className="secondary-button">
+            Выйти со всех устройств
+          </button>
+        </article>
+
+        <article>
+          <Icon name="lock" />
+
+          <h3>
+            Пароль
+          </h3>
+
+          <p>
+            Пароль должен проверяться
+            backend и храниться в базе
+            только как защищённый hash.
+          </p>
+
+          <button
+            className="secondary-button"
+            onClick={openAuth}
+          >
+            Сменить пароль
+          </button>
+        </article>
+
+        <article>
+          <Icon name="shield" />
+
+          <h3>
+            CAPTCHA
+          </h3>
+
+          <p>
+            При регистрации используется
+            новая CAPTCHA.
+          </p>
+
+          <span className="security-ok">
+            <Icon name="check" />
+            Защита включена
+          </span>
+        </article>
+      </div>
+
+      {!user && (
+        <div className="empty-state">
+          Войди в аккаунт для управления
+          безопасностью.
         </div>
       )}
     </div>
   );
 }
 
-function Avatar({
-  user,
-  large = false,
-}) {
-  if (user?.avatar_url) {
-    return (
-      <img
-        className={`avatar ${
-          large ? "large" : ""
-        }`}
-        src={apiUrl(
-          user.avatar_url
-        )}
-        alt={
-          user.username ||
-          "User"
-        }
-      />
-    );
-  }
+/* =========================
+   LOGIN PAGE
+========================= */
 
+function LoginPage({
+  onLogin,
+  onRegister,
+}) {
   return (
-    <div
-      className={`avatar avatar-placeholder ${
-        large ? "large" : ""
-      }`}
-    >
-      {(user?.username || "F")
-        .slice(0, 1)
-        .toUpperCase()}
+    <div className="login-page">
+      <div className="login-card">
+        <div className="auth-logo">
+          FX
+        </div>
+
+        <span className="eyebrow">
+          FENIX MUSIC
+        </span>
+
+        <h1>
+          Музыка начинается здесь
+        </h1>
+
+        <p>
+          Войди в аккаунт, чтобы
+          сохранить избранное,
+          историю, настройки и
+          плейлисты.
+        </p>
+
+        <button
+          className="primary-button wide"
+          onClick={onLogin}
+        >
+          Войти
+        </button>
+
+        <button
+          className="secondary-button wide"
+          onClick={onRegister}
+        >
+          Создать аккаунт
+        </button>
+      </div>
     </div>
   );
 }
 
-/* =========================================================
-   PLAYER
-========================================================= */
+/* =========================
+   AUTH MODAL
+========================= */
 
-function Player({
-  track,
-  playing,
-  progress,
-  duration,
-  volume,
-  shuffle,
-  repeat,
-  liked,
-  onTogglePlay,
-  onPrevious,
-  onNext,
-  onSeek,
-  onVolume,
-  onShuffle,
-  onRepeat,
-  onLike,
-  onQueue,
+function AuthModal({
+  mode,
+  setMode,
+  close,
+  onSuccess,
 }) {
-  if (!track) {
-    return (
-      <div className="player empty-player">
-        <div className="empty-player-brand">
-          <Music2 size={21} />
-          <span>
-            Выбери трек, чтобы начать
-            прослушивание
-          </span>
-        </div>
-      </div>
-    );
-  }
+  const [username, setUsername] =
+    useState("");
+
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
+
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
+
+  const [captchaText, setCaptchaText] =
+    useState("");
+
+  const [captchaAnswer, setCaptchaAnswer] =
+    useState("");
+
+  const [busy, setBusy] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
+
+  const [serverCaptcha, setServerCaptcha] =
+    useState(null);
+
+  const getCaptcha = async () => {
+    setError("");
+
+    try {
+      const response = await fetch(
+        apiUrl("/api/auth/captcha"),
+        {
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error();
+      }
+
+      const data = await response.json();
+
+      setServerCaptcha(data);
+
+      setCaptchaText(
+        data.text ||
+          data.code ||
+          data.captcha ||
+          ""
+      );
+    } catch {
+      setServerCaptcha(null);
+      setCaptchaText(
+        randomCaptcha()
+      );
+    }
+
+    setCaptchaAnswer("");
+  };
+
+  useEffect(() => {
+    if (mode === "register") {
+      getCaptcha();
+    }
+  }, [mode]);
+
+  const submit = async (event) => {
+    event.preventDefault();
+
+    setError("");
+
+    if (
+      mode === "register" &&
+      password !== confirmPassword
+    ) {
+      setError(
+        "Пароли не совпадают."
+      );
+      return;
+    }
+
+    if (
+      mode === "register" &&
+      captchaAnswer
+        .trim()
+        .toUpperCase() !==
+        captchaText
+          .trim()
+          .toUpperCase()
+    ) {
+      setError(
+        "Неверная CAPTCHA."
+      );
+
+      getCaptcha();
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      const endpoint =
+        mode === "register"
+          ? "/api/auth/register"
+          : "/api/auth/login";
+
+      const payload =
+        mode === "register"
+          ? {
+              username,
+              email,
+              password,
+              captcha:
+                captchaAnswer,
+              captcha_id:
+                serverCaptcha?.id ||
+                serverCaptcha?.captcha_id ||
+                undefined,
+            }
+          : {
+              login:
+                email || username,
+              email,
+              username,
+              password,
+            };
+
+      const response = await fetch(
+        apiUrl(endpoint),
+        {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      const data =
+        await response
+          .json()
+          .catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            data.message ||
+            "Ошибка авторизации."
+        );
+      }
+
+      const token =
+        data.token ||
+        data.access_token ||
+        data.session_token ||
+        null;
+
+      const account =
+        data.user ||
+        data.account || {
+          username:
+            data.username ||
+            username,
+          email:
+            data.email ||
+            email,
+        };
+
+      onSuccess(
+        account,
+        token
+      );
+    } catch (err) {
+      setError(
+        err.message ||
+          "Сервер авторизации недоступен."
+      );
+
+      if (mode === "register") {
+        getCaptcha();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="player">
-      <div className="player-track">
-        <div className="player-cover">
-          {track.cover_url ? (
-            <img
-              src={getCover(track)}
-              alt={track.title}
+    <div
+      className="modal-backdrop"
+      onMouseDown={close}
+    >
+      <div
+        className="auth-modal"
+        onMouseDown={(event) =>
+          event.stopPropagation()
+        }
+      >
+        <button
+          className="auth-close"
+          onClick={close}
+        >
+          <Icon name="close" />
+        </button>
+
+        <div className="auth-logo">
+          FX
+        </div>
+
+        <span className="eyebrow">
+          {mode === "register"
+            ? "CREATE ACCOUNT"
+            : "WELCOME BACK"}
+        </span>
+
+        <h2>
+          {mode === "register"
+            ? "Создай свой аккаунт"
+            : "С возвращением"}
+        </h2>
+
+        <p>
+          {mode === "register"
+            ? "Сохраняй музыку, историю, настройки и плейлисты."
+            : "Вход проверяется через backend."}
+        </p>
+
+        <form onSubmit={submit}>
+          {mode === "register" && (
+            <input
+              value={username}
+              onChange={(event) =>
+                setUsername(
+                  event.target.value
+                )
+              }
+              placeholder="Имя пользователя"
+              required
             />
-          ) : (
-            <CoverPlaceholder small />
           )}
-        </div>
 
-        <div className="player-info">
-          <strong>
-            {track.title}
-          </strong>
+          <input
+            value={email}
+            onChange={(event) =>
+              setEmail(
+                event.target.value
+              )
+            }
+            type={
+              mode === "register"
+                ? "email"
+                : "text"
+            }
+            placeholder={
+              mode === "register"
+                ? "Email"
+                : "Email или username"
+            }
+            required
+          />
 
-          <span>
-            {track.artist ||
-              "Unknown Artist"}
-          </span>
-        </div>
+          <input
+            value={password}
+            onChange={(event) =>
+              setPassword(
+                event.target.value
+              )
+            }
+            type="password"
+            placeholder="Пароль"
+            minLength={6}
+            required
+          />
+
+          {mode === "register" && (
+            <input
+              value={confirmPassword}
+              onChange={(event) =>
+                setConfirmPassword(
+                  event.target.value
+                )
+              }
+              type="password"
+              placeholder="Повтори пароль"
+              minLength={6}
+              required
+            />
+          )}
+
+          {mode === "register" && (
+            <>
+              <div className="captcha-box">
+                <strong>
+                  {captchaText ||
+                    "------"}
+                </strong>
+
+                <button
+                  type="button"
+                  onClick={getCaptcha}
+                >
+                  <Icon name="refresh" />
+                </button>
+              </div>
+
+              <input
+                value={captchaAnswer}
+                onChange={(event) =>
+                  setCaptchaAnswer(
+                    event.target.value
+                  )
+                }
+                placeholder="Введите CAPTCHA"
+                required
+              />
+            </>
+          )}
+
+          {error && (
+            <div className="auth-error">
+              {error}
+            </div>
+          )}
+
+          <button
+            className="primary-button wide"
+            disabled={busy}
+          >
+            {busy
+              ? "Проверяем…"
+              : mode === "register"
+              ? "Создать аккаунт"
+              : "Войти"}
+          </button>
+        </form>
 
         <button
-          className={`player-like ${
-            liked ? "liked" : ""
-          }`}
-          onClick={onLike}
+          className="auth-switch"
+          onClick={() => {
+            setError("");
+
+            setMode(
+              mode === "register"
+                ? "login"
+                : "register"
+            );
+          }}
         >
-          <Heart
-            size={18}
-            fill={
-              liked
-                ? "currentColor"
-                : "none"
-            }
-          />
+          {mode === "register"
+            ? "Уже есть аккаунт? Войти"
+            : "Нет аккаунта? Регистрация"}
         </button>
       </div>
+    </div>
+  );
+}
+
+/* =========================
+   PLAYER
+========================= */
+
+function PlayerBar({
+  track,
+  playing,
+  position,
+  duration,
+  volume,
+  setVolume,
+  shuffle,
+  setShuffle,
+  repeat,
+  setRepeat,
+  togglePlaying,
+  nextTrack,
+  previousTrack,
+  seek,
+  openFull,
+  openQueue,
+}) {
+  const progress =
+    duration > 0
+      ? position / duration
+      : 0;
+
+  return (
+    <footer className="player-bar">
+      <button
+        className="now-playing"
+        onClick={openFull}
+      >
+        <img
+          src={
+            track.cover_url ||
+            DEFAULT_COVER
+          }
+          alt=""
+        />
+
+        <span>
+          <b>{track.title}</b>
+          <small>
+            {track.artist_name}
+          </small>
+        </span>
+      </button>
 
       <div className="player-center">
         <div className="player-controls">
           <button
-            className={`control-button ${
-              shuffle
-                ? "active"
-                : ""
-            }`}
-            onClick={onShuffle}
+            className={
+              shuffle ? "control-active" : ""
+            }
+            onClick={() =>
+              setShuffle(!shuffle)
+            }
           >
-            <Shuffle size={17} />
+            <Icon name="shuffle" />
+          </button>
+
+          <button onClick={previousTrack}>
+            <Icon name="previous" />
           </button>
 
           <button
-            className="control-button"
-            onClick={onPrevious}
+            className="player-play"
+            onClick={togglePlaying}
           >
-            <SkipBack
-              size={20}
-              fill="currentColor"
+            <Icon
+              name={
+                playing
+                  ? "pause"
+                  : "play"
+              }
             />
           </button>
 
-          <button
-            className="play-button"
-            onClick={onTogglePlay}
-          >
-            {playing ? (
-              <Pause
-                size={22}
-                fill="currentColor"
-              />
-            ) : (
-              <Play
-                size={22}
-                fill="currentColor"
-              />
-            )}
+          <button onClick={nextTrack}>
+            <Icon name="next" />
           </button>
 
           <button
-            className="control-button"
-            onClick={onNext}
-          >
-            <SkipForward
-              size={20}
-              fill="currentColor"
-            />
-          </button>
-
-          <button
-            className={`control-button ${
-              repeat
-                ? "active"
+            className={
+              repeat !== "off"
+                ? "control-active"
                 : ""
-            }`}
-            onClick={onRepeat}
+            }
+            onClick={() => {
+              setRepeat(
+                repeat === "off"
+                  ? "all"
+                  : repeat === "all"
+                  ? "one"
+                  : "off"
+              );
+            }}
           >
-            <Repeat size={17} />
+            <Icon name="repeat" />
           </button>
         </div>
 
-        <div className="progress-row">
+        <div className="player-progress">
           <span>
-            {formatTime(progress)}
+            {formatTime(position)}
           </span>
 
           <input
-            className="progress-slider"
             type="range"
             min="0"
-            max={duration || 0}
-            step="0.1"
-            value={Math.min(
-              progress,
-              duration || 0
-            )}
-            onChange={(event) =>
-              seekValue(
-                event,
-                onSeek
-              )
-            }
+            max="1"
+            step="0.001"
+            value={progress}
+            onChange={seek}
           />
 
           <span>
@@ -2291,979 +3415,213 @@ function Player({
       </div>
 
       <div className="player-right">
-        <button
-          className="control-button"
-          onClick={onQueue}
-          title="Очередь"
-        >
-          <ListMusic size={19} />
+        <button onClick={openQueue}>
+          ☷
         </button>
 
-        <div className="volume-control">
-          <button
-            className="control-button"
-            onClick={() =>
-              onVolume(
-                volume > 0
-                  ? 0
-                  : 1
-              )
-            }
-          >
-            {volume === 0 ? (
-              <VolumeX size={19} />
-            ) : (
-              <Volume2 size={19} />
-            )}
-          </button>
+        <Icon name="volume" />
 
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            onChange={(event) =>
-              onVolume(
-                Number(
-                  event.target.value
-                )
-              )
-            }
-          />
-        </div>
-
-        <button
-          className="control-button"
-          onClick={() => {
-            const element =
-              document.documentElement;
-
-            if (
-              !document.fullscreenElement
-            ) {
-              element.requestFullscreen?.();
-            } else {
-              document.exitFullscreen?.();
-            }
-          }}
-        >
-          <Maximize2 size={18} />
-        </button>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value={volume}
+          onChange={(event) =>
+            setVolume(
+              Number(event.target.value)
+            )
+          }
+        />
       </div>
-    </div>
+    </footer>
   );
 }
 
-function seekValue(
-  event,
-  onSeek
-) {
-  onSeek(
-    Number(event.target.value)
-  );
-}
-
-/* =========================================================
+/* =========================
    QUEUE
-========================================================= */
+========================= */
 
 function QueuePanel({
   queue,
   currentTrack,
-  onPlay,
-  onClose,
+  playTrack,
+  close,
 }) {
   return (
-    <div className="overlay">
-      <div className="queue-panel">
-        <div className="modal-header">
-          <div>
-            <h2>Очередь</h2>
-            <span>
-              {queue.length} треков
-            </span>
-          </div>
+    <div className="queue-panel">
+      <div className="queue-heading">
+        <h2>Очередь</h2>
 
+        <button onClick={close}>
+          <Icon name="close" />
+        </button>
+      </div>
+
+      <div className="queue-list">
+        {queue.map((track) => (
           <button
-            className="icon-button"
-            onClick={onClose}
+            className={`queue-item ${
+              String(track.id) ===
+              String(currentTrack.id)
+                ? "active"
+                : ""
+            }`}
+            key={track.id}
+            onClick={() => {
+              playTrack(track, queue);
+              close();
+            }}
           >
-            <X size={20} />
-          </button>
-        </div>
-
-        <div className="queue-list">
-          {queue.length ? (
-            queue.map(
-              (track, index) => (
-                <button
-                  className={`queue-item ${
-                    currentTrack?.id ===
-                    track.id
-                      ? "current"
-                      : ""
-                  }`}
-                  key={`${track.id}-${index}`}
-                  onClick={() =>
-                    onPlay(track)
-                  }
-                >
-                  <div className="queue-cover">
-                    {track.cover_url ? (
-                      <img
-                        src={getCover(
-                          track
-                        )}
-                        alt={
-                          track.title
-                        }
-                      />
-                    ) : (
-                      <CoverPlaceholder small />
-                    )}
-                  </div>
-
-                  <div>
-                    <strong>
-                      {track.title}
-                    </strong>
-
-                    <span>
-                      {track.artist}
-                    </span>
-                  </div>
-
-                  <span>
-                    {track.duration_label ||
-                      formatTime(
-                        track.duration
-                      )}
-                  </span>
-                </button>
-              )
-            )
-          ) : (
-            <EmptyState
-              icon={
-                <ListMusic size={32} />
+            <img
+              src={
+                track.cover_url ||
+                DEFAULT_COVER
               }
-              text="Очередь пуста"
+              alt=""
             />
-          )}
-        </div>
+
+            <span>
+              <b>{track.title}</b>
+              <small>
+                {track.artist_name}
+              </small>
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   );
 }
 
-/* =========================================================
-   AUTH
-========================================================= */
+/* =========================
+   FULL PLAYER
+========================= */
 
-function AuthModal({
-  mode,
-  setMode,
-  onClose,
-  onSuccess,
+function FullPlayer({
+  track,
+  playing,
+  position,
+  duration,
+  shuffle,
+  setShuffle,
+  repeat,
+  setRepeat,
+  togglePlaying,
+  nextTrack,
+  previousTrack,
+  seek,
+  close,
 }) {
-  const [values, setValues] =
-    useState({
-      username: "",
-      email: "",
-      password: "",
-      confirmPassword: "",
-    });
-
-  const [loading, setLoading] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  function update(
-    field,
-    value
-  ) {
-    setValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
-
-    if (error) {
-      setError("");
-    }
-  }
-
-  const passwordLength =
-    values.password.length >= 6;
-
-  const passwordNumber =
-    /\d/.test(values.password);
-
-  const passwordStrong =
-    passwordLength &&
-    passwordNumber;
-
-  async function submit(event) {
-    event.preventDefault();
-    setError("");
-
-    if (mode === "register") {
-      if (
-        values.username.trim()
-          .length < 2
-      ) {
-        setError(
-          "Имя пользователя должно содержать минимум 2 символа"
-        );
-        return;
-      }
-
-      if (!values.email.trim()) {
-        setError(
-          "Введите email"
-        );
-        return;
-      }
-
-      if (
-        values.password.length < 6
-      ) {
-        setError(
-          "Пароль должен содержать минимум 6 символов"
-        );
-        return;
-      }
-
-      if (
-        values.password !==
-        values.confirmPassword
-      ) {
-        setError(
-          "Пароли не совпадают"
-        );
-        return;
-      }
-    }
-
-    setLoading(true);
-
-    try {
-      let data;
-
-      if (
-        mode === "register"
-      ) {
-        data = await api(
-          "/api/auth/register",
-          {
-            method: "POST",
-            body: JSON.stringify(
-              {
-                username:
-                  values.username.trim(),
-                email:
-                  values.email.trim(),
-                password:
-                  values.password,
-              }
-            ),
-          }
-        );
-      } else {
-        data = await api(
-          "/api/auth/login",
-          {
-            method: "POST",
-            body: JSON.stringify(
-              {
-                email:
-                  values.email.trim(),
-                password:
-                  values.password,
-              }
-            ),
-          }
-        );
-      }
-
-      const token =
-        data.token ||
-        data.access_token;
-
-      if (!token) {
-        throw new Error(
-          "Сервер не вернул токен авторизации"
-        );
-      }
-
-      localStorage.setItem(
-        TOKEN_KEY,
-        token
-      );
-
-      onSuccess(
-        data.user || data
-      );
-    } catch (err) {
-      setError(
-        err.message ||
-          "Не удалось выполнить операцию"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
+  const progress =
+    duration > 0
+      ? position / duration
+      : 0;
 
   return (
-    <div className="overlay auth-overlay">
-      <div className="auth-modal">
+    <div className="full-player">
+      <button
+        className="full-player-close"
+        onClick={close}
+      >
+        <Icon name="close" />
+      </button>
+
+      <div className="full-player-cover">
+        <img
+          src={
+            track.cover_url ||
+            DEFAULT_COVER
+          }
+          alt=""
+        />
+      </div>
+
+      <div className="full-player-info">
+        <span>
+          {track.artist_name}
+        </span>
+
+        <h1>{track.title}</h1>
+
+        <p>
+          {track.album_name}
+        </p>
+      </div>
+
+      <div className="full-progress">
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.001"
+          value={progress}
+          onChange={seek}
+        />
+
+        <div>
+          <span>
+            {formatTime(position)}
+          </span>
+
+          <span>
+            {formatTime(duration)}
+          </span>
+        </div>
+      </div>
+
+      <div className="full-player-controls">
         <button
-          className="modal-close"
-          onClick={onClose}
-          type="button"
+          className={
+            shuffle ? "control-active" : ""
+          }
+          onClick={() =>
+            setShuffle(!shuffle)
+          }
         >
-          <X size={20} />
+          <Icon name="shuffle" />
         </button>
 
-        <div className="auth-modal-top">
-          <div className="auth-logo">
-            <Music2 size={28} />
-          </div>
+        <button onClick={previousTrack}>
+          <Icon name="previous" />
+        </button>
 
-          <span className="auth-brand">
-            FENIX MUSIC
-          </span>
-        </div>
-
-        <div className="auth-heading">
-          <h1>
-            {mode === "register"
-              ? "Создать аккаунт"
-              : "С возвращением"}
-          </h1>
-
-          <p>
-            {mode === "register"
-              ? "Создай свой профиль и собери личную музыкальную библиотеку."
-              : "Войди в свой аккаунт FENIX MUSIC и продолжи слушать музыку."}
-          </p>
-        </div>
-
-        <div className="auth-tabs">
-          <button
-            type="button"
-            className={
-              mode === "login"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              setMode("login")
-            }
-          >
-            <LogIn size={16} />
-            Войти
-          </button>
-
-          <button
-            type="button"
-            className={
-              mode === "register"
-                ? "active"
-                : ""
-            }
-            onClick={() =>
-              setMode(
-                "register"
-              )
-            }
-          >
-            <UserPlus size={16} />
-            Регистрация
-          </button>
-        </div>
-
-        <form
-          className="auth-form"
-          onSubmit={submit}
+        <button
+          className="full-play-button"
+          onClick={togglePlaying}
         >
-          {mode ===
-            "register" && (
-            <label className="auth-field">
-              <span>
-                Имя пользователя
-              </span>
+          <Icon
+            name={
+              playing
+                ? "pause"
+                : "play"
+            }
+          />
+        </button>
 
-              <div className="auth-input-wrap">
-                <User size={17} />
+        <button onClick={nextTrack}>
+          <Icon name="next" />
+        </button>
 
-                <input
-                  value={
-                    values.username
-                  }
-                  onChange={(event) =>
-                    update(
-                      "username",
-                      event.target.value
-                    )
-                  }
-                  placeholder="Например, FenixUser"
-                  autoComplete="username"
-                  required
-                />
-              </div>
-            </label>
-          )}
-
-          <label className="auth-field">
-            <span>Email</span>
-
-            <div className="auth-input-wrap">
-              <span className="auth-input-symbol">
-                @
-              </span>
-
-              <input
-                type="email"
-                value={
-                  values.email
-                }
-                onChange={(event) =>
-                  update(
-                    "email",
-                    event.target.value
-                  )
-                }
-                placeholder="you@example.com"
-                autoComplete="email"
-                required
-              />
-            </div>
-          </label>
-
-          <label className="auth-field">
-            <span>Пароль</span>
-
-            <div className="auth-input-wrap">
-              <Settings size={17} />
-
-              <input
-                type="password"
-                value={
-                  values.password
-                }
-                onChange={(event) =>
-                  update(
-                    "password",
-                    event.target.value
-                  )
-                }
-                placeholder="Введите пароль"
-                autoComplete={
-                  mode ===
-                  "register"
-                    ? "new-password"
-                    : "current-password"
-                }
-                required
-              />
-            </div>
-          </label>
-
-          {mode ===
-            "register" && (
-            <>
-              <label className="auth-field">
-                <span>
-                  Повторите пароль
-                </span>
-
-                <div className="auth-input-wrap">
-                  <Check size={17} />
-
-                  <input
-                    type="password"
-                    value={
-                      values.confirmPassword
-                    }
-                    onChange={(
-                      event
-                    ) =>
-                      update(
-                        "confirmPassword",
-                        event.target
-                          .value
-                      )
-                    }
-                    placeholder="Введите пароль ещё раз"
-                    autoComplete="new-password"
-                    required
-                  />
-                </div>
-              </label>
-
-              <div className="password-rules">
-                <div
-                  className={
-                    passwordLength
-                      ? "passed"
-                      : ""
-                  }
-                >
-                  <Check size={14} />
-                  Минимум 6 символов
-                </div>
-
-                <div
-                  className={
-                    passwordNumber
-                      ? "passed"
-                      : ""
-                  }
-                >
-                  <Check size={14} />
-                  Хотя бы одна цифра
-                </div>
-
-                <div
-                  className={
-                    values.password &&
-                    values.confirmPassword &&
-                    values.password ===
-                      values.confirmPassword
-                      ? "passed"
-                      : ""
-                  }
-                >
-                  <Check size={14} />
-                  Пароли совпадают
-                </div>
-              </div>
-            </>
-          )}
-
-          {error && (
-            <div className="form-error">
-              <X size={17} />
-              <span>{error}</span>
-            </div>
-          )}
-
-          <button
-            className="primary-button auth-submit"
-            disabled={loading}
-            type="submit"
-          >
-            {loading ? (
-              <>
-                <RefreshCw
-                  className="spin"
-                  size={18}
-                />
-                Подождите...
-              </>
-            ) : mode ===
-              "register" ? (
-              <>
-                <UserPlus size={18} />
-                Создать аккаунт
-              </>
-            ) : (
-              <>
-                <LogIn size={18} />
-                Войти в FENIX
-              </>
-            )}
-          </button>
-        </form>
-
-        <div className="auth-bottom">
-          {mode ===
-          "register" ? (
-            <>
-              <span>
-                Уже есть аккаунт?
-              </span>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setMode("login")
-                }
-              >
-                Войти
-              </button>
-            </>
-          ) : (
-            <>
-              <span>
-                Впервые в FENIX?
-              </span>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setMode(
-                    "register"
-                  )
-                }
-              >
-                Создать аккаунт
-              </button>
-            </>
-          )}
-        </div>
-
-        <div className="auth-security">
-          <Check size={15} />
-          <span>
-            Твои данные защищены
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   CREATE PLAYLIST
-========================================================= */
-
-function CreatePlaylistModal({
-  onClose,
-  onCreated,
-}) {
-  const [name, setName] =
-    useState("");
-
-  const [description, setDescription] =
-    useState("");
-
-  const [loading, setLoading] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  async function submit(event) {
-    event.preventDefault();
-
-    if (!name.trim()) {
-      setError(
-        "Введите название плейлиста"
-      );
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const data = await api(
-        "/api/playlists",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            name: name.trim(),
-            description:
-              description.trim(),
-            is_public: true,
-          }),
-        }
-      );
-
-      onCreated(
-        data.playlist || data
-      );
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="overlay">
-      <div className="modal">
-        <div className="modal-header">
-          <div>
-            <h2>
-              Новый плейлист
-            </h2>
-
-            <span>
-              Создай свою подборку
-            </span>
-          </div>
-
-          <button
-            className="icon-button"
-            onClick={onClose}
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        <form
-          onSubmit={submit}
+        <button
+          className={
+            repeat !== "off"
+              ? "control-active"
+              : ""
+          }
+          onClick={() =>
+            setRepeat(
+              repeat === "off"
+                ? "all"
+                : repeat === "all"
+                ? "one"
+                : "off"
+            )
+          }
         >
-          <label>
-            Название
-            <input
-              value={name}
-              onChange={(event) =>
-                setName(
-                  event.target.value
-                )
-              }
-              placeholder="Мой плейлист"
-              autoFocus
-            />
-          </label>
-
-          <label>
-            Описание
-            <textarea
-              value={
-                description
-              }
-              onChange={(event) =>
-                setDescription(
-                  event.target.value
-                )
-              }
-              placeholder="Например: музыка для дороги"
-              rows={4}
-            />
-          </label>
-
-          {error && (
-            <div className="form-error">
-              {error}
-            </div>
-          )}
-
-          <div className="modal-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={onClose}
-            >
-              Отмена
-            </button>
-
-            <button
-              className="primary-button"
-              disabled={loading}
-              type="submit"
-            >
-              <Check size={17} />
-              Создать
-            </button>
-          </div>
-        </form>
+          <Icon name="repeat" />
+        </button>
       </div>
     </div>
   );
 }
-
-/* =========================================================
-   SETTINGS
-========================================================= */
-
-function SettingsModal({
-  user,
-  onClose,
-  onUpdated,
-}) {
-  const [username, setUsername] =
-    useState(
-      user?.username || ""
-    );
-
-  const [bio, setBio] =
-    useState(
-      user?.bio || ""
-    );
-
-  const [avatarUrl, setAvatarUrl] =
-    useState(
-      user?.avatar_url || ""
-    );
-
-  const [loading, setLoading] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  async function save(event) {
-    event.preventDefault();
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const data = await api(
-        "/api/auth/me",
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            username:
-              username.trim(),
-            bio,
-            avatar_url:
-              avatarUrl.trim() ||
-              null,
-          }),
-        }
-      );
-
-      onUpdated(
-        data.user || data
-      );
-
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="overlay">
-      <div className="modal">
-        <div className="modal-header">
-          <div>
-            <h2>
-              Настройки профиля
-            </h2>
-
-            <span>
-              Измени данные своего аккаунта
-            </span>
-          </div>
-
-          <button
-            className="icon-button"
-            onClick={onClose}
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        <form
-          onSubmit={save}
-        >
-          <label>
-            Имя пользователя
-            <input
-              value={username}
-              onChange={(event) =>
-                setUsername(
-                  event.target.value
-                )
-              }
-            />
-          </label>
-
-          <label>
-            О себе
-            <textarea
-              value={bio}
-              onChange={(event) =>
-                setBio(
-                  event.target.value
-                )
-              }
-              rows={4}
-              placeholder="Расскажи немного о себе"
-            />
-          </label>
-
-          <label>
-            URL аватара
-            <input
-              value={avatarUrl}
-              onChange={(event) =>
-                setAvatarUrl(
-                  event.target.value
-                )
-              }
-              placeholder="https://..."
-            />
-          </label>
-
-          {error && (
-            <div className="form-error">
-              {error}
-            </div>
-          )}
-
-          <div className="modal-actions">
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={onClose}
-            >
-              Отмена
-            </button>
-
-            <button
-              type="submit"
-              className="primary-button"
-              disabled={loading}
-            >
-              {loading
-                ? "Сохранение..."
-                : "Сохранить"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-/* =========================================================
-   COMMON
-========================================================= */
-
-function PageHeader({
-  title,
-  subtitle,
-}) {
-  return (
-    <div className="page-header">
-      <span className="eyebrow">
-        FENIX MUSIC
-      </span>
-
-      <h1>{title}</h1>
-
-      {subtitle && (
-        <p>{subtitle}</p>
-      )}
-    </div>
-  );
-}
-
-function EmptyState({
-  icon,
-  text,
-}) {
-  return (
-    <div className="empty-state">
-      <div className="empty-icon">
-        {icon}
-      </div>
-
-      <strong>{text}</strong>
-    </div>
-  );
-}
-
-export default App;
