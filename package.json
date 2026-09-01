@@ -1,21 +1,10 @@
 {
   "name": "fenix-music",
+  "private": true,
   "version": "3.0.0",
-  "description": "Fenix Music — full-stack music platform",
-  "main": "src/index.js",
   "scripts": {
-    "install:all": "npm install && cd frontend && npm install",
-    "build": "cd frontend && npm install && npm run build",
-    "start": "node src/index.js",
-    "dev": "node src/index.js"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "dependencies": {
-    "bcryptjs": "^3.0.2",
-    "cookie-parser": "^1.4.7",
-    "express": "^5.1.0",
-    "pg": "^8.16.3"
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview"
   }
 }

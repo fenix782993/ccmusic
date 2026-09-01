@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: fenixmusic
+      POSTGRES_USER: fenix
+      POSTGRES_PASSWORD: fenix_local_password
+    ports: ["5432:5432"]
+    volumes: ["fenix_pg:/var/lib/postgresql/data"]
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://fenix:fenix_local_password@db:5432/fenixmusic
+      JWT_SECRET: local-development-secret
+      ADMIN_EMAIL: admin@fenixmusic.local
+      ADMIN_PASSWORD: admin123456
+      CORS_ORIGINS: http://localhost:5173
+      MEDIA_DIR: /app/backend/media
+    ports: ["8000:8000"]
+    depends_on: [db]
+    volumes: ["fenix_media:/app/backend/media"]
+volumes:
+  fenix_pg:
+  fenix_media:
