@@ -15,11 +15,9 @@ from fastapi import (
     Query,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
 from pydantic import BaseModel, EmailStr
-
 from sqlalchemy import (
     create_engine,
     Column,
@@ -32,14 +30,9 @@ from sqlalchemy import (
     UniqueConstraint,
     or_,
     func,
+    text,
 )
-from sqlalchemy.orm import (
-    declarative_base,
-    sessionmaker,
-    Session,
-    relationship,
-)
-
+from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
@@ -52,9 +45,7 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
 
 FRONTEND_DIR = PROJECT_DIR / "frontend"
-DIST_DIR = FRONTEND_DIR / "dist"
-INDEX_FILE = DIST_DIR / "index.html"
-ASSETS_DIR = DIST_DIR / "assets"
+FRONTEND_DIST = FRONTEND_DIR / "dist"
 
 MEDIA_DIR = Path(
     os.getenv(
@@ -79,7 +70,6 @@ DATABASE_URL = os.getenv(
     "sqlite:///./fenix_music.db",
 )
 
-# Render/PostgreSQL compatibility
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace(
         "postgres://",
@@ -88,15 +78,18 @@ if DATABASE_URL.startswith("postgres://"):
     )
 
 if DATABASE_URL.startswith("postgresql://"):
-    # psycopg2 is used by SQLAlchemy if available.
-    # Render requirements should contain psycopg2-binary.
-    pass
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgresql://",
+        "postgresql+psycopg2://",
+        1,
+    )
 
-connect_args = (
-    {"check_same_thread": False}
-    if DATABASE_URL.startswith("sqlite")
-    else {}
-)
+connect_args = {}
+
+if DATABASE_URL.startswith("sqlite"):
+    connect_args = {
+        "check_same_thread": False
+    }
 
 engine = create_engine(
     DATABASE_URL,
@@ -114,7 +107,7 @@ Base = declarative_base()
 
 
 # ============================================================
-# AUTH
+# SECURITY
 # ============================================================
 
 SECRET_KEY = os.getenv(
@@ -146,13 +139,14 @@ pwd = CryptContext(
     deprecated="auto",
 )
 
-bearer = HTTPBearer(auto_error=False)
+bearer = HTTPBearer(
+    auto_error=False,
+)
 
 
 # ============================================================
 # MODELS
 # ============================================================
-
 
 class User(Base):
     __tablename__ = "users"
@@ -423,7 +417,7 @@ class PlaylistTrack(Base):
 
 
 # ============================================================
-# DATABASE INIT
+# CREATE TABLES
 # ============================================================
 
 Base.metadata.create_all(engine)
@@ -434,24 +428,18 @@ Base.metadata.create_all(engine)
 # ============================================================
 
 app = FastAPI(
-    title="FENIX MUSIC API",
+    title="FENIX MUSIC",
     version="4.0.0",
     description="FENIX MUSIC full music platform",
 )
 
 
-# ============================================================
-# CORS
-# ============================================================
-
-cors_origins = os.getenv(
-    "CORS_ORIGINS",
-    "*",
-).split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
+    allow_origins=os.getenv(
+        "CORS_ORIGINS",
+        "*",
+    ).split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -459,11 +447,228 @@ app.add_middleware(
 
 
 # ============================================================
+# DATABASE MIGRATION
+# ============================================================
+
+def migrate_database():
+    """
+    Adds missing columns to existing PostgreSQL installations.
+
+    SQLAlchemy create_all() does not modify existing tables,
+    therefore old databases need these ALTER TABLE statements.
+    """
+
+    if not DATABASE_URL.startswith("postgresql"):
+        return
+
+    statements = [
+        """
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)
+        """,
+
+        """
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE
+        """,
+
+        """
+        ALTER TABLE tracks
+        ADD COLUMN IF NOT EXISTS genre VARCHAR(100) DEFAULT 'Pop'
+        """,
+
+        """
+        ALTER TABLE tracks
+        ADD COLUMN IF NOT EXISTS duration INTEGER DEFAULT 0
+        """,
+
+        """
+        ALTER TABLE tracks
+        ADD COLUMN IF NOT EXISTS cover_url VARCHAR(500)
+        """,
+
+        """
+        ALTER TABLE tracks
+        ADD COLUMN IF NOT EXISTS audio_path VARCHAR(500)
+        """,
+
+        """
+        ALTER TABLE tracks
+        ADD COLUMN IF NOT EXISTS plays INTEGER NOT NULL DEFAULT 0
+        """,
+
+        """
+        ALTER TABLE playlists
+        ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''
+        """,
+
+        """
+        ALTER TABLE playlists
+        ADD COLUMN IF NOT EXISTS cover_url VARCHAR(500)
+        """,
+
+        """
+        ALTER TABLE playlists
+        ADD COLUMN IF NOT EXISTS is_public BOOLEAN DEFAULT TRUE
+        """,
+
+        """
+        ALTER TABLE playlist_tracks
+        ADD COLUMN IF NOT EXISTS position INTEGER DEFAULT 0
+        """,
+    ]
+
+    with engine.begin() as connection:
+        for statement in statements:
+            try:
+                connection.execute(text(statement))
+            except Exception as exc:
+                print(
+                    "Migration warning:",
+                    exc,
+                )
+
+
+# ============================================================
+# STARTUP
+# ============================================================
+
+@app.on_event("startup")
+def startup():
+
+    print("======================================")
+    print("        FENIX MUSIC STARTING")
+    print("======================================")
+
+    migrate_database()
+
+    seed()
+
+    print("FENIX MUSIC is ready")
+
+
+# ============================================================
+# SEED
+# ============================================================
+
+def seed():
+
+    db = SessionLocal()
+
+    try:
+
+        admin = (
+            db.query(User)
+            .filter(
+                User.email == ADMIN_EMAIL
+            )
+            .first()
+        )
+
+        if not admin:
+
+            admin = User(
+                email=ADMIN_EMAIL,
+                username="FenixAdmin",
+                password_hash=pwd.hash(
+                    ADMIN_PASSWORD
+                ),
+                is_admin=True,
+            )
+
+            db.add(admin)
+
+        else:
+
+            if not admin.is_admin:
+                admin.is_admin = True
+
+        if db.query(Track).count() == 0:
+
+            demo = [
+
+                (
+                    "Blinding Lights",
+                    "The Weeknd",
+                    "After Hours",
+                    "Pop",
+                    200,
+                    "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=900&q=85",
+                ),
+
+                (
+                    "Save Your Tears",
+                    "The Weeknd",
+                    "After Hours",
+                    "Pop",
+                    215,
+                    "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=900&q=85",
+                ),
+
+                (
+                    "Starboy",
+                    "The Weeknd, Daft Punk",
+                    "Starboy",
+                    "Pop",
+                    230,
+                    "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=85",
+                ),
+
+                (
+                    "Die For You",
+                    "The Weeknd",
+                    "Starboy",
+                    "R&B",
+                    260,
+                    "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=900&q=85",
+                ),
+
+                (
+                    "I Feel It Coming",
+                    "The Weeknd, Daft Punk",
+                    "Starboy",
+                    "Pop",
+                    269,
+                    "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=900&q=85",
+                ),
+
+                (
+                    "After Hours",
+                    "The Weeknd",
+                    "After Hours",
+                    "R&B",
+                    361,
+                    "https://images.unsplash.com/photo-1521337581100-8ca9a73a5f79?auto=format&fit=crop&w=900&q=85",
+                ),
+
+            ]
+
+            for item in demo:
+
+                db.add(
+                    Track(
+                        title=item[0],
+                        artist=item[1],
+                        album=item[2],
+                        genre=item[3],
+                        duration=item[4],
+                        cover_url=item[5],
+                    )
+                )
+
+        db.commit()
+
+    finally:
+
+        db.close()
+
+
+# ============================================================
 # DATABASE DEPENDENCY
 # ============================================================
 
-
 def db_dep():
+
     db = SessionLocal()
 
     try:
@@ -474,62 +679,22 @@ def db_dep():
 
 
 # ============================================================
-# SERIALIZERS
+# AUTH
 # ============================================================
 
+def make_token(user):
 
-def track_json(track: Track):
-    return {
-        "id": track.id,
-        "title": track.title,
-        "artist": track.artist,
-        "album": track.album,
-        "genre": track.genre,
-        "duration": track.duration,
-        "duration_label": (
-            f"{track.duration // 60}:"
-            f"{track.duration % 60:02d}"
-        ),
-        "cover_url": track.cover_url,
-        "audio_url": (
-            f"/api/tracks/{track.id}/stream"
-            if track.audio_path
-            else None
-        ),
-        "plays": track.plays,
-    }
-
-
-def user_json(user: User):
-    return {
-        "id": user.id,
-        "email": user.email,
-        "username": user.username,
-        "avatar_url": user.avatar_url,
-        "is_admin": user.is_admin,
-        "created_at": user.created_at,
-    }
-
-
-# ============================================================
-# JWT
-# ============================================================
-
-
-def make_token(user: User):
     now = datetime.now(timezone.utc)
 
-    payload = {
-        "sub": str(user.id),
-        "iat": now,
-        "exp": now
-        + timedelta(
-            minutes=ACCESS_MINUTES
-        ),
-    }
-
     return jwt.encode(
-        payload,
+        {
+            "sub": str(user.id),
+            "iat": now,
+            "exp": now
+            + timedelta(
+                minutes=ACCESS_MINUTES
+            ),
+        },
         SECRET_KEY,
         algorithm=ALGORITHM,
     )
@@ -541,6 +706,7 @@ def current_user(
     ),
     db: Session = Depends(db_dep),
 ):
+
     if not creds:
         raise HTTPException(
             status_code=401,
@@ -548,19 +714,23 @@ def current_user(
         )
 
     try:
+
         payload = jwt.decode(
             creds.credentials,
             SECRET_KEY,
             algorithms=[ALGORITHM],
         )
 
-        uid = int(payload["sub"])
+        uid = int(
+            payload["sub"]
+        )
 
     except (
         JWTError,
         ValueError,
         KeyError,
     ):
+
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired token",
@@ -572,6 +742,7 @@ def current_user(
     )
 
     if not user:
+
         raise HTTPException(
             status_code=401,
             detail="User not found",
@@ -583,7 +754,9 @@ def current_user(
 def admin_user(
     user=Depends(current_user),
 ):
+
     if not user.is_admin:
+
         raise HTTPException(
             status_code=403,
             detail="Admin access required",
@@ -593,9 +766,50 @@ def admin_user(
 
 
 # ============================================================
-# SCHEMAS
+# JSON SERIALIZERS
 # ============================================================
 
+def track_json(t):
+
+    if not t:
+        return None
+
+    return {
+        "id": t.id,
+        "title": t.title,
+        "artist": t.artist,
+        "album": t.album,
+        "genre": t.genre,
+        "duration": t.duration or 0,
+        "duration_label": (
+            f"{(t.duration or 0) // 60}:"
+            f"{(t.duration or 0) % 60:02d}"
+        ),
+        "cover_url": t.cover_url,
+        "audio_url": (
+            f"/api/tracks/{t.id}/stream"
+            if t.audio_path
+            else None
+        ),
+        "plays": t.plays or 0,
+    }
+
+
+def user_json(u):
+
+    return {
+        "id": u.id,
+        "email": u.email,
+        "username": u.username,
+        "avatar_url": u.avatar_url,
+        "is_admin": bool(u.is_admin),
+        "created_at": u.created_at,
+    }
+
+
+# ============================================================
+# PYDANTIC
+# ============================================================
 
 class Register(BaseModel):
     email: EmailStr
@@ -628,24 +842,21 @@ class ProfileBody(BaseModel):
 
 
 # ============================================================
-# HEALTH / API INFO
+# API ROOT
 # ============================================================
-
 
 @app.get("/api/health")
 def health():
-    database_name = (
-        "postgres"
-        if DATABASE_URL.startswith("postgresql")
-        else "sqlite"
-    )
 
     return {
         "status": "ok",
-        "service": "FENIX MUSIC",
+        "name": "FENIX MUSIC",
         "version": "4.0.0",
-        "database": database_name,
-        "frontend": INDEX_FILE.exists(),
+        "database": (
+            "postgresql"
+            if DATABASE_URL.startswith("postgresql")
+            else "sqlite"
+        ),
         "time": datetime.now(
             timezone.utc
         ).isoformat(),
@@ -653,144 +864,38 @@ def health():
 
 
 @app.get("/api")
-def api_info():
+def api_root():
+
     return {
         "name": "FENIX MUSIC API",
         "version": "4.0.0",
         "status": "online",
-        "frontend": INDEX_FILE.exists(),
     }
 
 
 # ============================================================
-# STARTUP / SEED
+# AUTH API
 # ============================================================
-
-
-@app.on_event("startup")
-def seed():
-    db = SessionLocal()
-
-    try:
-        # ----------------------------------------------------
-        # Admin
-        # ----------------------------------------------------
-
-        admin = (
-            db.query(User)
-            .filter_by(email=ADMIN_EMAIL)
-            .first()
-        )
-
-        if not admin:
-            admin = User(
-                email=ADMIN_EMAIL,
-                username="FenixAdmin",
-                password_hash=pwd.hash(
-                    ADMIN_PASSWORD
-                ),
-                is_admin=True,
-            )
-
-            db.add(admin)
-
-        # ----------------------------------------------------
-        # Demo tracks
-        # ----------------------------------------------------
-
-        if db.query(Track).count() == 0:
-            demo = [
-                (
-                    "Blinding Lights",
-                    "The Weeknd",
-                    "After Hours",
-                    "Pop",
-                    200,
-                    "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=900&q=85",
-                ),
-                (
-                    "Save Your Tears",
-                    "The Weeknd",
-                    "After Hours",
-                    "Pop",
-                    215,
-                    "https://images.unsplash.com/photo-1524368535928-5b5e00ddc76b?auto=format&fit=crop&w=900&q=85",
-                ),
-                (
-                    "Starboy",
-                    "The Weeknd, Daft Punk",
-                    "Starboy",
-                    "Pop",
-                    230,
-                    "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=900&q=85",
-                ),
-                (
-                    "Die For You",
-                    "The Weeknd",
-                    "Starboy",
-                    "R&B",
-                    260,
-                    "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=900&q=85",
-                ),
-                (
-                    "I Feel It Coming",
-                    "The Weeknd, Daft Punk",
-                    "Starboy",
-                    "Pop",
-                    269,
-                    "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=900&q=85",
-                ),
-                (
-                    "After Hours",
-                    "The Weeknd",
-                    "After Hours",
-                    "R&B",
-                    361,
-                    "https://images.unsplash.com/photo-1521337581100-8ca9a73a5f79?auto=format&fit=crop&w=900&q=85",
-                ),
-            ]
-
-            for item in demo:
-                db.add(
-                    Track(
-                        title=item[0],
-                        artist=item[1],
-                        album=item[2],
-                        genre=item[3],
-                        duration=item[4],
-                        cover_url=item[5],
-                    )
-                )
-
-        db.commit()
-
-    finally:
-        db.close()
-
-
-# ============================================================
-# AUTH
-# ============================================================
-
 
 @app.post("/api/auth/register")
 def register(
     body: Register,
     db: Session = Depends(db_dep),
 ):
+
     email = body.email.lower().strip()
     username = body.username.strip()
 
     if len(username) < 3:
         raise HTTPException(
-            status_code=400,
-            detail="Username must be at least 3 characters",
+            400,
+            "Username must be at least 3 characters",
         )
 
     if len(body.password) < 6:
         raise HTTPException(
-            status_code=400,
-            detail="Password must be at least 6 characters",
+            400,
+            "Password must be at least 6 characters",
         )
 
     exists = (
@@ -805,9 +910,10 @@ def register(
     )
 
     if exists:
+
         raise HTTPException(
-            status_code=409,
-            detail="Email or username already exists",
+            409,
+            "Email or username already exists",
         )
 
     user = User(
@@ -816,6 +922,7 @@ def register(
         password_hash=pwd.hash(
             body.password
         ),
+        is_admin=False,
     )
 
     db.add(user)
@@ -833,27 +940,26 @@ def login(
     body: Login,
     db: Session = Depends(db_dep),
 ):
+
     user = (
         db.query(User)
-        .filter_by(
-            email=body.email.lower().strip()
+        .filter(
+            User.email == body.email.lower()
         )
         .first()
     )
 
-    if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password",
+    if (
+        not user
+        or not pwd.verify(
+            body.password,
+            user.password_hash,
         )
-
-    if not pwd.verify(
-        body.password,
-        user.password_hash,
     ):
+
         raise HTTPException(
-            status_code=401,
-            detail="Invalid email or password",
+            401,
+            "Invalid email or password",
         )
 
     return {
@@ -866,6 +972,7 @@ def login(
 def me(
     user=Depends(current_user),
 ):
+
     return user_json(user)
 
 
@@ -875,7 +982,9 @@ def update_me(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     if body.username:
+
         username = body.username.strip()
 
         exists = (
@@ -888,14 +997,16 @@ def update_me(
         )
 
         if exists:
+
             raise HTTPException(
-                status_code=409,
-                detail="Username already exists",
+                409,
+                "Username already exists",
             )
 
         user.username = username
 
     if body.avatar_url is not None:
+
         user.avatar_url = body.avatar_url
 
     db.commit()
@@ -908,7 +1019,6 @@ def update_me(
 # TRACKS
 # ============================================================
 
-
 @app.get("/api/tracks")
 def tracks(
     q: Optional[str] = None,
@@ -917,19 +1027,11 @@ def tracks(
     offset: int = 0,
     db: Session = Depends(db_dep),
 ):
-    limit = min(
-        max(limit, 1),
-        100,
-    )
-
-    offset = max(
-        offset,
-        0,
-    )
 
     query = db.query(Track)
 
     if q:
+
         pattern = f"%{q}%"
 
         query = query.filter(
@@ -941,6 +1043,7 @@ def tracks(
         )
 
     if genre:
+
         query = query.filter(
             Track.genre.ilike(genre)
         )
@@ -951,13 +1054,15 @@ def tracks(
             Track.created_at.desc()
         )
         .offset(offset)
-        .limit(limit)
+        .limit(
+            min(limit, 100)
+        )
         .all()
     )
 
     return [
-        track_json(track)
-        for track in results
+        track_json(t)
+        for t in results
     ]
 
 
@@ -966,18 +1071,20 @@ def track(
     track_id: int,
     db: Session = Depends(db_dep),
 ):
-    item = db.get(
+
+    t = db.get(
         Track,
         track_id,
     )
 
-    if not item:
+    if not t:
+
         raise HTTPException(
-            status_code=404,
-            detail="Track not found",
+            404,
+            "Track not found",
         )
 
-    return track_json(item)
+    return track_json(t)
 
 
 @app.get("/api/tracks/{track_id}/stream")
@@ -985,39 +1092,32 @@ def stream(
     track_id: int,
     db: Session = Depends(db_dep),
 ):
-    item = db.get(
+
+    t = db.get(
         Track,
         track_id,
     )
 
-    if not item or not item.audio_path:
+    if not t or not t.audio_path:
+
         raise HTTPException(
-            status_code=404,
-            detail="Audio file not found",
+            404,
+            "Audio file not found",
         )
 
     path = Path(
-        item.audio_path
-    ).resolve()
-
-    # Security check
-    try:
-        path.relative_to(
-            AUDIO_DIR.resolve()
-        )
-    except ValueError:
-        raise HTTPException(
-            status_code=403,
-            detail="Invalid audio path",
-        )
+        t.audio_path
+    )
 
     if not path.exists():
+
         raise HTTPException(
-            status_code=404,
-            detail="Audio file missing",
+            404,
+            "Audio file missing",
         )
 
-    item.plays += 1
+    t.plays = (t.plays or 0) + 1
+
     db.commit()
 
     return FileResponse(
@@ -1031,7 +1131,6 @@ def stream(
 # SEARCH
 # ============================================================
 
-
 @app.get("/api/search")
 def search(
     q: str = Query(
@@ -1039,9 +1138,10 @@ def search(
     ),
     db: Session = Depends(db_dep),
 ):
+
     pattern = f"%{q}%"
 
-    tracks_result = (
+    tracks_found = (
         db.query(Track)
         .filter(
             or_(
@@ -1054,27 +1154,27 @@ def search(
         .all()
     )
 
-    artists = sorted(
+    artists_found = sorted(
         {
-            item.artist
-            for item in tracks_result
+            t.artist
+            for t in tracks_found
         }
     )
 
-    albums = sorted(
+    albums_found = sorted(
         {
-            item.album
-            for item in tracks_result
+            t.album
+            for t in tracks_found
         }
     )
 
     return {
         "tracks": [
-            track_json(item)
-            for item in tracks_result
+            track_json(t)
+            for t in tracks_found
         ],
-        "artists": artists,
-        "albums": albums,
+        "artists": artists_found,
+        "albums": albums_found,
         "playlists": [],
     }
 
@@ -1083,30 +1183,27 @@ def search(
 # RECOMMENDATIONS
 # ============================================================
 
-
 @app.get("/api/recommendations")
 def recommendations(
     limit: int = 20,
     db: Session = Depends(db_dep),
 ):
-    limit = min(
-        max(limit, 1),
-        50,
-    )
 
-    result = (
+    results = (
         db.query(Track)
         .order_by(
             Track.plays.desc(),
             Track.created_at.desc(),
         )
-        .limit(limit)
+        .limit(
+            min(limit, 50)
+        )
         .all()
     )
 
     return [
-        track_json(item)
-        for item in result
+        track_json(t)
+        for t in results
     ]
 
 
@@ -1114,15 +1211,15 @@ def recommendations(
 # LIKES
 # ============================================================
 
-
 @app.get("/api/library/likes")
 def likes(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     ids = [
-        item.track_id
-        for item in (
+        x.track_id
+        for x in (
             db.query(Like)
             .filter_by(
                 user_id=user.id
@@ -1131,22 +1228,21 @@ def likes(
         )
     ]
 
-    if ids:
-        tracks_result = (
-            db.query(Track)
-            .filter(
-                Track.id.in_(ids)
-            )
-            .all()
+    tracks_found = (
+        db.query(Track)
+        .filter(
+            Track.id.in_(ids)
         )
-    else:
-        tracks_result = []
+        .all()
+        if ids
+        else []
+    )
 
     return {
         "track_ids": ids,
         "tracks": [
-            track_json(item)
-            for item in tracks_result
+            track_json(t)
+            for t in tracks_found
         ],
     }
 
@@ -1158,18 +1254,18 @@ def set_like(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
-    track_item = db.get(
+
+    if not db.get(
         Track,
         track_id,
-    )
+    ):
 
-    if not track_item:
         raise HTTPException(
-            status_code=404,
-            detail="Track not found",
+            404,
+            "Track not found",
         )
 
-    like = (
+    existing = (
         db.query(Like)
         .filter_by(
             user_id=user.id,
@@ -1178,7 +1274,8 @@ def set_like(
         .first()
     )
 
-    if body.liked and not like:
+    if body.liked and not existing:
+
         db.add(
             Like(
                 user_id=user.id,
@@ -1186,8 +1283,9 @@ def set_like(
             )
         )
 
-    elif not body.liked and like:
-        db.delete(like)
+    elif not body.liked and existing:
+
+        db.delete(existing)
 
     db.commit()
 
@@ -1201,22 +1299,21 @@ def set_like(
 # HISTORY
 # ============================================================
 
-
 @app.post("/api/history/{track_id}")
 def add_history(
     track_id: int,
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
-    track_item = db.get(
+
+    if not db.get(
         Track,
         track_id,
-    )
+    ):
 
-    if not track_item:
         raise HTTPException(
-            status_code=404,
-            detail="Track not found",
+            404,
+            "Track not found",
         )
 
     db.add(
@@ -1238,6 +1335,7 @@ def history(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     rows = (
         db.query(History)
         .filter_by(
@@ -1253,22 +1351,20 @@ def history(
     result = []
 
     for row in rows:
-        track_item = db.get(
+
+        t = db.get(
             Track,
             row.track_id,
         )
 
-        if not track_item:
-            continue
+        if t:
 
-        result.append(
-            {
-                "played_at": row.played_at,
-                "track": track_json(
-                    track_item
-                ),
-            }
-        )
+            result.append(
+                {
+                    "played_at": row.played_at,
+                    "track": track_json(t),
+                }
+            )
 
     return result
 
@@ -1277,13 +1373,13 @@ def history(
 # PLAYLISTS
 # ============================================================
 
-
 @app.get("/api/playlists")
 def playlists(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
-    playlist_items = (
+
+    playlist_list = (
         db.query(Playlist)
         .filter_by(
             user_id=user.id
@@ -1296,8 +1392,9 @@ def playlists(
 
     result = []
 
-    for playlist in playlist_items:
-        rows = (
+    for playlist in playlist_list:
+
+        playlist_tracks = (
             db.query(PlaylistTrack)
             .filter_by(
                 playlist_id=playlist.id
@@ -1308,21 +1405,6 @@ def playlists(
             .all()
         )
 
-        tracks_result = []
-
-        for row in rows:
-            track_item = db.get(
-                Track,
-                row.track_id,
-            )
-
-            if track_item:
-                tracks_result.append(
-                    track_json(
-                        track_item
-                    )
-                )
-
         result.append(
             {
                 "id": playlist.id,
@@ -1330,7 +1412,19 @@ def playlists(
                 "description": playlist.description,
                 "cover_url": playlist.cover_url,
                 "is_public": playlist.is_public,
-                "tracks": tracks_result,
+                "tracks": [
+                    track_json(
+                        db.get(
+                            Track,
+                            item.track_id,
+                        )
+                    )
+                    for item in playlist_tracks
+                    if db.get(
+                        Track,
+                        item.track_id,
+                    )
+                ],
             }
         )
 
@@ -1343,12 +1437,14 @@ def create_playlist(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     name = body.name.strip()
 
     if not name:
+
         raise HTTPException(
-            status_code=400,
-            detail="Playlist name is required",
+            400,
+            "Playlist name is required",
         )
 
     playlist = Playlist(
@@ -1375,6 +1471,7 @@ def update_playlist(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     playlist = (
         db.query(Playlist)
         .filter_by(
@@ -1385,20 +1482,13 @@ def update_playlist(
     )
 
     if not playlist:
+
         raise HTTPException(
-            status_code=404,
-            detail="Playlist not found",
+            404,
+            "Playlist not found",
         )
 
-    name = body.name.strip()
-
-    if not name:
-        raise HTTPException(
-            status_code=400,
-            detail="Playlist name is required",
-        )
-
-    playlist.name = name
+    playlist.name = body.name.strip()
     playlist.description = body.description
     playlist.is_public = body.is_public
 
@@ -1415,6 +1505,7 @@ def delete_playlist(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     playlist = (
         db.query(Playlist)
         .filter_by(
@@ -1425,10 +1516,17 @@ def delete_playlist(
     )
 
     if not playlist:
+
         raise HTTPException(
-            status_code=404,
-            detail="Playlist not found",
+            404,
+            "Playlist not found",
         )
+
+    db.query(PlaylistTrack).filter_by(
+        playlist_id=pid
+    ).delete(
+        synchronize_session=False
+    )
 
     db.delete(playlist)
     db.commit()
@@ -1445,6 +1543,7 @@ def playlist_add(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     playlist = (
         db.query(Playlist)
         .filter_by(
@@ -1454,27 +1553,29 @@ def playlist_add(
         .first()
     )
 
-    track_item = db.get(
+    track_obj = db.get(
         Track,
         body.track_id,
     )
 
-    if not playlist or not track_item:
+    if not playlist or not track_obj:
+
         raise HTTPException(
-            status_code=404,
-            detail="Playlist or track not found",
+            404,
+            "Playlist or track not found",
         )
 
-    existing = (
+    exists = (
         db.query(PlaylistTrack)
         .filter_by(
             playlist_id=pid,
-            track_id=track_item.id,
+            track_id=track_obj.id,
         )
         .first()
     )
 
-    if not existing:
+    if not exists:
+
         position = (
             db.query(
                 func.count(
@@ -1491,7 +1592,7 @@ def playlist_add(
         db.add(
             PlaylistTrack(
                 playlist_id=pid,
-                track_id=track_item.id,
+                track_id=track_obj.id,
                 position=position,
             )
         )
@@ -1512,6 +1613,7 @@ def playlist_remove(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     playlist = (
         db.query(Playlist)
         .filter_by(
@@ -1520,12 +1622,6 @@ def playlist_remove(
         )
         .first()
     )
-
-    if not playlist:
-        raise HTTPException(
-            status_code=404,
-            detail="Playlist not found",
-        )
 
     item = (
         db.query(PlaylistTrack)
@@ -1536,10 +1632,11 @@ def playlist_remove(
         .first()
     )
 
-    if not item:
+    if not playlist or not item:
+
         raise HTTPException(
-            status_code=404,
-            detail="Track not found in playlist",
+            404,
+            "Not found",
         )
 
     db.delete(item)
@@ -1554,11 +1651,11 @@ def playlist_remove(
 # ARTISTS / ALBUMS
 # ============================================================
 
-
 @app.get("/api/artists")
 def artists(
     db: Session = Depends(db_dep),
 ):
+
     rows = (
         db.query(
             Track.artist,
@@ -1583,14 +1680,10 @@ def artists(
     return [
         {
             "name": artist,
-            "plays": int(
-                plays or 0
-            ),
-            "tracks": int(
-                tracks_count
-            ),
+            "plays": int(plays or 0),
+            "tracks": int(track_count),
         }
-        for artist, plays, tracks_count in rows
+        for artist, plays, track_count in rows
     ]
 
 
@@ -1598,6 +1691,7 @@ def artists(
 def albums(
     db: Session = Depends(db_dep),
 ):
+
     rows = (
         db.query(
             Track.album,
@@ -1617,11 +1711,9 @@ def albums(
         {
             "album": album,
             "artist": artist,
-            "tracks": int(
-                tracks_count
-            ),
+            "tracks": int(track_count),
         }
-        for album, artist, tracks_count in rows
+        for album, artist, track_count in rows
     ]
 
 
@@ -1629,12 +1721,12 @@ def albums(
 # PROFILE STATS
 # ============================================================
 
-
 @app.get("/api/profile/stats")
 def stats(
     user=Depends(current_user),
     db: Session = Depends(db_dep),
 ):
+
     liked = (
         db.query(Like)
         .filter_by(
@@ -1659,33 +1751,30 @@ def stats(
         .count()
     )
 
-    minutes = int(
-        (
-            db.query(
-                func.coalesce(
-                    func.sum(
-                        Track.duration
-                    ),
-                    0,
-                )
+    total_seconds = (
+        db.query(
+            func.coalesce(
+                func.sum(
+                    Track.duration
+                ),
+                0,
             )
-            .join(
-                History,
-                History.track_id
-                == Track.id,
-            )
-            .filter(
-                History.user_id
-                == user.id
-            )
-            .scalar()
-            or 0
         )
-        / 60
+        .join(
+            History,
+            History.track_id == Track.id,
+        )
+        .filter(
+            History.user_id == user.id
+        )
+        .scalar()
+        or 0
     )
 
     return {
-        "minutes_listened": minutes,
+        "minutes_listened": int(
+            total_seconds / 60
+        ),
         "tracks_played": history_count,
         "liked_tracks": liked,
         "playlists": playlist_count,
@@ -1693,47 +1782,8 @@ def stats(
 
 
 # ============================================================
-# MEDIA
-# ============================================================
-
-
-@app.get(
-    "/api/media/covers/{filename}"
-)
-def media_cover(
-    filename: str,
-):
-    safe_name = Path(
-        filename
-    ).name
-
-    path = (
-        COVER_DIR / safe_name
-    ).resolve()
-
-    try:
-        path.relative_to(
-            COVER_DIR.resolve()
-        )
-    except ValueError:
-        raise HTTPException(
-            status_code=403,
-            detail="Invalid cover path",
-        )
-
-    if not path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="Cover not found",
-        )
-
-    return FileResponse(path)
-
-
-# ============================================================
 # ADMIN
 # ============================================================
-
 
 @app.post("/api/admin/tracks")
 async def admin_upload_track(
@@ -1747,15 +1797,11 @@ async def admin_upload_track(
     user=Depends(admin_user),
     db: Session = Depends(db_dep),
 ):
-    original_name = (
-        audio.filename
-        or "audio.mp3"
-    )
 
     safe_name = re.sub(
         r"[^a-zA-Z0-9._-]",
         "_",
-        original_name,
+        audio.filename or "audio.mp3",
     )
 
     filename = (
@@ -1769,8 +1815,10 @@ async def admin_upload_track(
 
     with audio_path.open(
         "wb"
-    ) as file:
+    ) as output:
+
         while True:
+
             chunk = await audio.read(
                 1024 * 1024
             )
@@ -1778,25 +1826,21 @@ async def admin_upload_track(
             if not chunk:
                 break
 
-            file.write(chunk)
+            output.write(chunk)
 
     cover_url = None
 
     if cover:
-        original_cover_name = (
-            cover.filename
-            or "cover.jpg"
-        )
 
-        safe_cover_name = re.sub(
+        safe_cover = re.sub(
             r"[^a-zA-Z0-9._-]",
             "_",
-            original_cover_name,
+            cover.filename or "cover.jpg",
         )
 
         cover_filename = (
             f"{uuid.uuid4().hex}_"
-            f"{safe_cover_name}"
+            f"{safe_cover}"
         )
 
         cover_path = (
@@ -1806,8 +1850,10 @@ async def admin_upload_track(
 
         with cover_path.open(
             "wb"
-        ) as file:
+        ) as output:
+
             while True:
+
                 chunk = await cover.read(
                     1024 * 1024
                 )
@@ -1815,20 +1861,20 @@ async def admin_upload_track(
                 if not chunk:
                     break
 
-                file.write(chunk)
+                output.write(chunk)
 
         cover_url = (
             f"/api/media/covers/"
             f"{cover_filename}"
         )
 
-    track_item = Track(
+    track_obj = Track(
         title=title.strip(),
         artist=artist.strip(),
         album=album.strip(),
         genre=genre.strip(),
         duration=max(
-            int(duration),
+            duration,
             0,
         ),
         audio_path=str(
@@ -1837,11 +1883,13 @@ async def admin_upload_track(
         cover_url=cover_url,
     )
 
-    db.add(track_item)
+    db.add(track_obj)
     db.commit()
-    db.refresh(track_item)
+    db.refresh(track_obj)
 
-    return track_json(track_item)
+    return track_json(
+        track_obj
+    )
 
 
 @app.get("/api/admin/users")
@@ -1849,6 +1897,7 @@ def admin_users(
     user=Depends(admin_user),
     db: Session = Depends(db_dep),
 ):
+
     users = (
         db.query(User)
         .order_by(
@@ -1859,8 +1908,8 @@ def admin_users(
     )
 
     return [
-        user_json(item)
-        for item in users
+        user_json(u)
+        for u in users
     ]
 
 
@@ -1869,10 +1918,9 @@ def admin_stats(
     user=Depends(admin_user),
     db: Session = Depends(db_dep),
 ):
+
     return {
-        "users": db.query(
-            User
-        ).count(),
+        "users": db.query(User).count(),
 
         "tracks": db.query(
             Track
@@ -1908,25 +1956,46 @@ def admin_delete_track(
     user=Depends(admin_user),
     db: Session = Depends(db_dep),
 ):
-    track_item = db.get(
+
+    track_obj = db.get(
         Track,
         track_id,
     )
 
-    if not track_item:
+    if not track_obj:
+
         raise HTTPException(
-            status_code=404,
-            detail="Track not found",
+            404,
+            "Track not found",
         )
 
-    if track_item.audio_path:
+    if track_obj.audio_path:
+
         Path(
-            track_item.audio_path
+            track_obj.audio_path
         ).unlink(
             missing_ok=True
         )
 
-    db.delete(track_item)
+    db.query(Like).filter_by(
+        track_id=track_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    db.query(History).filter_by(
+        track_id=track_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    db.query(PlaylistTrack).filter_by(
+        track_id=track_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    db.delete(track_obj)
     db.commit()
 
     return {
@@ -1935,141 +2004,119 @@ def admin_delete_track(
 
 
 # ============================================================
+# MEDIA
+# ============================================================
+
+@app.get(
+    "/api/media/covers/{filename}"
+)
+def media_cover(
+    filename: str,
+):
+
+    safe_filename = Path(
+        filename
+    ).name
+
+    path = (
+        COVER_DIR
+        / safe_filename
+    )
+
+    if not path.exists():
+
+        raise HTTPException(
+            404,
+            "Cover not found",
+        )
+
+    return FileResponse(
+        path
+    )
+
+
+# ============================================================
 # FRONTEND
 # ============================================================
 
-# IMPORTANT:
-#
-# React/Vite is built during Render build:
-#
-# cd frontend
-# npm install
-# npm run build
-#
-# Result:
-#
-# frontend/dist/
-# ├── index.html
-# └── assets/
-#
-# FastAPI serves this folder from the SAME DOMAIN.
-# ============================================================
-
-
-if ASSETS_DIR.exists():
-    from fastapi.staticfiles import StaticFiles
-
-    app.mount(
-        "/assets",
-        StaticFiles(
-            directory=str(
-                ASSETS_DIR
-            )
-        ),
-        name="frontend-assets",
-    )
-
-
 @app.get("/")
 def frontend_root():
-    if INDEX_FILE.exists():
-        return FileResponse(
-            INDEX_FILE
-        )
 
-    return JSONResponse(
-        {
-            "name": "FENIX MUSIC",
-            "status": "online",
-            "message": (
-                "Frontend build not found. "
-                "Run: cd frontend && npm run build"
-            ),
-        }
+    index_file = (
+        FRONTEND_DIST
+        / "index.html"
     )
 
+    if index_file.exists():
 
-# ============================================================
-# REACT ROUTER FALLBACK
-# ============================================================
+        return FileResponse(
+            index_file
+        )
 
-# Any normal browser route that isn't /api/*
-# gets React's index.html.
-#
-# Examples:
-#
-# /profile
-# /settings
-# /search
-# /playlists
-# /artists
-# /albums
-#
-# This makes React Router work correctly on Render.
-# ============================================================
+    return {
+        "name": "FENIX MUSIC",
+        "version": "4.0.0",
+        "status": "online",
+        "message": "Frontend build not found",
+    }
 
 
-@app.get(
-    "/{full_path:path}",
-    include_in_schema=False,
-)
-def frontend_fallback(
+@app.get("/{full_path:path}")
+def frontend_spa(
     full_path: str,
 ):
-    # Never hijack API paths.
+
+    # Never intercept API routes
     if (
         full_path == "api"
         or full_path.startswith("api/")
     ):
+
         raise HTTPException(
-            status_code=404,
-            detail="API endpoint not found",
+            404,
+            "API endpoint not found",
         )
 
-    # Do not hijack documentation.
-    if (
-        full_path == "docs"
-        or full_path.startswith("docs/")
-        or full_path == "redoc"
-        or full_path.startswith("redoc/")
-        or full_path == "openapi.json"
-    ):
-        raise HTTPException(
-            status_code=404,
-            detail="Not found",
-        )
+    requested = (
+        FRONTEND_DIST
+        / full_path
+    )
 
-    # If a real frontend file exists,
-    # serve it.
-    requested_file = (
-        DIST_DIR / full_path
-    ).resolve()
-
+    # Security: prevent path traversal
     try:
-        requested_file.relative_to(
-            DIST_DIR.resolve()
+
+        requested.resolve().relative_to(
+            FRONTEND_DIST.resolve()
         )
+
     except ValueError:
+
         raise HTTPException(
-            status_code=404,
-            detail="Not found",
+            404,
+            "Not found",
         )
 
     if (
-        requested_file.is_file()
-        and requested_file.exists()
+        requested.is_file()
+        and requested.exists()
     ):
+
         return FileResponse(
-            requested_file
+            requested
         )
 
-    # Otherwise React handles the route.
-    if INDEX_FILE.exists():
+    index_file = (
+        FRONTEND_DIST
+        / "index.html"
+    )
+
+    if index_file.exists():
+
         return FileResponse(
-            INDEX_FILE
+            index_file
         )
 
     raise HTTPException(
-        status_code=404,
-        detail="Frontend not found",
+        404,
+        "Frontend not found",
     )
