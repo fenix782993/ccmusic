@@ -1,44 +1,865 @@
 "use strict";
 
 const express = require("express");
-const path = require("path");
+const cors = require("cors");
 const fs = require("fs");
+const path = require("path");
 const crypto = require("crypto");
-const bcrypt = require("bcryptjs");
-const cookieParser = require("cookie-parser");
-const { Pool } = require("pg");
-
-const {
-  registerMusicRoutes,
-  getTracks,
-  getMusicDir,
-  resolveAudio,
-} = require("./music");
 
 const app = express();
 
 const PORT = Number(process.env.PORT || 10000);
-const NODE_ENV = process.env.NODE_ENV || "production";
 
-const DATABASE_URL = process.env.DATABASE_URL;
+const ROOT_DIR = path.join(__dirname, "..");
 
-if (!DATABASE_URL) {
-  console.error("❌ DATABASE_URL is not configured");
-  process.exit(1);
+const FRONTEND_DIR = path.join(ROOT_DIR, "frontend");
+const FRONTEND_DIST = path.join(FRONTEND_DIR, "dist");
+
+const MUSIC_DIR =
+  process.env.MUSIC_DIR ||
+  path.join(ROOT_DIR, "music");
+
+const DATA_DIR =
+  process.env.DATA_DIR ||
+  path.join(ROOT_DIR, "data");
+
+const MUSIC_DB_FILE =
+  process.env.MUSIC_DB_FILE ||
+  path.join(DATA_DIR, "music.json");
+
+const MAX_AUDIO_SIZE =
+  Number(process.env.MAX_AUDIO_SIZE || 250 * 1024 * 1024);
+
+const AUDIO_EXTENSIONS = new Set([
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".m4a",
+  ".aac",
+  ".flac",
+  ".webm",
+]);
+
+const MIME_TYPES = {
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".flac": "audio/flac",
+  ".webm": "audio/webm",
+};
+
+const captchaStore = new Map();
+
+let musicDatabase = {
+  tracks: [],
+};
+
+function log(...args) {
+  console.log(
+    new Date().toISOString(),
+    ...args
+  );
 }
 
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl:
-    NODE_ENV === "production"
-      ? { rejectUnauthorized: false }
-      : false,
-  max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
-});
+function ensureDirectory(directory) {
+  if (!fs.existsSync(directory)) {
+    fs.mkdirSync(directory, {
+      recursive: true,
+    });
+  }
+}
 
-app.disable("x-powered-by");
+function ensureStorage() {
+  ensureDirectory(MUSIC_DIR);
+  ensureDirectory(DATA_DIR);
+
+  if (!fs.existsSync(MUSIC_DB_FILE)) {
+    fs.writeFileSync(
+      MUSIC_DB_FILE,
+      JSON.stringify(
+        {
+          tracks: [],
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+  }
+
+  loadMusicDatabase();
+}
+
+function loadMusicDatabase() {
+  try {
+    if (!fs.existsSync(MUSIC_DB_FILE)) {
+      musicDatabase = {
+        tracks: [],
+      };
+
+      return;
+    }
+
+    const raw = fs.readFileSync(
+      MUSIC_DB_FILE,
+      "utf8"
+    );
+
+    const parsed = JSON.parse(raw);
+
+    if (
+      parsed &&
+      Array.isArray(parsed.tracks)
+    ) {
+      musicDatabase = parsed;
+    } else {
+      musicDatabase = {
+        tracks: [],
+      };
+    }
+  } catch (error) {
+    console.error(
+      "Music database load error:",
+      error
+    );
+
+    musicDatabase = {
+      tracks: [],
+    };
+  }
+}
+
+function saveMusicDatabase() {
+  try {
+    ensureDirectory(DATA_DIR);
+
+    const tempFile =
+      MUSIC_DB_FILE + ".tmp";
+
+    fs.writeFileSync(
+      tempFile,
+      JSON.stringify(
+        musicDatabase,
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    fs.renameSync(
+      tempFile,
+      MUSIC_DB_FILE
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      "Music database save error:",
+      error
+    );
+
+    return false;
+  }
+}
+
+function safeName(name) {
+  return String(name || "audio")
+    .replace(
+      /[<>:"/\\|?*\x00-\x1F]/g,
+      "_"
+    )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+function isAudioFile(fileName) {
+  const ext =
+    path.extname(fileName)
+      .toLowerCase();
+
+  return AUDIO_EXTENSIONS.has(ext);
+}
+
+function getMimeType(fileName) {
+  const ext =
+    path.extname(fileName)
+      .toLowerCase();
+
+  return (
+    MIME_TYPES[ext] ||
+    "application/octet-stream"
+  );
+}
+
+function generateId() {
+  return crypto.randomUUID();
+}
+
+function generateCaptchaCode() {
+  return String(
+    Math.floor(
+      1000 +
+        Math.random() * 9000
+    )
+  );
+}
+
+function createCaptcha() {
+  const captchaId =
+    generateId();
+
+  const code =
+    generateCaptchaCode();
+
+  captchaStore.set(
+    captchaId,
+    {
+      code,
+      createdAt: Date.now(),
+      attempts: 0,
+    }
+  );
+
+  return {
+    captcha_id: captchaId,
+    code,
+    expires_in: 300,
+  };
+}
+
+function cleanupCaptchaStore() {
+  const now = Date.now();
+
+  for (const [
+    captchaId,
+    captcha,
+  ] of captchaStore.entries()) {
+    if (
+      now - captcha.createdAt >
+      5 * 60 * 1000
+    ) {
+      captchaStore.delete(
+        captchaId
+      );
+    }
+  }
+}
+
+setInterval(
+  cleanupCaptchaStore,
+  60 * 1000
+).unref();
+
+function getFileInfo(fileName) {
+  const cleanName = safeName(
+    path.basename(fileName)
+  );
+
+  const fullPath = path.join(
+    MUSIC_DIR,
+    cleanName
+  );
+
+  if (
+    !fs.existsSync(fullPath)
+  ) {
+    return null;
+  }
+
+  let stat;
+
+  try {
+    stat =
+      fs.statSync(fullPath);
+  } catch {
+    return null;
+  }
+
+  if (!stat.isFile()) {
+    return null;
+  }
+
+  if (
+    !isAudioFile(cleanName)
+  ) {
+    return null;
+  }
+
+  return {
+    file: cleanName,
+    path: fullPath,
+    size: stat.size,
+    mime: getMimeType(cleanName),
+    modified_at:
+      stat.mtime.toISOString(),
+  };
+}
+
+function getPhysicalMusicFiles() {
+  ensureDirectory(MUSIC_DIR);
+
+  let entries = [];
+
+  try {
+    entries =
+      fs.readdirSync(
+        MUSIC_DIR,
+        {
+          withFileTypes: true,
+        }
+      );
+  } catch (error) {
+    console.error(
+      "Music directory read error:",
+      error
+    );
+
+    return [];
+  }
+
+  return entries
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        isAudioFile(
+          entry.name
+        )
+    )
+    .map(
+      (entry) => {
+        const info =
+          getFileInfo(
+            entry.name
+          );
+
+        return info;
+      }
+    )
+    .filter(Boolean);
+}
+
+function makeTrackFromFile(
+  fileName
+) {
+  const file =
+    getFileInfo(fileName);
+
+  if (!file) {
+    return null;
+  }
+
+  const extension =
+    path.extname(
+      file.file
+    );
+
+  const baseName =
+    path.basename(
+      file.file,
+      extension
+    );
+
+  let existing =
+    musicDatabase.tracks.find(
+      (track) =>
+        track.file_name ===
+        file.file
+    );
+
+  if (!existing) {
+    existing = {
+      id: generateId(),
+      title: baseName,
+      artist_name:
+        "Fenix Music",
+      album_name:
+        "Fenix Music",
+      cover_url:
+        "/music-cover.svg",
+      audio_url:
+        "/api/music/audio/" +
+        encodeURIComponent(
+          file.file
+        ),
+      duration: 0,
+      plays_count: 0,
+      favorite: false,
+      file_name:
+        file.file,
+      mime: file.mime,
+      size: file.size,
+      created_at:
+        new Date().toISOString(),
+    };
+
+    musicDatabase.tracks.push(
+      existing
+    );
+
+    saveMusicDatabase();
+  }
+
+  existing.title =
+    existing.title ||
+    baseName;
+
+  existing.artist_name =
+    existing.artist_name ||
+    "Fenix Music";
+
+  existing.album_name =
+    existing.album_name ||
+    "Fenix Music";
+
+  existing.cover_url =
+    existing.cover_url ||
+    "/music-cover.svg";
+
+  existing.audio_url =
+    "/api/music/audio/" +
+    encodeURIComponent(
+      file.file
+    );
+
+  existing.mime =
+    file.mime;
+
+  existing.size =
+    file.size;
+
+  existing.file_name =
+    file.file;
+
+  return {
+    ...existing,
+  };
+}
+
+function getTracks() {
+  const files =
+    getPhysicalMusicFiles();
+
+  const tracks =
+    files
+      .map((file) =>
+        makeTrackFromFile(
+          file.file
+        )
+      )
+      .filter(Boolean);
+
+  const physicalNames =
+    new Set(
+      files.map(
+        (file) => file.file
+      )
+    );
+
+  const before =
+    musicDatabase.tracks.length;
+
+  musicDatabase.tracks =
+    musicDatabase.tracks.filter(
+      (track) =>
+        physicalNames.has(
+          track.file_name
+        )
+    );
+
+  if (
+    musicDatabase.tracks.length !==
+    before
+  ) {
+    saveMusicDatabase();
+  }
+
+  return tracks;
+}
+
+function findAudioFile(
+  fileName
+) {
+  if (!fileName) {
+    return null;
+  }
+
+  const requested =
+    safeName(
+      path.basename(
+        decodeURIComponent(
+          String(fileName)
+        )
+      )
+    );
+
+  const fullPath =
+    path.join(
+      MUSIC_DIR,
+      requested
+    );
+
+  const musicRoot =
+    path.resolve(
+      MUSIC_DIR
+    );
+
+  const resolved =
+    path.resolve(
+      fullPath
+    );
+
+  if (
+    resolved !== musicRoot &&
+    !resolved.startsWith(
+      musicRoot +
+        path.sep
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    !fs.existsSync(
+      resolved
+    )
+  ) {
+    return null;
+  }
+
+  let stat;
+
+  try {
+    stat =
+      fs.statSync(
+        resolved
+      );
+  } catch {
+    return null;
+  }
+
+  if (
+    !stat.isFile() ||
+    !isAudioFile(
+      requested
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    file: requested,
+    path: resolved,
+    mime: getMimeType(
+      requested
+    ),
+    size: stat.size,
+  };
+}
+
+function registerMusicRoutes() {
+  app.get(
+    "/api/music",
+    (req, res) => {
+      try {
+        const tracks =
+          getTracks();
+
+        res.json({
+          ok: true,
+          tracks,
+          count:
+            tracks.length,
+        });
+      } catch (error) {
+        console.error(
+          "GET /api/music:",
+          error
+        );
+
+        res.status(500).json({
+          ok: false,
+          error:
+            "Не удалось получить музыку",
+          tracks: [],
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/music/tracks",
+    (req, res) => {
+      try {
+        const tracks =
+          getTracks();
+
+        res.json({
+          ok: true,
+          tracks,
+          count:
+            tracks.length,
+        });
+      } catch (error) {
+        console.error(
+          "GET /api/music/tracks:",
+          error
+        );
+
+        res.status(500).json({
+          ok: false,
+          error:
+            "Не удалось получить треки",
+          tracks: [],
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/music/stats",
+    (req, res) => {
+      try {
+        const tracks =
+          getTracks();
+
+        const totalPlays =
+          tracks.reduce(
+            (sum, track) =>
+              sum +
+              Number(
+                track.plays_count ||
+                  0
+              ),
+            0
+          );
+
+        res.json({
+          ok: true,
+          tracks:
+            tracks.length,
+          total_plays:
+            totalPlays,
+        });
+      } catch (error) {
+        res.status(500).json({
+          ok: false,
+          error:
+            "Не удалось получить статистику",
+        });
+      }
+    }
+  );
+
+  app.get(
+    "/api/music/audio/:file",
+    streamAudio
+  );
+}
+
+function streamAudio(
+  req,
+  res
+) {
+  try {
+    const fileName =
+      req.params.file;
+
+    const audio =
+      findAudioFile(
+        fileName
+      );
+
+    if (!audio) {
+      return res.status(404).json({
+        ok: false,
+        error:
+          "Аудиофайл не найден",
+      });
+    }
+
+    const stat =
+      fs.statSync(
+        audio.path
+      );
+
+    const range =
+      req.headers.range;
+
+    res.setHeader(
+      "Accept-Ranges",
+      "bytes"
+    );
+
+    res.setHeader(
+      "Content-Type",
+      audio.mime
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "public, max-age=3600"
+    );
+
+    if (!range) {
+      res.setHeader(
+        "Content-Length",
+        stat.size
+      );
+
+      return fs
+        .createReadStream(
+          audio.path
+        )
+        .pipe(res);
+    }
+
+    const match =
+      /^bytes=(\d*)-(\d*)$/.exec(
+        range
+      );
+
+    if (!match) {
+      res.setHeader(
+        "Content-Range",
+        `bytes */${stat.size}`
+      );
+
+      return res
+        .status(416)
+        .end();
+    }
+
+    let start =
+      match[1]
+        ? Number(match[1])
+        : 0;
+
+    let end =
+      match[2]
+        ? Number(match[2])
+        : stat.size - 1;
+
+    if (
+      !Number.isFinite(
+        start
+      ) ||
+      !Number.isFinite(
+        end
+      )
+    ) {
+      res.setHeader(
+        "Content-Range",
+        `bytes */${stat.size}`
+      );
+
+      return res
+        .status(416)
+        .end();
+    }
+
+    if (
+      !match[1] &&
+      match[2]
+    ) {
+      const suffixLength =
+        Number(match[2]);
+
+      if (
+        suffixLength <= 0
+      ) {
+        res.setHeader(
+          "Content-Range",
+          `bytes */${stat.size}`
+        );
+
+        return res
+          .status(416)
+          .end();
+      }
+
+      start = Math.max(
+        0,
+        stat.size -
+          suffixLength
+      );
+
+      end =
+        stat.size - 1;
+    }
+
+    if (
+      start < 0 ||
+      start >= stat.size ||
+      end < start
+    ) {
+      res.setHeader(
+        "Content-Range",
+        `bytes */${stat.size}`
+      );
+
+      return res
+        .status(416)
+        .end();
+    }
+
+    end = Math.min(
+      end,
+      stat.size - 1
+    );
+
+    const chunkSize =
+      end - start + 1;
+
+    res.status(206);
+
+    res.setHeader(
+      "Content-Range",
+      `bytes ${start}-${end}/${stat.size}`
+    );
+
+    res.setHeader(
+      "Content-Length",
+      chunkSize
+    );
+
+    return fs
+      .createReadStream(
+        audio.path,
+        {
+          start,
+          end,
+        }
+      )
+      .pipe(res);
+  } catch (error) {
+    console.error(
+      "Audio streaming error:",
+      error
+    );
+
+    if (
+      !res.headersSent
+    ) {
+      return res
+        .status(500)
+        .json({
+          ok: false,
+          error:
+            "Ошибка воспроизведения аудио",
+        });
+    }
+  }
+}
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
 
 app.use(
   express.json({
@@ -53,1007 +874,355 @@ app.use(
   })
 );
 
-app.use(cookieParser());
-
-/* =========================================================
-   PATHS
-========================================================= */
-
-const ROOT_DIR = path.join(__dirname, "..");
-const FRONTEND_DIR = path.join(ROOT_DIR, "frontend");
-
-const POSSIBLE_BUILD_DIRS = [
-  path.join(FRONTEND_DIR, "build"),
-  path.join(FRONTEND_DIR, "dist"),
-  path.join(ROOT_DIR, "build"),
-  path.join(ROOT_DIR, "dist"),
-];
-
-function findFrontendBuild() {
-  for (const dir of POSSIBLE_BUILD_DIRS) {
-    const indexFile = path.join(dir, "index.html");
-
-    if (fs.existsSync(indexFile)) {
-      return dir;
-    }
-  }
-
-  return null;
-}
-
-/* =========================================================
-   DATABASE
-========================================================= */
-
-async function q(text, params = []) {
-  return pool.query(text, params);
-}
-
-async function columnExists(table, column) {
-  const result = await q(
-    `
-      SELECT 1
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = $1
-        AND column_name = $2
-      LIMIT 1
-    `,
-    [table, column]
-  );
-
-  return result.rowCount > 0;
-}
-
-async function ensureColumn(table, column, definition) {
-  const exists = await columnExists(table, column);
-
-  if (!exists) {
-    console.log(`Adding missing column ${table}.${column}`);
-
-    await q(
-      `ALTER TABLE "${table}" ADD COLUMN "${column}" ${definition}`
-    );
-  }
-}
-
-async function initDatabase() {
-  console.log("Initializing PostgreSQL...");
-
-  /*
-   * USERS
-   *
-   * BIGINT is used everywhere.
-   * This prevents the previous UUID/BIGINT foreign-key error.
-   */
-
-  await q(`
-    CREATE TABLE IF NOT EXISTS users (
-      id BIGSERIAL PRIMARY KEY,
-      username VARCHAR(64) NOT NULL UNIQUE,
-      email VARCHAR(255) NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      bio TEXT NOT NULL DEFAULT '',
-      avatar_url TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  /*
-   * Existing installations may have an older users table.
-   */
-
-  await ensureColumn(
-    "users",
-    "bio",
-    "TEXT NOT NULL DEFAULT ''"
-  );
-
-  await ensureColumn(
-    "users",
-    "avatar_url",
-    "TEXT NOT NULL DEFAULT ''"
-  );
-
-  /*
-   * TRACKS
-   */
-
-  await q(`
-    CREATE TABLE IF NOT EXISTS tracks (
-      id BIGSERIAL PRIMARY KEY,
-      title TEXT NOT NULL,
-      artist_name TEXT NOT NULL DEFAULT 'Unknown',
-      album_name TEXT NOT NULL DEFAULT '',
-      cover_url TEXT NOT NULL DEFAULT '',
-      audio_url TEXT NOT NULL DEFAULT '',
-      duration INTEGER NOT NULL DEFAULT 0,
-      plays_count BIGINT NOT NULL DEFAULT 0,
-      file_name TEXT NOT NULL DEFAULT '',
-      mime TEXT NOT NULL DEFAULT '',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await ensureColumn(
-    "tracks",
-    "artist_name",
-    "TEXT NOT NULL DEFAULT 'Unknown'"
-  );
-
-  await ensureColumn(
-    "tracks",
-    "album_name",
-    "TEXT NOT NULL DEFAULT ''"
-  );
-
-  await ensureColumn(
-    "tracks",
-    "cover_url",
-    "TEXT NOT NULL DEFAULT ''"
-  );
-
-  await ensureColumn(
-    "tracks",
-    "audio_url",
-    "TEXT NOT NULL DEFAULT ''"
-  );
-
-  await ensureColumn(
-    "tracks",
-    "duration",
-    "INTEGER NOT NULL DEFAULT 0"
-  );
-
-  await ensureColumn(
-    "tracks",
-    "plays_count",
-    "BIGINT NOT NULL DEFAULT 0"
-  );
-
-  await ensureColumn(
-    "tracks",
-    "file_name",
-    "TEXT NOT NULL DEFAULT ''"
-  );
-
-  await ensureColumn(
-    "tracks",
-    "mime",
-    "TEXT NOT NULL DEFAULT ''"
-  );
-
-  /*
-   * FAVORITES
-   */
-
-  await q(`
-    CREATE TABLE IF NOT EXISTS favorites (
-      user_id BIGINT NOT NULL,
-      track_id BIGINT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-      PRIMARY KEY (user_id, track_id),
-
-      CONSTRAINT favorites_user_id_fkey
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-      CONSTRAINT favorites_track_id_fkey
-        FOREIGN KEY (track_id)
-        REFERENCES tracks(id)
-        ON DELETE CASCADE
-    )
-  `);
-
-  /*
-   * HISTORY
-   */
-
-  await q(`
-    CREATE TABLE IF NOT EXISTS history (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT NOT NULL,
-      track_id BIGINT NOT NULL,
-      played_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-      CONSTRAINT history_user_id_fkey
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE,
-
-      CONSTRAINT history_track_id_fkey
-        FOREIGN KEY (track_id)
-        REFERENCES tracks(id)
-        ON DELETE CASCADE
-    )
-  `);
-
-  /*
-   * SESSIONS
-   *
-   * IMPORTANT:
-   * user_id is BIGINT, NOT UUID.
-   */
-
-  await q(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      token TEXT PRIMARY KEY,
-      user_id BIGINT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL,
-
-      CONSTRAINT sessions_user_id_fkey
-        FOREIGN KEY (user_id)
-        REFERENCES users(id)
-        ON DELETE CASCADE
-    )
-  `);
-
-  /*
-   * CAPTCHA
-   */
-
-  await q(`
-    CREATE TABLE IF NOT EXISTS captchas (
-      id TEXT PRIMARY KEY,
-      answer TEXT NOT NULL,
-      expires_at TIMESTAMPTZ NOT NULL
-    )
-  `);
-
-  /*
-   * Clean expired data.
-   */
-
-  await q(`
-    DELETE FROM sessions
-    WHERE expires_at < NOW()
-  `);
-
-  await q(`
-    DELETE FROM captchas
-    WHERE expires_at < NOW()
-  `);
-
-  /*
-   * DO NOT insert demo tracks.
-   *
-   * Music is loaded from /music and can later be added by bot.
-   */
-
-  console.log("PostgreSQL initialized");
-}
-
-/* =========================================================
-   AUTH HELPERS
-========================================================= */
-
-function createToken() {
-  return crypto.randomBytes(48).toString("hex");
-}
-
-function createCaptchaText() {
-  return crypto
-    .randomBytes(3)
-    .toString("hex")
-    .toUpperCase();
-}
-
-function safeUser(user) {
-  if (!user) return null;
-
-  const {
-    password_hash,
-    ...result
-  } = user;
-
-  return result;
-}
-
-async function getCurrentUser(req) {
-  try {
-    const sessionToken =
-      req.cookies?.fenix_session;
-
-    if (!sessionToken) {
-      return null;
-    }
-
-    const result = await q(
-      `
-        SELECT u.*
-        FROM sessions s
-        INNER JOIN users u
-          ON u.id = s.user_id
-        WHERE s.token = $1
-          AND s.expires_at > NOW()
-        LIMIT 1
-      `,
-      [sessionToken]
-    );
-
-    return result.rows[0] || null;
-  } catch (error) {
-    console.error(
-      "getCurrentUser:",
-      error.message
-    );
-
-    return null;
-  }
-}
-
-async function requireUser(req, res, next) {
-  const user = await getCurrentUser(req);
-
-  if (!user) {
-    return res.status(401).json({
-      ok: false,
-      error: "Требуется авторизация",
-    });
-  }
-
-  req.user = user;
-
-  next();
-}
-
-function sessionCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: NODE_ENV === "production",
-    maxAge: 30 * 24 * 60 * 60 * 1000,
-    path: "/",
-  };
-}
-
-/* =========================================================
-   ROOT
-========================================================= */
-
-app.get("/", (req, res) => {
-  const buildDir = findFrontendBuild();
-
-  if (!buildDir) {
-    return res.status(503).send(`
-      <!doctype html>
-      <html lang="ru">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>Fenix Music</title>
-        <style>
-          body {
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #050507;
-            color: white;
-            font-family: Arial, sans-serif;
-          }
-          .box {
-            max-width: 600px;
-            padding: 40px;
-            text-align: center;
-          }
-          h1 {
-            color: #ff3030;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="box">
-          <h1>FENIX MUSIC</h1>
-          <p>Backend работает.</p>
-          <p>Frontend ещё не собран.</p>
-        </div>
-      </body>
-      </html>
-    `);
-  }
-
-  return res.sendFile(
-    path.join(buildDir, "index.html")
-  );
-});
-
-/* =========================================================
-   API
-========================================================= */
-
-app.get("/api", (req, res) => {
-  res.json({
-    ok: true,
-    service: "Fenix Music Backend",
-    version: "3.0.0",
-    status: "online",
-    api: "/api",
-    health: "/api/health",
-    tracks: "/api/tracks",
-    music: "/api/music",
-  });
-});
-
-app.get("/api/health", async (req, res) => {
-  try {
-    await q("SELECT 1");
-
-    res.json({
-      ok: true,
-      status: "healthy",
-      database: "online",
-      time: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error(
-      "Health error:",
-      error
-    );
-
-    res.status(500).json({
-      ok: false,
-      status: "error",
-      database: "offline",
-      error: error.message,
-    });
-  }
-});
-
-/* =========================================================
-   AUTH
-========================================================= */
+app.disable("x-powered-by");
 
 app.get(
-  "/api/auth/me",
-  async (req, res) => {
-    const user =
-      await getCurrentUser(req);
-
+  "/api/health",
+  (req, res) => {
     res.json({
       ok: true,
-      user: safeUser(user),
+      service:
+        "Fenix Music",
+      status:
+        "online",
+      time:
+        new Date().toISOString(),
     });
   }
 );
 
 app.get(
-  "/api/auth/captcha",
-  async (req, res) => {
+  "/api",
+  (req, res) => {
+    res.json({
+      ok: true,
+      name:
+        "Fenix Music API",
+      version:
+        "3.0.0",
+      status:
+        "online",
+      endpoints: {
+        health:
+          "/api/health",
+        captcha:
+          "/api/captcha",
+        music:
+          "/api/music",
+        tracks:
+          "/api/music/tracks",
+        audio:
+          "/api/music/audio/:file",
+      },
+    });
+  }
+);
+
+app.get(
+  "/api/captcha",
+  (req, res) => {
     try {
-      const id =
-        crypto.randomUUID();
+      const captcha =
+        createCaptcha();
 
-      const answer =
-        createCaptchaText();
+      res.setHeader(
+        "Cache-Control",
+        "no-store, no-cache, must-revalidate, proxy-revalidate"
+      );
 
-      await q(
-        `
-          INSERT INTO captchas
-          (id, answer, expires_at)
-          VALUES
-          ($1, $2, NOW() + INTERVAL '10 minutes')
-        `,
-        [id, answer]
+      res.setHeader(
+        "Pragma",
+        "no-cache"
+      );
+
+      res.setHeader(
+        "Expires",
+        "0"
       );
 
       res.json({
         ok: true,
-        id,
-        text: answer,
+        captcha_id:
+          captcha.captcha_id,
+        code:
+          captcha.code,
+        expires_in:
+          captcha.expires_in,
       });
     } catch (error) {
       console.error(
-        "CAPTCHA error:",
+        "CAPTCHA generation error:",
         error
       );
 
       res.status(500).json({
         ok: false,
-        error: "Не удалось создать CAPTCHA",
+        error:
+          "Не удалось создать CAPTCHA",
       });
     }
   }
 );
 
 app.post(
-  "/api/auth/register",
-  async (req, res) => {
+  "/api/captcha",
+  (req, res) => {
+    try {
+      const captcha =
+        createCaptcha();
+
+      res.setHeader(
+        "Cache-Control",
+        "no-store"
+      );
+
+      res.json({
+        ok: true,
+        captcha_id:
+          captcha.captcha_id,
+        code:
+          captcha.code,
+        expires_in:
+          captcha.expires_in,
+      });
+    } catch (error) {
+      console.error(
+        "CAPTCHA generation error:",
+        error
+      );
+
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось создать CAPTCHA",
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/captcha/verify",
+  (req, res) => {
     try {
       const {
-        username,
-        email,
-        password,
-        captcha,
         captcha_id,
+        code,
       } = req.body || {};
 
-      const cleanUsername =
-        String(username || "").trim();
-
-      const cleanEmail =
-        String(email || "")
-          .trim()
-          .toLowerCase();
-
-      const cleanPassword =
-        String(password || "");
-
       if (
-        !cleanUsername ||
-        !cleanEmail ||
-        !cleanPassword
+        !captcha_id ||
+        !code
       ) {
         return res.status(400).json({
           ok: false,
+          valid: false,
           error:
-            "Заполните все обязательные поля",
+            "Введите CAPTCHA",
         });
       }
 
-      if (cleanUsername.length < 3) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "Username должен содержать минимум 3 символа",
-        });
-      }
-
-      if (cleanPassword.length < 6) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "Пароль должен содержать минимум 6 символов",
-        });
-      }
-
-      if (!captcha_id || !captcha) {
-        return res.status(400).json({
-          ok: false,
-          error: "Введите CAPTCHA",
-        });
-      }
-
-      const captchaResult =
-        await q(
-          `
-            SELECT *
-            FROM captchas
-            WHERE id = $1
-              AND expires_at > NOW()
-            LIMIT 1
-          `,
-          [captcha_id]
+      const captcha =
+        captchaStore.get(
+          String(captcha_id)
         );
+
+      if (!captcha) {
+        return res.status(400).json({
+          ok: false,
+          valid: false,
+          error:
+            "CAPTCHA устарела. Получите новую.",
+          regenerate: true,
+        });
+      }
 
       if (
-        !captchaResult.rows[0] ||
-        String(
-          captchaResult.rows[0].answer
-        ).toUpperCase() !==
-          String(captcha)
-            .trim()
-            .toUpperCase()
+        Date.now() -
+          captcha.createdAt >
+        5 * 60 * 1000
       ) {
+        captchaStore.delete(
+          String(captcha_id)
+        );
+
         return res.status(400).json({
           ok: false,
-          error: "Неверная CAPTCHA",
-        });
-      }
-
-      const exists =
-        await q(
-          `
-            SELECT id
-            FROM users
-            WHERE LOWER(email) = LOWER($1)
-               OR LOWER(username) = LOWER($2)
-            LIMIT 1
-          `,
-          [
-            cleanEmail,
-            cleanUsername,
-          ]
-        );
-
-      if (exists.rowCount > 0) {
-        return res.status(409).json({
-          ok: false,
+          valid: false,
           error:
-            "Username или email уже используется",
+            "CAPTCHA истекла. Получите новую.",
+          regenerate: true,
         });
       }
 
-      const passwordHash =
-        await bcrypt.hash(
-          cleanPassword,
-          12
+      captcha.attempts += 1;
+
+      if (
+        captcha.attempts > 10
+      ) {
+        captchaStore.delete(
+          String(captcha_id)
         );
 
-      const userResult =
-        await q(
-          `
-            INSERT INTO users
-            (
-              username,
-              email,
-              password_hash
-            )
-            VALUES
-            ($1, $2, $3)
-            RETURNING *
-          `,
-          [
-            cleanUsername,
-            cleanEmail,
-            passwordHash,
-          ]
+        return res.status(429).json({
+          ok: false,
+          valid: false,
+          error:
+            "Слишком много попыток. Получите новую CAPTCHA.",
+          regenerate: true,
+        });
+      }
+
+      const userCode =
+        String(code)
+          .trim();
+
+      const valid =
+        userCode ===
+        captcha.code;
+
+      if (valid) {
+        captchaStore.delete(
+          String(captcha_id)
         );
 
-      const user =
-        userResult.rows[0];
+        return res.json({
+          ok: true,
+          valid: true,
+          message:
+            "CAPTCHA пройдена",
+        });
+      }
 
-      await q(
-        "DELETE FROM captchas WHERE id = $1",
-        [captcha_id]
-      );
-
-      const sessionToken =
-        createToken();
-
-      await q(
-        `
-          INSERT INTO sessions
-          (
-            token,
-            user_id,
-            expires_at
-          )
-          VALUES
-          (
-            $1,
-            $2,
-            NOW() + INTERVAL '30 days'
-          )
-        `,
-        [
-          sessionToken,
-          user.id,
-        ]
-      );
-
-      res.cookie(
-        "fenix_session",
-        sessionToken,
-        sessionCookieOptions()
-      );
-
-      res.status(201).json({
+      return res.status(400).json({
         ok: true,
-        user: safeUser(user),
-        token: sessionToken,
+        valid: false,
+        error:
+          "Неверный код CAPTCHA",
       });
     } catch (error) {
       console.error(
-        "Register error:",
+        "CAPTCHA verification error:",
         error
       );
 
       res.status(500).json({
         ok: false,
+        valid: false,
         error:
-          "Ошибка регистрации",
+          "Ошибка проверки CAPTCHA",
       });
     }
   }
 );
 
 app.post(
-  "/api/auth/login",
-  async (req, res) => {
+  "/api/captcha/check",
+  (req, res) => {
     try {
       const {
-        login,
-        email,
-        username,
-        password,
+        captcha_id,
+        code,
       } = req.body || {};
 
-      const key =
-        String(
-          login ||
-          email ||
-          username ||
-          ""
-        )
-          .trim()
-          .toLowerCase();
-
-      if (!key || !password) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "Введите логин и пароль",
-        });
-      }
-
-      const result =
-        await q(
-          `
-            SELECT *
-            FROM users
-            WHERE LOWER(email) = $1
-               OR LOWER(username) = $1
-            LIMIT 1
-          `,
-          [key]
+      const captcha =
+        captchaStore.get(
+          String(captcha_id || "")
         );
 
-      const user =
-        result.rows[0];
-
-      if (
-        !user ||
-        !(await bcrypt.compare(
-          String(password),
-          user.password_hash
-        ))
-      ) {
-        return res.status(401).json({
+      if (!captcha) {
+        return res.status(400).json({
           ok: false,
+          valid: false,
           error:
-            "Неверный логин или пароль",
+            "CAPTCHA устарела",
+          regenerate: true,
         });
       }
 
-      const sessionToken =
-        createToken();
+      if (
+        Date.now() -
+          captcha.createdAt >
+        5 * 60 * 1000
+      ) {
+        captchaStore.delete(
+          String(captcha_id)
+        );
 
-      await q(
-        `
-          INSERT INTO sessions
-          (
-            token,
-            user_id,
-            expires_at
-          )
-          VALUES
-          (
-            $1,
-            $2,
-            NOW() + INTERVAL '30 days'
-          )
-        `,
-        [
-          sessionToken,
-          user.id,
-        ]
-      );
+        return res.status(400).json({
+          ok: false,
+          valid: false,
+          error:
+            "CAPTCHA истекла",
+          regenerate: true,
+        });
+      }
 
-      res.cookie(
-        "fenix_session",
-        sessionToken,
-        sessionCookieOptions()
-      );
+      const valid =
+        String(code || "")
+          .trim() ===
+        captcha.code;
+
+      if (valid) {
+        captchaStore.delete(
+          String(captcha_id)
+        );
+      }
 
       res.json({
         ok: true,
-        user: safeUser(user),
-        token: sessionToken,
+        valid,
       });
     } catch (error) {
       console.error(
-        "Login error:",
+        "CAPTCHA check error:",
         error
       );
 
       res.status(500).json({
         ok: false,
+        valid: false,
         error:
-          "Ошибка входа",
+          "Ошибка проверки CAPTCHA",
       });
     }
   }
 );
+
+registerMusicRoutes();
 
 app.post(
-  "/api/auth/logout",
-  async (req, res) => {
-    try {
-      const token =
-        req.cookies?.fenix_session;
-
-      if (token) {
-        await q(
-          `
-            DELETE FROM sessions
-            WHERE token = $1
-          `,
-          [token]
-        );
-      }
-
-      res.clearCookie(
-        "fenix_session",
-        {
-          path: "/",
-        }
-      );
-
-      res.json({
-        ok: true,
-      });
-    } catch (error) {
-      res.status(500).json({
-        ok: false,
-        error:
-          "Ошибка выхода",
-      });
-    }
-  }
-);
-
-app.put(
-  "/api/auth/profile",
-  requireUser,
-  async (req, res) => {
+  "/api/music/play",
+  (req, res) => {
     try {
       const {
-        username,
-        bio,
-        avatar_url,
+        id,
+        file_name,
       } = req.body || {};
 
-      const newUsername =
-        String(username || "").trim();
+      let track = null;
 
-      const newBio =
-        String(bio || "");
-
-      const newAvatar =
-        String(
-          avatar_url || ""
-        );
-
-      if (
-        newUsername &&
-        newUsername.length < 3
-      ) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "Username слишком короткий",
-        });
-      }
-
-      if (newUsername) {
-        const duplicate =
-          await q(
-            `
-              SELECT id
-              FROM users
-              WHERE LOWER(username) =
-                    LOWER($1)
-                AND id <> $2
-              LIMIT 1
-            `,
-            [
-              newUsername,
-              req.user.id,
-            ]
+      if (id) {
+        track =
+          musicDatabase.tracks.find(
+            (item) =>
+              item.id ===
+              String(id)
           );
-
-        if (duplicate.rowCount) {
-          return res.status(409).json({
-            ok: false,
-            error:
-              "Username уже используется",
-          });
-        }
       }
 
-      const result =
-        await q(
-          `
-            UPDATE users
-            SET
-              username =
-                CASE
-                  WHEN $1 <> ''
-                  THEN $1
-                  ELSE username
-                END,
-              bio = $2,
-              avatar_url = $3
-            WHERE id = $4
-            RETURNING *
-          `,
-          [
-            newUsername,
-            newBio,
-            newAvatar,
-            req.user.id,
-          ]
-        );
-
-      res.json({
-        ok: true,
-        user: safeUser(
-          result.rows[0]
-        ),
-      });
-    } catch (error) {
-      console.error(
-        "Profile error:",
-        error
-      );
-
-      res.status(500).json({
-        ok: false,
-        error:
-          "Не удалось сохранить профиль",
-      });
-    }
-  }
-);
-
-/* =========================================================
-   MUSIC
-========================================================= */
-
-registerMusicRoutes(app);
-
-/*
- * Main tracks API.
- *
- * Tracks are taken from /music.
- */
-
-app.get(
-  "/api/tracks",
-  async (req, res) => {
-    try {
-      const tracks =
-        getTracks();
-
-      res.json({
-        ok: true,
-        tracks,
-        count: tracks.length,
-      });
-    } catch (error) {
-      console.error(
-        "Tracks error:",
-        error
-      );
-
-      res.status(500).json({
-        ok: false,
-        error:
-          "Не удалось получить треки",
-      });
-    }
-  }
-);
-
-app.get(
-  "/api/tracks/:id",
-  async (req, res) => {
-    try {
-      const id =
-        String(req.params.id);
-
-      const tracks =
-        getTracks();
-
-      const track =
-        tracks.find(
-          (item) =>
-            String(item.id) === id
-        );
+      if (
+        !track &&
+        file_name
+      ) {
+        track =
+          musicDatabase.tracks.find(
+            (item) =>
+              item.file_name ===
+              safeName(
+                file_name
+              )
+          );
+      }
 
       if (!track) {
         return res.status(404).json({
@@ -1062,39 +1231,47 @@ app.get(
             "Трек не найден",
         });
       }
+
+      track.plays_count =
+        Number(
+          track.plays_count || 0
+        ) + 1;
+
+      saveMusicDatabase();
 
       res.json({
         ok: true,
         track,
       });
     } catch (error) {
+      console.error(
+        "Music play error:",
+        error
+      );
+
       res.status(500).json({
         ok: false,
         error:
-          "Не удалось получить трек",
+          "Не удалось сохранить прослушивание",
       });
     }
   }
 );
 
-/*
- * Audio endpoint compatible with frontend.
- */
-
-app.get(
-  "/api/tracks/:id/audio",
-  async (req, res) => {
+app.post(
+  "/api/music/favorite",
+  (req, res) => {
     try {
-      const id =
-        String(req.params.id);
-
-      const tracks =
-        getTracks();
+      const {
+        id,
+        favorite,
+      } = req.body || {};
 
       const track =
-        tracks.find(
+        musicDatabase.tracks.find(
           (item) =>
-            String(item.id) === id
+            item.id ===
+            String(id || "")
         );
 
       if (!track) {
@@ -1105,471 +1282,309 @@ app.get(
         });
       }
 
-      if (!track.file_name) {
-        return res.status(404).json({
-          ok: false,
-          error:
-            "Аудиофайл отсутствует",
-        });
-      }
+      track.favorite =
+        Boolean(favorite);
 
-      req.params.file =
-        track.file_name;
+      saveMusicDatabase();
 
-      return resolveAudio(
-        req,
-        res
-      );
+      res.json({
+        ok: true,
+        favorite:
+          track.favorite,
+        track,
+      });
     } catch (error) {
       console.error(
-        "Track audio error:",
+        "Favorite error:",
         error
       );
 
-      if (!res.headersSent) {
-        res.status(500).json({
-          ok: false,
-          error:
-            "Ошибка воспроизведения",
-        });
-      }
-    }
-  }
-);
-
-app.post(
-  "/api/tracks/:id/play",
-  async (req, res) => {
-    try {
-      /*
-       * Files in /music are the source of truth.
-       * We store play count in PostgreSQL when
-       * a matching DB track exists.
-       */
-
-      const id =
-        Number(req.params.id);
-
-      if (
-        Number.isInteger(id)
-      ) {
-        await q(
-          `
-            UPDATE tracks
-            SET plays_count =
-              plays_count + 1
-            WHERE id = $1
-          `,
-          [id]
-        );
-      }
-
-      res.json({
-        ok: true,
-      });
-    } catch (error) {
-      res.json({
-        ok: true,
+      res.status(500).json({
+        ok: false,
+        error:
+          "Не удалось сохранить избранное",
       });
     }
   }
 );
-
-/* =========================================================
-   FAVORITES
-========================================================= */
 
 app.get(
-  "/api/favorites",
-  requireUser,
-  async (req, res) => {
+  "/api/music/favorites",
+  (req, res) => {
     try {
-      const result =
-        await q(
-          `
-            SELECT t.*
-            FROM favorites f
-            INNER JOIN tracks t
-              ON t.id = f.track_id
-            WHERE f.user_id = $1
-            ORDER BY f.created_at DESC
-          `,
-          [req.user.id]
+      const tracks =
+        getTracks().filter(
+          (track) =>
+            track.favorite ===
+            true
         );
 
       res.json({
         ok: true,
-        tracks: result.rows,
+        tracks,
+        count:
+          tracks.length,
       });
     } catch (error) {
       res.status(500).json({
         ok: false,
         error:
           "Не удалось получить избранное",
+        tracks: [],
       });
     }
   }
 );
-
-app.post(
-  "/api/favorites",
-  requireUser,
-  async (req, res) => {
-    try {
-      const trackId =
-        Number(req.body?.track_id);
-
-      if (!Number.isInteger(trackId)) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "Некорректный track_id",
-        });
-      }
-
-      await q(
-        `
-          INSERT INTO favorites
-          (
-            user_id,
-            track_id
-          )
-          VALUES
-          ($1, $2)
-          ON CONFLICT
-          (user_id, track_id)
-          DO NOTHING
-        `,
-        [
-          req.user.id,
-          trackId,
-        ]
-      );
-
-      res.json({
-        ok: true,
-      });
-    } catch (error) {
-      res.status(500).json({
-        ok: false,
-        error:
-          "Не удалось добавить в избранное",
-      });
-    }
-  }
-);
-
-app.delete(
-  "/api/favorites/:id",
-  requireUser,
-  async (req, res) => {
-    try {
-      await q(
-        `
-          DELETE FROM favorites
-          WHERE user_id = $1
-            AND track_id = $2
-        `,
-        [
-          req.user.id,
-          Number(req.params.id),
-        ]
-      );
-
-      res.json({
-        ok: true,
-      });
-    } catch (error) {
-      res.status(500).json({
-        ok: false,
-        error:
-          "Не удалось удалить из избранного",
-      });
-    }
-  }
-);
-
-/* =========================================================
-   HISTORY
-========================================================= */
 
 app.get(
-  "/api/history",
-  requireUser,
-  async (req, res) => {
+  "/api/music/recent",
+  (req, res) => {
     try {
-      const result =
-        await q(
-          `
-            SELECT
-              t.*,
-              h.played_at
-            FROM history h
-            INNER JOIN tracks t
-              ON t.id = h.track_id
-            WHERE h.user_id = $1
-            ORDER BY h.played_at DESC
-            LIMIT 100
-          `,
-          [req.user.id]
-        );
+      const tracks =
+        getTracks()
+          .filter(
+            (track) =>
+              Number(
+                track.plays_count ||
+                  0
+              ) > 0
+          )
+          .sort(
+            (a, b) =>
+              Number(
+                b.plays_count ||
+                  0
+              ) -
+              Number(
+                a.plays_count ||
+                  0
+              )
+          );
 
       res.json({
         ok: true,
-        tracks: result.rows,
+        tracks,
+        count:
+          tracks.length,
       });
     } catch (error) {
       res.status(500).json({
         ok: false,
         error:
           "Не удалось получить историю",
+        tracks: [],
       });
     }
   }
 );
 
-app.post(
-  "/api/history",
-  requireUser,
-  async (req, res) => {
+app.get(
+  "/api/music/search",
+  (req, res) => {
     try {
-      const trackId =
-        Number(req.body?.track_id);
+      const query =
+        String(
+          req.query.q || ""
+        )
+          .trim()
+          .toLowerCase();
 
-      if (!Number.isInteger(trackId)) {
-        return res.status(400).json({
-          ok: false,
-          error:
-            "Некорректный track_id",
+      const tracks =
+        getTracks();
+
+      if (!query) {
+        return res.json({
+          ok: true,
+          tracks,
+          count:
+            tracks.length,
         });
       }
 
-      await q(
-        `
-          INSERT INTO history
-          (
-            user_id,
-            track_id
-          )
-          VALUES
-          ($1, $2)
-        `,
-        [
-          req.user.id,
-          trackId,
-        ]
-      );
+      const result =
+        tracks.filter(
+          (track) => {
+            const text = [
+              track.title,
+              track.artist_name,
+              track.album_name,
+              track.file_name,
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase();
 
-      await q(
-        `
-          UPDATE tracks
-          SET plays_count =
-            plays_count + 1
-          WHERE id = $1
-        `,
-        [trackId]
-      );
+            return text.includes(
+              query
+            );
+          }
+        );
 
       res.json({
         ok: true,
+        tracks: result,
+        count:
+          result.length,
       });
     } catch (error) {
+      console.error(
+        "Music search error:",
+        error
+      );
+
       res.status(500).json({
         ok: false,
         error:
-          "Не удалось сохранить историю",
+          "Ошибка поиска",
+        tracks: [],
       });
     }
   }
 );
-
-/* =========================================================
-   MUSIC STORAGE INFO
-========================================================= */
 
 app.get(
-  "/api/music/storage",
+  "/api/music/cover",
   (req, res) => {
-    try {
-      const musicDir =
-        getMusicDir();
+    const cover =
+      path.join(
+        ROOT_DIR,
+        "music-cover.svg"
+      );
 
-      const files =
-        fs
-          .readdirSync(
-            musicDir,
-            {
-              withFileTypes: true,
-            }
-          )
-          .filter(
-            (entry) =>
-              entry.isFile()
-          )
-          .map(
-            (entry) =>
-              entry.name
-          );
-
-      res.json({
-        ok: true,
-        directory: musicDir,
-        files,
-        count: files.length,
-      });
-    } catch (error) {
-      res.status(500).json({
-        ok: false,
-        error:
-          "Не удалось получить содержимое music",
-      });
+    if (
+      fs.existsSync(cover)
+    ) {
+      return res.sendFile(
+        cover
+      );
     }
+
+    res.status(404).end();
   }
 );
 
-/* =========================================================
-   API 404
-========================================================= */
-
-app.use(
-  "/api",
+app.get(
+  "/music-cover.svg",
   (req, res) => {
-    res.status(404).json({
-      ok: false,
-      error: "API route not found",
-      path: req.originalUrl,
-    });
+    const cover =
+      path.join(
+        ROOT_DIR,
+        "music-cover.svg"
+      );
+
+    if (
+      fs.existsSync(cover)
+    ) {
+      return res.sendFile(
+        cover
+      );
+    }
+
+    res
+      .type("svg")
+      .send(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+          <rect width="512" height="512" fill="#111"/>
+          <circle cx="256" cy="256" r="160" fill="#e11"/>
+          <circle cx="256" cy="256" r="55" fill="#111"/>
+          <path d="M310 105v210" stroke="#fff" stroke-width="28" stroke-linecap="round"/>
+          <path d="M310 105h95" stroke="#fff" stroke-width="28" stroke-linecap="round"/>
+          <path d="M405 105v120" stroke="#fff" stroke-width="28" stroke-linecap="round"/>
+        </svg>`
+      );
   }
 );
 
-/* =========================================================
-   FRONTEND
-========================================================= */
-
-const buildDir =
-  findFrontendBuild();
-
-if (buildDir) {
-  console.log(
-    "Frontend build:",
-    buildDir
-  );
-
+if (
+  fs.existsSync(
+    FRONTEND_DIST
+  )
+) {
   app.use(
     express.static(
-      buildDir,
+      FRONTEND_DIST,
       {
         index: false,
         maxAge:
-          NODE_ENV === "production"
+          process.env.NODE_ENV ===
+          "production"
             ? "1h"
             : 0,
       }
     )
   );
+
+  app.get(
+    /^\/(?!api(?:\/|$)).*/,
+    (req, res) => {
+      const indexFile =
+        path.join(
+          FRONTEND_DIST,
+          "index.html"
+        );
+
+      if (
+        fs.existsSync(
+          indexFile
+        )
+      ) {
+        return res.sendFile(
+          indexFile
+        );
+      }
+
+      return res.status(404).send(
+        "Frontend index.html не найден."
+      );
+    }
+  );
+
+  log(
+    "Frontend:",
+    FRONTEND_DIST
+  );
 } else {
-  console.log(
-    "⚠️ Frontend build not found"
+  log(
+    "Frontend dist не найден. Backend работает без frontend."
   );
 }
 
-/*
- * IMPORTANT:
- *
- * Do NOT use:
- *
- * app.get("*", ...)
- *
- * Express/path-to-regexp in the current
- * dependency versions rejects that pattern.
- *
- * Instead we use a normal middleware fallback.
- */
-
 app.use(
-  (req, res, next) => {
+  (req, res) => {
     if (
-      req.method !== "GET" &&
-      req.method !== "HEAD"
-    ) {
-      return next();
-    }
-
-    if (
-      req.originalUrl.startsWith(
-        "/api"
+      req.path.startsWith(
+        "/api/"
       )
     ) {
-      return next();
+      return res.status(404).json({
+        ok: false,
+        error:
+          "API endpoint не найден",
+        path: req.path,
+      });
     }
 
-    const currentBuild =
-      findFrontendBuild();
-
-    if (!currentBuild) {
-      return res.status(503).send(`
-        <!doctype html>
-        <html lang="ru">
-        <head>
-          <meta charset="utf-8">
-          <meta
-            name="viewport"
-            content="width=device-width,initial-scale=1"
-          >
-          <title>Fenix Music</title>
-          <style>
-            body {
-              margin: 0;
-              min-height: 100vh;
-              background: #050507;
-              color: white;
-              font-family: Arial,sans-serif;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-            }
-            .box {
-              text-align: center;
-              padding: 30px;
-            }
-            h1 {
-              color: #ef3030;
-              letter-spacing: 3px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="box">
-            <h1>FENIX MUSIC</h1>
-            <p>Backend работает.</p>
-            <p>Frontend ещё не собран.</p>
-          </div>
-        </body>
-        </html>
-      `);
-    }
-
-    return res.sendFile(
-      path.join(
-        currentBuild,
-        "index.html"
-      )
+    return res.status(404).send(
+      "Страница не найдена"
     );
   }
 );
 
-/* =========================================================
-   ERROR HANDLER
-========================================================= */
-
 app.use(
-  (error, req, res, next) => {
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
     console.error(
       "Unhandled server error:",
       error
     );
 
-    if (res.headersSent) {
+    if (
+      res.headersSent
+    ) {
       return next(error);
     }
 
@@ -1581,140 +1596,85 @@ app.use(
   }
 );
 
-/* =========================================================
-   START
-========================================================= */
+ensureStorage();
 
-async function start() {
-  console.log("");
-  console.log(
-    "========================================"
-  );
-  console.log(
-    "🔥 FENIX MUSIC BACKEND 3.0"
-  );
-  console.log(
-    "========================================"
-  );
-
-  console.log(
-    "Node:",
-    process.version
-  );
-
-  console.log(
-    "Environment:",
-    NODE_ENV
-  );
-
-  console.log(
-    "Port:",
-    PORT
-  );
-
-  console.log(
-    "Music directory:",
-    getMusicDir()
-  );
-
-  console.log(
-    "Connecting to PostgreSQL..."
-  );
-
-  await initDatabase();
-
-  const tracks =
-    getTracks();
-
-  console.log(
-    `Music files found: ${tracks.length}`
-  );
-
-  const server =
-    app.listen(
-      PORT,
-      "0.0.0.0",
-      () => {
-        console.log("");
-        console.log(
-          "========================================"
-        );
-        console.log(
-          "✅ FENIX MUSIC BACKEND ONLINE"
-        );
-        console.log(
-          "========================================"
-        );
-        console.log(
-          `PORT: ${PORT}`
-        );
-        console.log(
-          "API: /api"
-        );
-        console.log(
-          "Health: /api/health"
-        );
-        console.log(
-          "Tracks: /api/tracks"
-        );
-        console.log(
-          "Music: /api/music"
-        );
-        console.log(
-          "========================================"
-        );
-      }
-    );
-
-  const shutdown =
-    async (signal) => {
-      console.log(
-        `${signal} received. Shutting down...`
+const server =
+  app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+      log(
+        `Fenix Music запущен на порту ${PORT}`
       );
 
-      server.close(
-        async () => {
-          try {
-            await pool.end();
-          } catch (error) {
-            console.error(
-              error
-            );
-          }
-
-          process.exit(0);
-        }
+      log(
+        `Music directory: ${MUSIC_DIR}`
       );
-    };
 
-  process.once(
-    "SIGTERM",
-    () => shutdown("SIGTERM")
+      log(
+        `Music tracks: ${getTracks().length}`
+      );
+
+      log(
+        `Frontend dist: ${
+          fs.existsSync(
+            FRONTEND_DIST
+          )
+        }`
+      );
+    }
   );
 
-  process.once(
-    "SIGINT",
-    () => shutdown("SIGINT")
-  );
-}
-
-start().catch(
+server.on(
+  "error",
   (error) => {
-    console.error("");
     console.error(
-      "========================================"
-    );
-    console.error(
-      "❌ FENIX MUSIC BACKEND FAILED TO START"
-    );
-    console.error(
-      "========================================"
-    );
-    console.error(error);
-    console.error(
-      "========================================"
+      "Server error:",
+      error
     );
 
     process.exit(1);
   }
 );
+
+process.on(
+  "SIGTERM",
+  () => {
+    log(
+      "SIGTERM received. Shutting down..."
+    );
+
+    server.close(
+      () => {
+        process.exit(0);
+      }
+    );
+  }
+);
+
+process.on(
+  "SIGINT",
+  () => {
+    log(
+      "SIGINT received. Shutting down..."
+    );
+
+    server.close(
+      () => {
+        process.exit(0);
+      }
+    );
+  }
+);
+
+module.exports = {
+  app,
+  server,
+  MUSIC_DIR,
+  DATA_DIR,
+  ensureStorage,
+  getTracks,
+  findAudioFile,
+  streamAudio,
+  createCaptcha,
+};
