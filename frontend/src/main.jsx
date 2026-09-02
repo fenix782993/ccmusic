@@ -1,5 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
 import { createRoot } from "react-dom/client";
+
 import {
   Home,
   Radio as RadioIcon,
@@ -23,10 +30,13 @@ import {
   ListMusic,
   Upload,
   Send,
-  ChevronDown,
   X,
 } from "lucide-react";
+
+import Hls from "hls.js";
+
 import "./styles.css";
+
 
 /* =========================================================
    API
@@ -57,6 +67,7 @@ const api = async (path, options = {}) => {
   return data;
 };
 
+
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -74,19 +85,23 @@ function getInitial(username = "") {
   return username?.trim()?.[0]?.toUpperCase() || "F";
 }
 
+
 /* =========================================================
    COVER
 ========================================================= */
 
 function Cover({ track, size = "md" }) {
+  const [failed, setFailed] = useState(false);
+
   const url = track?.cover_url || track?.cover;
 
-  if (url) {
+  if (url && !failed) {
     return (
       <img
         className={`cover ${size}`}
         src={url}
         alt={track?.title || "FENIX MUSIC"}
+        onError={() => setFailed(true)}
       />
     );
   }
@@ -97,6 +112,7 @@ function Cover({ track, size = "md" }) {
     </div>
   );
 }
+
 
 /* =========================================================
    EMPTY
@@ -110,6 +126,7 @@ function Empty({ text }) {
     </div>
   );
 }
+
 
 /* =========================================================
    TRACK ROW
@@ -167,15 +184,18 @@ function TrackRow({ track, onPlay, onLike }) {
   );
 }
 
+
 /* =========================================================
    AUTH
 ========================================================= */
 
 function Auth({ onClose, onAuth }) {
   const [mode, setMode] = useState("login");
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+
   const [error, setError] = useState("");
   const [telegramToken, setTelegramToken] = useState("");
 
@@ -191,21 +211,26 @@ function Auth({ onClose, onAuth }) {
         );
 
         if (data.status === "confirmed") {
-          localStorage.setItem("fenix_token", data.token);
+          localStorage.setItem(
+            "fenix_token",
+            data.token
+          );
 
           onAuth(data.user);
           onClose();
         }
       } catch {
-        // Ожидаем подтверждение Telegram
+        // Ждём подтверждение в Telegram
       }
     }, 1500);
 
     return () => clearInterval(interval);
   }, [telegramToken, onAuth, onClose]);
 
+
   async function submit(event) {
     event.preventDefault();
+
     setError("");
 
     try {
@@ -234,36 +259,63 @@ function Auth({ onClose, onAuth }) {
         body: JSON.stringify(body),
       });
 
-      localStorage.setItem("fenix_token", data.token);
+      localStorage.setItem(
+        "fenix_token",
+        data.token
+      );
 
       onAuth(data.user);
       onClose();
     } catch (err) {
-      setError(err.message || "Не удалось выполнить вход");
+      setError(
+        err.message ||
+          "Не удалось выполнить операцию"
+      );
     }
   }
+
 
   async function telegramLogin() {
     setError("");
 
     try {
-      const data = await api("/api/auth/telegram/start", {
-        method: "POST",
-      });
+      const data = await api(
+        "/api/auth/telegram/start",
+        {
+          method: "POST",
+        }
+      );
+
+      if (!data?.token) {
+        throw new Error(
+          "Сервер не вернул Telegram-токен"
+        );
+      }
 
       setTelegramToken(data.token);
 
-      if (data.url) {
-        window.open(data.url, "_blank", "noopener,noreferrer");
-      }
+      const telegramUrl =
+        data.url ||
+        `https://t.me/FenixMusicRabot?start=auth_${data.token}`;
+
+      window.open(
+        telegramUrl,
+        "_blank",
+        "noopener,noreferrer"
+      );
     } catch (err) {
-      setError(err.message || "Telegram авторизация недоступна");
+      setError(
+        err.message ||
+          "Telegram авторизация недоступна"
+      );
     }
   }
+
 
   return (
     <div className="modal-back">
       <div className="modal auth-modal">
+
         <button
           type="button"
           className="close"
@@ -284,6 +336,7 @@ function Auth({ onClose, onAuth }) {
         </h2>
 
         <form onSubmit={submit}>
+
           {mode === "register" && (
             <input
               type="text"
@@ -316,14 +369,19 @@ function Auth({ onClose, onAuth }) {
             required
           />
 
-          <button type="submit" className="primary">
+          <button
+            type="submit"
+            className="primary"
+          >
             {mode === "login"
               ? "Войти"
               : "Зарегистрироваться"}
           </button>
         </form>
 
-        <div className="or">или</div>
+        <div className="or">
+          или
+        </div>
 
         <button
           type="button"
@@ -331,29 +389,42 @@ function Auth({ onClose, onAuth }) {
           onClick={telegramLogin}
         >
           <Send size={18} />
-          Войти через Telegram
+
+          Регистрация через @FenixMusicRabot
         </button>
 
         {telegramToken && (
           <div className="waiting">
-            Откройте Telegram и нажмите Start.
+            <b>Telegram открыт.</b>
+            <br />
+            Нажми Start в
+            <br />
+            @FenixMusicRabot
+            <br />
             <br />
             Ожидаю подтверждение…
           </div>
         )}
 
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error">
+            {error}
+          </div>
+        )}
 
         <button
           type="button"
           className="switch"
-          onClick={() =>
+          onClick={() => {
+            setError("");
+            setTelegramToken("");
+
             setMode(
               mode === "login"
                 ? "register"
                 : "login"
-            )
-          }
+            );
+          }}
         >
           {mode === "login"
             ? "Нет аккаунта? Регистрация"
@@ -363,6 +434,7 @@ function Auth({ onClose, onAuth }) {
     </div>
   );
 }
+
 
 /* =========================================================
    PLAYLISTS
@@ -375,9 +447,16 @@ function PlaylistPage() {
 
   useEffect(() => {
     api("/api/playlists")
-      .then(setPlaylists)
-      .catch(() => setPlaylists([]));
+      .then((data) => {
+        setPlaylists(
+          Array.isArray(data) ? data : []
+        );
+      })
+      .catch(() => {
+        setPlaylists([]);
+      });
   }, []);
+
 
   async function createPlaylist() {
     const cleanName = name.trim();
@@ -389,35 +468,41 @@ function PlaylistPage() {
     setLoading(true);
 
     try {
-      const playlist = await api("/api/playlists", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: cleanName,
-        }),
-      });
+      const playlist = await api(
+        "/api/playlists",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: cleanName,
+          }),
+        }
+      );
 
       setPlaylists((current) => [
         ...current,
         {
           ...playlist,
-          tracks: playlist.tracks || [],
+          tracks:
+            playlist.tracks || [],
         },
       ]);
 
       setName("");
     } catch {
-      // Ошибка создания плейлиста
+      // Ошибка создания
     } finally {
       setLoading(false);
     }
   }
 
+
   return (
     <>
       <div className="playlist-create">
+
         <input
           value={name}
           onChange={(event) =>
@@ -438,7 +523,10 @@ function PlaylistPage() {
           disabled={loading}
         >
           <Plus size={18} />
-          {loading ? "Создание..." : "Создать"}
+
+          {loading
+            ? "Создание..."
+            : "Создать"}
         </button>
       </div>
 
@@ -453,10 +541,14 @@ function PlaylistPage() {
             >
               <ListMusic size={32} />
 
-              <b>{playlist.name}</b>
+              <b>
+                {playlist.name}
+              </b>
 
               <span>
-                {playlist.tracks?.length || 0} треков
+                {playlist.tracks?.length || 0}
+                {" "}
+                треков
               </span>
             </div>
           ))}
@@ -466,59 +558,114 @@ function PlaylistPage() {
   );
 }
 
+
 /* =========================================================
    APP
 ========================================================= */
 
 function App() {
-  const [page, setPage] = useState("home");
+  const [page, setPage] =
+    useState("home");
 
-  const [tracks, setTracks] = useState([]);
-  const [radio, setRadio] = useState([]);
+  const [tracks, setTracks] =
+    useState([]);
 
-  const [current, setCurrent] = useState(null);
-  const [playing, setPlaying] = useState(false);
+  const [radio, setRadio] =
+    useState([]);
 
-  const [user, setUser] = useState(null);
-  const [auth, setAuth] = useState(false);
+  const [current, setCurrent] =
+    useState(null);
 
-  const [query, setQuery] = useState("");
+  const [playing, setPlaying] =
+    useState(false);
 
-  const [mobile, setMobile] = useState(false);
+  const [user, setUser] =
+    useState(null);
 
-  const [volume, setVolume] = useState(0.9);
+  const [auth, setAuth] =
+    useState(false);
 
-  const [liked, setLiked] = useState([]);
-  const [history, setHistory] = useState([]);
+  const [query, setQuery] =
+    useState("");
 
-  const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState(false);
+  const [mobile, setMobile] =
+    useState(false);
 
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] =
+    useState(0.9);
 
-  const audio = useRef(new Audio());
+  const [liked, setLiked] =
+    useState([]);
 
-  /* -------------------------------------------------------
+  const [history, setHistory] =
+    useState([]);
+
+  const [shuffle, setShuffle] =
+    useState(false);
+
+  const [repeat, setRepeat] =
+    useState(false);
+
+  const [progress, setProgress] =
+    useState(0);
+
+  const [duration, setDuration] =
+    useState(0);
+
+  const audio =
+    useRef(new Audio());
+
+  const hlsRef =
+    useRef(null);
+
+
+  /* =======================================================
+     DESTROY HLS
+  ======================================================= */
+
+  function destroyHls() {
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.destroy();
+      } catch {
+        // ignore
+      }
+
+      hlsRef.current = null;
+    }
+  }
+
+
+  /* =======================================================
      INITIAL LOAD
-  ------------------------------------------------------- */
+  ======================================================= */
 
   useEffect(() => {
     api("/api/tracks")
       .then((data) => {
-        setTracks(Array.isArray(data) ? data : []);
+        setTracks(
+          Array.isArray(data)
+            ? data
+            : []
+        );
       })
       .catch(() => {
         setTracks([]);
       });
 
+
     api("/api/radio")
       .then((data) => {
-        setRadio(Array.isArray(data) ? data : []);
+        setRadio(
+          Array.isArray(data)
+            ? data
+            : []
+        );
       })
       .catch(() => {
         setRadio([]);
       });
+
 
     api("/api/auth/me")
       .then((data) => {
@@ -529,41 +676,76 @@ function App() {
       });
   }, []);
 
-  /* -------------------------------------------------------
+
+  /* =======================================================
      AUDIO EVENTS
-  ------------------------------------------------------- */
+  ======================================================= */
 
   useEffect(() => {
     const player = audio.current;
 
     player.volume = volume;
 
+
     const handleTime = () => {
-      setProgress(player.currentTime || 0);
+      setProgress(
+        player.currentTime || 0
+      );
     };
+
 
     const handleMetadata = () => {
       setDuration(
         Number(player.duration) ||
-          Number(current?.duration) ||
-          0
+        Number(current?.duration) ||
+        0
       );
     };
 
+
     const handleEnded = () => {
-      if (repeat && current) {
+      if (
+        repeat &&
+        current &&
+        !current.radio
+      ) {
         player.currentTime = 0;
 
         player
           .play()
-          .then(() => setPlaying(true))
-          .catch(() => setPlaying(false));
+          .then(() => {
+            setPlaying(true);
+          })
+          .catch(() => {
+            setPlaying(false);
+          });
 
+        return;
+      }
+
+      if (current?.radio) {
+        setPlaying(false);
         return;
       }
 
       nextTrack();
     };
+
+
+    const handlePlay = () => {
+      setPlaying(true);
+    };
+
+
+    const handlePause = () => {
+      setPlaying(false);
+    };
+
+
+    const handleError = () => {
+      setPlaying(false);
+    };
+
 
     player.addEventListener(
       "timeupdate",
@@ -580,6 +762,22 @@ function App() {
       handleEnded
     );
 
+    player.addEventListener(
+      "play",
+      handlePlay
+    );
+
+    player.addEventListener(
+      "pause",
+      handlePause
+    );
+
+    player.addEventListener(
+      "error",
+      handleError
+    );
+
+
     return () => {
       player.removeEventListener(
         "timeupdate",
@@ -595,29 +793,76 @@ function App() {
         "ended",
         handleEnded
       );
-    };
-  }, [volume, repeat, current, tracks, shuffle]);
 
-  /* -------------------------------------------------------
-     VOLUME
-  ------------------------------------------------------- */
+      player.removeEventListener(
+        "play",
+        handlePlay
+      );
+
+      player.removeEventListener(
+        "pause",
+        handlePause
+      );
+
+      player.removeEventListener(
+        "error",
+        handleError
+      );
+    };
+  }, [
+    volume,
+    repeat,
+    current,
+    tracks,
+    shuffle,
+  ]);
+
+
+  /* =======================================================
+     CLEANUP
+  ======================================================= */
 
   useEffect(() => {
-    audio.current.volume = volume;
+    return () => {
+      destroyHls();
+
+      const player =
+        audio.current;
+
+      player.pause();
+      player.src = "";
+    };
+  }, []);
+
+
+  /* =======================================================
+     VOLUME
+  ======================================================= */
+
+  useEffect(() => {
+    audio.current.volume =
+      volume;
   }, [volume]);
 
-  /* -------------------------------------------------------
+
+  /* =======================================================
      PLAY TRACK
-  ------------------------------------------------------- */
+  ======================================================= */
 
   async function playTrack(track) {
     if (!track?.audio_url) {
       return;
     }
 
-    const player = audio.current;
+    const player =
+      audio.current;
 
-    if (current?.id === track.id) {
+    destroyHls();
+
+    if (
+      current?.id === track.id &&
+      !current?.radio
+    ) {
       if (player.paused) {
         try {
           await player.play();
@@ -633,15 +878,25 @@ function App() {
       return;
     }
 
+
     try {
       player.pause();
 
-      player.src = track.audio_url;
+      player.removeAttribute(
+        "src"
+      );
+
+      player.load();
+
+      player.src =
+        track.audio_url;
 
       player.currentTime = 0;
 
       setCurrent(track);
+
       setProgress(0);
+
       setDuration(
         Number(track.duration) || 0
       );
@@ -650,19 +905,27 @@ function App() {
 
       setPlaying(true);
 
-      if (user && track.id) {
-        api(`/api/tracks/${track.id}/play`, {
-          method: "POST",
-        }).catch(() => {});
+
+      if (
+        user &&
+        track.id
+      ) {
+        api(
+          `/api/tracks/${track.id}/play`,
+          {
+            method: "POST",
+          }
+        ).catch(() => {});
       }
     } catch {
       setPlaying(false);
     }
   }
 
-  /* -------------------------------------------------------
+
+  /* =======================================================
      NEXT
-  ------------------------------------------------------- */
+  ======================================================= */
 
   function nextTrack() {
     if (!tracks.length) {
@@ -674,20 +937,27 @@ function App() {
       return;
     }
 
+    if (current.radio) {
+      return;
+    }
+
     if (shuffle) {
       if (tracks.length === 1) {
         playTrack(tracks[0]);
         return;
       }
 
-      const available = tracks.filter(
-        (track) => track.id !== current.id
-      );
+      const available =
+        tracks.filter(
+          (track) =>
+            track.id !== current.id
+        );
 
       const random =
         available[
           Math.floor(
-            Math.random() * available.length
+            Math.random() *
+              available.length
           )
         ];
 
@@ -695,23 +965,43 @@ function App() {
       return;
     }
 
-    const index = tracks.findIndex(
-      (track) => track.id === current.id
-    );
+    const index =
+      tracks.findIndex(
+        (track) =>
+          track.id === current.id
+      );
 
     const nextIndex =
-      (index + 1 + tracks.length) %
-      tracks.length;
+      index < 0
+        ? 0
+        : (
+            index +
+            1 +
+            tracks.length
+          ) % tracks.length;
 
-    playTrack(tracks[nextIndex]);
+    playTrack(
+      tracks[nextIndex]
+    );
   }
 
-  /* -------------------------------------------------------
+
+  /* =======================================================
      PREVIOUS
-  ------------------------------------------------------- */
+  ======================================================= */
 
   function previousTrack() {
     if (!tracks.length) {
+      return;
+    }
+
+    if (
+      current?.radio
+    ) {
+      playTrack(
+        tracks[0]
+      );
+
       return;
     }
 
@@ -720,25 +1010,38 @@ function App() {
       return;
     }
 
-    if (audio.current.currentTime > 5) {
+    if (
+      audio.current.currentTime >
+      5
+    ) {
       audio.current.currentTime = 0;
       return;
     }
 
-    const index = tracks.findIndex(
-      (track) => track.id === current.id
-    );
+    const index =
+      tracks.findIndex(
+        (track) =>
+          track.id === current.id
+      );
 
     const previousIndex =
-      (index - 1 + tracks.length) %
-      tracks.length;
+      index < 0
+        ? 0
+        : (
+            index -
+            1 +
+            tracks.length
+          ) % tracks.length;
 
-    playTrack(tracks[previousIndex]);
+    playTrack(
+      tracks[previousIndex]
+    );
   }
 
-  /* -------------------------------------------------------
+
+  /* =======================================================
      LIKE
-  ------------------------------------------------------- */
+  ======================================================= */
 
   async function likeTrack(track) {
     if (!track) {
@@ -751,70 +1054,107 @@ function App() {
     }
 
     try {
-      const data = await api(
-        `/api/tracks/${track.id}/like`,
-        {
-          method: "POST",
-        }
+      const data =
+        await api(
+          `/api/tracks/${track.id}/like`,
+          {
+            method: "POST",
+          }
+        );
+
+      setTracks(
+        (currentTracks) =>
+          currentTracks.map(
+            (item) =>
+              item.id === track.id
+                ? {
+                    ...item,
+                    liked:
+                      data.liked,
+                  }
+                : item
+          )
       );
 
-      setTracks((currentTracks) =>
-        currentTracks.map((item) =>
-          item.id === track.id
-            ? {
-                ...item,
-                liked: data.liked,
-              }
-            : item
-        )
-      );
 
-      setLiked((currentLiked) => {
-        if (data.liked) {
-          const exists = currentLiked.some(
-            (item) => item.id === track.id
-          );
+      setLiked(
+        (currentLiked) => {
+          if (data.liked) {
+            const exists =
+              currentLiked.some(
+                (item) =>
+                  item.id === track.id
+              );
 
-          if (exists) {
-            return currentLiked;
+            if (exists) {
+              return currentLiked;
+            }
+
+            return [
+              ...currentLiked,
+              {
+                ...track,
+                liked: true,
+              },
+            ];
           }
 
-          return [...currentLiked, { ...track, liked: true }];
+          return currentLiked.filter(
+            (item) =>
+              item.id !== track.id
+          );
         }
-
-        return currentLiked.filter(
-          (item) => item.id !== track.id
-        );
-      });
+      );
     } catch {
       // Ошибка лайка
     }
   }
 
-  /* -------------------------------------------------------
-     RADIO
-  ------------------------------------------------------- */
 
-  function playRadio(station) {
+  /* =======================================================
+     RADIO
+  ======================================================= */
+
+  async function playRadio(station) {
     if (!station?.stream_url) {
       return;
     }
 
-    const player = audio.current;
+    const player =
+      audio.current;
+
+    destroyHls();
 
     player.pause();
 
-    player.src = station.stream_url;
+    player.removeAttribute(
+      "src"
+    );
 
-    player.currentTime = 0;
+    player.load();
+
+
+    const streamUrl =
+      station.stream_url;
+
+    const isHls =
+      station.type === "hls" ||
+      /\.m3u8($|\?)/i.test(
+        streamUrl
+      );
+
 
     setCurrent({
       id: `radio-${station.id}`,
       title: station.name,
       artist: "Радио",
-      album: station.genre || "Прямой эфир",
-      cover_url: station.cover,
-      audio_url: station.stream_url,
+      album:
+        station.genre ||
+        "Прямой эфир",
+      cover_url:
+        station.cover,
+      audio_url:
+        streamUrl,
       duration: 0,
       radio: true,
     });
@@ -822,52 +1162,180 @@ function App() {
     setProgress(0);
     setDuration(0);
 
-    player
-      .play()
-      .then(() => setPlaying(true))
-      .catch(() => setPlaying(false));
-  }
 
-  /* -------------------------------------------------------
-     SEARCH
-  ------------------------------------------------------- */
+    /* -------------------------------------------------------
+       HLS
+    ------------------------------------------------------- */
 
-  const filteredTracks = useMemo(() => {
-    const search = query.trim().toLowerCase();
+    if (isHls) {
 
-    if (!search) {
-      return tracks;
+      if (
+        Hls.isSupported()
+      ) {
+        const hls =
+          new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+          });
+
+        hlsRef.current =
+          hls;
+
+        hls.on(
+          Hls.Events.ERROR,
+          (
+            event,
+            data
+          ) => {
+            if (
+              data?.fatal
+            ) {
+              setPlaying(false);
+
+              try {
+                hls.destroy();
+              } catch {
+                // ignore
+              }
+
+              hlsRef.current =
+                null;
+            }
+          }
+        );
+
+        hls.on(
+          Hls.Events.MANIFEST_PARSED,
+          async () => {
+            try {
+              await player.play();
+              setPlaying(true);
+            } catch {
+              setPlaying(false);
+            }
+          }
+        );
+
+        hls.loadSource(
+          streamUrl
+        );
+
+        hls.attachMedia(
+          player
+        );
+
+        return;
+      }
+
+
+      /* -----------------------------------------------------
+         Safari / native HLS
+      ----------------------------------------------------- */
+
+      if (
+        player.canPlayType(
+          "application/vnd.apple.mpegurl"
+        )
+      ) {
+        player.src =
+          streamUrl;
+
+        try {
+          await player.play();
+          setPlaying(true);
+        } catch {
+          setPlaying(false);
+        }
+
+        return;
+      }
+
+
+      setPlaying(false);
+
+      return;
     }
 
-    return tracks.filter((track) => {
-      const text = [
-        track?.title,
-        track?.artist,
-        track?.album,
-        track?.genre,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
 
-      return text.includes(search);
-    });
-  }, [tracks, query]);
+    /* -------------------------------------------------------
+       MP3
+    ------------------------------------------------------- */
 
-  /* -------------------------------------------------------
+    try {
+      player.src =
+        streamUrl;
+
+      player.currentTime = 0;
+
+      await player.play();
+
+      setPlaying(true);
+    } catch {
+      setPlaying(false);
+    }
+  }
+
+
+  /* =======================================================
+     SEARCH
+  ======================================================= */
+
+  const filteredTracks =
+    useMemo(() => {
+      const search =
+        query
+          .trim()
+          .toLowerCase();
+
+      if (!search) {
+        return tracks;
+      }
+
+      return tracks.filter(
+        (track) => {
+          const text = [
+            track?.title,
+            track?.artist,
+            track?.album,
+            track?.genre,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+
+          return text.includes(
+            search
+          );
+        }
+      );
+    }, [
+      tracks,
+      query,
+    ]);
+
+
+  /* =======================================================
      PAGE LOAD
-  ------------------------------------------------------- */
+  ======================================================= */
 
-  async function loadPage(nextPage) {
+  async function loadPage(
+    nextPage
+  ) {
     setPage(nextPage);
 
     setMobile(false);
 
-    if (nextPage === "history" && user) {
+
+    if (
+      nextPage === "history" &&
+      user
+    ) {
       api("/api/history")
         .then((data) => {
           setHistory(
-            Array.isArray(data) ? data : []
+            Array.isArray(data)
+              ? data
+              : []
           );
         })
         .catch(() => {
@@ -875,11 +1343,17 @@ function App() {
         });
     }
 
-    if (nextPage === "favorites" && user) {
+
+    if (
+      nextPage === "favorites" &&
+      user
+    ) {
       api("/api/favorites")
         .then((data) => {
           setLiked(
-            Array.isArray(data) ? data : []
+            Array.isArray(data)
+              ? data
+              : []
           );
         })
         .catch(() => {
@@ -888,11 +1362,14 @@ function App() {
     }
   }
 
-  /* -------------------------------------------------------
-     SEARCH PAGE
-  ------------------------------------------------------- */
 
-  function handleSearch(value) {
+  /* =======================================================
+     SEARCH PAGE
+  ======================================================= */
+
+  function handleSearch(
+    value
+  ) {
     setQuery(value);
 
     if (value.trim()) {
@@ -902,36 +1379,123 @@ function App() {
     }
   }
 
-  /* -------------------------------------------------------
+
+  /* =======================================================
      LOGOUT
-  ------------------------------------------------------- */
+  ======================================================= */
 
   function logout() {
+    destroyHls();
+
     audio.current.pause();
 
+    audio.current.src = "";
+
     setPlaying(false);
+
     setCurrent(null);
 
-    localStorage.removeItem("fenix_token");
+    localStorage.removeItem(
+      "fenix_token"
+    );
 
     setUser(null);
+
     setLiked([]);
+
     setHistory([]);
 
     setPage("home");
   }
 
-  /* -------------------------------------------------------
+
+  /* =======================================================
      PLAYER SEEK
-  ------------------------------------------------------- */
+  ======================================================= */
 
   function seek(event) {
-    const value = Number(event.target.value);
+    if (
+      current?.radio
+    ) {
+      return;
+    }
 
-    audio.current.currentTime = value;
+    const value =
+      Number(
+        event.target.value
+      );
+
+    audio.current.currentTime =
+      value;
 
     setProgress(value);
   }
+
+
+  /* =======================================================
+     PLAY CURRENT
+  ======================================================= */
+
+  async function toggleCurrent() {
+    if (!current) {
+      return;
+    }
+
+    if (current.radio) {
+      await playRadio({
+        id:
+          String(
+            current.id
+          ).replace(
+            "radio-",
+            ""
+          ),
+        name:
+          current.title,
+        genre:
+          current.album,
+        cover:
+          current.cover_url,
+        stream_url:
+          current.audio_url,
+        type:
+          /\.m3u8/i.test(
+            current.audio_url ||
+              ""
+          )
+            ? "hls"
+            : "mp3",
+      });
+
+      return;
+    }
+
+    await playTrack(current);
+  }
+
+
+  /* =======================================================
+     HERO
+  ======================================================= */
+
+  function heroAction() {
+    if (tracks.length) {
+      playTrack(
+        tracks[0]
+      );
+
+      return;
+    }
+
+    if (radio.length) {
+      loadPage("radio");
+
+      playRadio(
+        radio[0]
+      );
+    }
+  }
+
 
   /* =======================================================
      RENDER
@@ -939,9 +1503,10 @@ function App() {
 
   return (
     <div className="app">
-      {/* ===================================================
+
+      {/* =================================================
           SIDEBAR
-      =================================================== */}
+      ================================================= */}
 
       <aside
         className={
@@ -950,11 +1515,13 @@ function App() {
             : "sidebar"
         }
       >
+
         <div className="brand">
           FENIX<span>MUSIC</span>
         </div>
 
         <nav>
+
           <button
             type="button"
             className={
@@ -962,11 +1529,14 @@ function App() {
                 ? "nav active"
                 : "nav"
             }
-            onClick={() => loadPage("home")}
+            onClick={() =>
+              loadPage("home")
+            }
           >
             <Home />
             Для вас
           </button>
+
 
           <button
             type="button"
@@ -975,11 +1545,14 @@ function App() {
                 ? "nav active"
                 : "nav"
             }
-            onClick={() => loadPage("radio")}
+            onClick={() =>
+              loadPage("radio")
+            }
           >
             <RadioIcon />
             Радио
           </button>
+
 
           <button
             type="button"
@@ -988,11 +1561,16 @@ function App() {
                 ? "nav active"
                 : "nav"
             }
-            onClick={() => loadPage("favorites")}
+            onClick={() =>
+              loadPage(
+                "favorites"
+              )
+            }
           >
             <Heart />
             Избранное
           </button>
+
 
           <button
             type="button"
@@ -1001,11 +1579,16 @@ function App() {
                 ? "nav active"
                 : "nav"
             }
-            onClick={() => loadPage("history")}
+            onClick={() =>
+              loadPage(
+                "history"
+              )
+            }
           >
             <History />
             История
           </button>
+
 
           <button
             type="button"
@@ -1014,24 +1597,36 @@ function App() {
                 ? "nav active"
                 : "nav"
             }
-            onClick={() => loadPage("playlists")}
+            onClick={() =>
+              loadPage(
+                "playlists"
+              )
+            }
           >
             <ListMusic />
             Плейлисты
           </button>
+
         </nav>
 
+
         <div className="side-bottom">
+
           {user ? (
             <>
+
               <div className="profile-mini">
+
                 <div className="avatar">
-                  {getInitial(user.username)}
+                  {getInitial(
+                    user.username
+                  )}
                 </div>
 
                 <div>
                   <b>
-                    {user.username || "Пользователь"}
+                    {user.username ||
+                      "Пользователь"}
                   </b>
 
                   <span>
@@ -1040,7 +1635,9 @@ function App() {
                       : "FENIX аккаунт"}
                   </span>
                 </div>
+
               </div>
+
 
               <button
                 type="button"
@@ -1050,47 +1647,65 @@ function App() {
                 <LogOut />
                 Выйти
               </button>
+
             </>
           ) : (
+
             <button
               type="button"
               className="login-side"
-              onClick={() => setAuth(true)}
+              onClick={() =>
+                setAuth(true)
+              }
             >
               <LogIn />
               Войти
             </button>
+
           )}
+
         </div>
+
       </aside>
 
-      {/* ===================================================
+
+      {/* =================================================
           MAIN
-      =================================================== */}
+      ================================================= */}
 
       <main>
+
         <header>
+
           <button
             type="button"
             className="mobile-menu"
             onClick={() =>
-              setMobile((value) => !value)
+              setMobile(
+                (value) => !value
+              )
             }
           >
             <Menu />
           </button>
 
+
           <div className="search">
+
             <Search size={19} />
 
             <input
               value={query}
               onChange={(event) =>
-                handleSearch(event.target.value)
+                handleSearch(
+                  event.target.value
+                )
               }
               placeholder="Поиск музыки, артистов, альбомов…"
             />
+
           </div>
+
 
           <button
             type="button"
@@ -1105,21 +1720,28 @@ function App() {
 
             <span>
               {user
-                ? user.username || "Профиль"
+                ? user.username ||
+                  "Профиль"
                 : "Войти"}
             </span>
           </button>
+
         </header>
 
+
         <section className="content">
+
           {/* =================================================
               HOME
           ================================================= */}
 
           {page === "home" && (
             <>
+
               <div className="hero">
+
                 <div>
+
                   <span className="eyebrow">
                     FENIX MUSIC
                   </span>
@@ -1131,52 +1753,76 @@ function App() {
                   </h1>
 
                   <p>
-                    Слушай любимые треки и прямой
-                    эфир радио в одном месте.
+                    Слушай любимые треки
+                    и прямой эфир радио
+                    в одном месте.
                   </p>
 
                   <button
                     type="button"
                     className="primary hero-btn"
-                    onClick={() => {
-                      if (tracks[0]) {
-                        playTrack(tracks[0]);
-                      }
-                    }}
+                    onClick={
+                      heroAction
+                    }
                   >
                     <Play
                       size={18}
                       fill="currentColor"
                     />
-                    Начать слушать
+
+                    {tracks.length
+                      ? "Начать слушать"
+                      : "Открыть радио"}
                   </button>
+
                 </div>
+
 
                 <div className="hero-orb">
                   <Music2 />
                 </div>
+
               </div>
 
-              <h2>Популярное</h2>
+
+              <h2>
+                Популярное
+              </h2>
+
 
               <div className="tracks">
+
                 {tracks
                   .slice(0, 10)
-                  .map((track) => (
-                    <TrackRow
-                      key={track.id}
-                      track={track}
-                      onPlay={playTrack}
-                      onLike={likeTrack}
-                    />
-                  ))}
+                  .map(
+                    (track) => (
+                      <TrackRow
+                        key={
+                          track.id
+                        }
+                        track={
+                          track
+                        }
+                        onPlay={
+                          playTrack
+                        }
+                        onLike={
+                          likeTrack
+                        }
+                      />
+                    )
+                  )}
+
               </div>
 
+
               {tracks.length === 0 && (
-                <Empty text="Музыка пока не загружена" />
+                <Empty text="Музыка пока не загружена. Добавь свои треки через Telegram-бота." />
               )}
+
             </>
           )}
+
 
           {/* =================================================
               SEARCH
@@ -1184,24 +1830,45 @@ function App() {
 
           {page === "search" && (
             <>
-              <h2>Результаты поиска</h2>
+
+              <h2>
+                Результаты поиска
+              </h2>
 
               {filteredTracks.length ? (
+
                 <div className="tracks">
-                  {filteredTracks.map((track) => (
-                    <TrackRow
-                      key={track.id}
-                      track={track}
-                      onPlay={playTrack}
-                      onLike={likeTrack}
-                    />
-                  ))}
+
+                  {filteredTracks.map(
+                    (track) => (
+                      <TrackRow
+                        key={
+                          track.id
+                        }
+                        track={
+                          track
+                        }
+                        onPlay={
+                          playTrack
+                        }
+                        onLike={
+                          likeTrack
+                        }
+                      />
+                    )
+                  )}
+
                 </div>
+
               ) : (
+
                 <Empty text="Ничего не найдено" />
+
               )}
+
             </>
           )}
+
 
           {/* =================================================
               RADIO
@@ -1209,50 +1876,92 @@ function App() {
 
           {page === "radio" && (
             <>
-              <h2>Радио</h2>
+
+              <h2>
+                Радио
+              </h2>
 
               <p className="muted">
-                Прямой эфир · слушай без остановки
+                Прямой эфир · слушай
+                без остановки
               </p>
 
+
               {radio.length ? (
+
                 <div className="radio-grid">
-                  {radio.map((station) => (
-                    <button
-                      type="button"
-                      className="radio-card"
-                      key={station.id}
-                      onClick={() =>
-                        playRadio(station)
-                      }
-                    >
-                      <img
-                        src={station.cover}
-                        alt={station.name}
-                      />
 
-                      <div>
-                        <b>{station.name}</b>
+                  {radio.map(
+                    (station) => (
 
-                        <span>
-                          {station.genre}
-                          {station.bitrate
-                            ? ` · ${station.bitrate}`
-                            : ""}
-                        </span>
+                      <button
+                        type="button"
+                        className="radio-card"
+                        key={
+                          station.id
+                        }
+                        onClick={() =>
+                          playRadio(
+                            station
+                          )
+                        }
+                      >
 
-                        <small>
-                          ▶ В эфир
-                        </small>
-                      </div>
-                    </button>
-                  ))}
+                        <img
+                          src={
+                            station.cover
+                          }
+                          alt={
+                            station.name
+                          }
+                          onError={(
+                            event
+                          ) => {
+                            event.currentTarget.style.display =
+                              "none";
+                          }}
+                        />
+
+                        <div>
+
+                          <b>
+                            {
+                              station.name
+                            }
+                          </b>
+
+                          <span>
+                            {
+                              station.genre
+                            }
+
+                            {station.bitrate
+                              ? ` · ${station.bitrate}`
+                              : ""}
+                          </span>
+
+                          <small>
+                            ▶ В эфир
+                          </small>
+
+                        </div>
+
+                      </button>
+
+                    )
+                  )}
+
                 </div>
+
               ) : (
+
                 <Empty text="Радиостанции пока недоступны" />
+
               )}
+
             </>
           )}
+
 
           {/* =================================================
               FAVORITES
@@ -1260,31 +1969,56 @@ function App() {
 
           {page === "favorites" && (
             <>
-              <h2>Избранное</h2>
+
+              <h2>
+                Избранное
+              </h2>
 
               {user ? (
+
                 liked.length ? (
+
                   <div className="tracks">
-                    {liked.map((track) => (
-                      <TrackRow
-                        key={track.id}
-                        track={{
-                          ...track,
-                          liked: true,
-                        }}
-                        onPlay={playTrack}
-                        onLike={likeTrack}
-                      />
-                    ))}
+
+                    {liked.map(
+                      (track) => (
+
+                        <TrackRow
+                          key={
+                            track.id
+                          }
+                          track={{
+                            ...track,
+                            liked: true,
+                          }}
+                          onPlay={
+                            playTrack
+                          }
+                          onLike={
+                            likeTrack
+                          }
+                        />
+
+                      )
+                    )}
+
                   </div>
+
                 ) : (
+
                   <Empty text="Добавляй треки в избранное" />
+
                 )
+
               ) : (
+
                 <Empty text="Войди, чтобы увидеть избранное" />
+
               )}
+
             </>
           )}
+
 
           {/* =================================================
               HISTORY
@@ -1292,32 +2026,60 @@ function App() {
 
           {page === "history" && (
             <>
-              <h2>Недавно прослушанное</h2>
+
+              <h2>
+                Недавно прослушанное
+              </h2>
 
               {user ? (
+
                 history.length ? (
+
                   <div className="tracks">
-                    {history.map((track, index) => (
-                      <TrackRow
-                        key={
-                          track.id
-                            ? `${track.id}-${index}`
-                            : index
-                        }
-                        track={track}
-                        onPlay={playTrack}
-                        onLike={likeTrack}
-                      />
-                    ))}
+
+                    {history.map(
+                      (
+                        track,
+                        index
+                      ) => (
+
+                        <TrackRow
+                          key={
+                            track.id
+                              ? `${track.id}-${index}`
+                              : index
+                          }
+                          track={
+                            track
+                          }
+                          onPlay={
+                            playTrack
+                          }
+                          onLike={
+                            likeTrack
+                          }
+                        />
+
+                      )
+                    )}
+
                   </div>
+
                 ) : (
+
                   <Empty text="История пока пустая" />
+
                 )
+
               ) : (
+
                 <Empty text="Войди, чтобы увидеть историю" />
+
               )}
+
             </>
           )}
+
 
           {/* =================================================
               PLAYLISTS
@@ -1325,55 +2087,91 @@ function App() {
 
           {page === "playlists" && (
             <>
-              <h2>Плейлисты</h2>
+
+              <h2>
+                Плейлисты
+              </h2>
 
               {user ? (
+
                 <PlaylistPage />
+
               ) : (
+
                 <Empty text="Войди, чтобы создавать плейлисты" />
+
               )}
+
             </>
           )}
+
         </section>
+
       </main>
 
-      {/* ===================================================
+
+      {/* =================================================
           PLAYER
-      =================================================== */}
+      ================================================= */}
 
       {current && (
+
         <div className="player">
+
           <Cover track={current} />
 
+
           <div className="now">
-            <b>{current.title}</b>
-            <span>{current.artist}</span>
+
+            <b>
+              {current.title}
+            </b>
+
+            <span>
+              {current.artist}
+            </span>
+
           </div>
 
+
           <div className="controls">
+
             <button
               type="button"
-              className={shuffle ? "active" : ""}
+              className={
+                shuffle
+                  ? "active"
+                  : ""
+              }
               onClick={() =>
-                setShuffle((value) => !value)
+                setShuffle(
+                  (value) =>
+                    !value
+                )
               }
               title="Перемешивание"
             >
               <Shuffle />
             </button>
 
+
             <button
               type="button"
-              onClick={previousTrack}
+              onClick={
+                previousTrack
+              }
               title="Предыдущий"
             >
               <SkipBack />
             </button>
 
+
             <button
               type="button"
               className="play-main"
-              onClick={() => playTrack(current)}
+              onClick={
+                toggleCurrent
+              }
               title={
                 playing
                   ? "Пауза"
@@ -1381,50 +2179,88 @@ function App() {
               }
             >
               {playing ? (
-                <Pause fill="currentColor" />
+                <Pause
+                  fill="currentColor"
+                />
               ) : (
-                <Play fill="currentColor" />
+                <Play
+                  fill="currentColor"
+                />
               )}
             </button>
 
+
             <button
               type="button"
-              onClick={nextTrack}
+              onClick={
+                nextTrack
+              }
               title="Следующий"
             >
               <SkipForward />
             </button>
 
+
             <button
               type="button"
-              className={repeat ? "active" : ""}
+              className={
+                repeat
+                  ? "active"
+                  : ""
+              }
               onClick={() =>
-                setRepeat((value) => !value)
+                setRepeat(
+                  (value) =>
+                    !value
+                )
               }
               title="Повтор"
             >
               <Repeat2 />
             </button>
+
           </div>
 
+
           <div className="seek">
-            <span>{formatTime(progress)}</span>
+
+            <span>
+              {formatTime(
+                progress
+              )}
+            </span>
 
             <input
               type="range"
               min="0"
-              max={duration || 100}
+              max={
+                duration || 100
+              }
               value={Math.min(
                 progress,
                 duration || 100
               )}
-              onChange={seek}
+              onChange={
+                seek
+              }
+              disabled={
+                current.radio
+              }
             />
 
-            <span>{formatTime(duration)}</span>
+            <span>
+              {current.radio
+                ? "LIVE"
+                : formatTime(
+                    duration
+                  )}
+            </span>
+
           </div>
 
+
           <div className="vol">
+
             {volume === 0 ? (
               <VolumeX />
             ) : (
@@ -1436,36 +2272,61 @@ function App() {
               min="0"
               max="1"
               step="0.01"
-              value={volume}
-              onChange={(event) =>
+              value={
+                volume
+              }
+              onChange={(
+                event
+              ) =>
                 setVolume(
-                  Number(event.target.value)
+                  Number(
+                    event.target.value
+                  )
                 )
               }
             />
+
           </div>
+
         </div>
+
       )}
 
-      {/* ===================================================
+
+      {/* =================================================
           AUTH MODAL
-      =================================================== */}
+      ================================================= */}
 
       {auth && (
+
         <Auth
-          onClose={() => setAuth(false)}
-          onAuth={(nextUser) => setUser(nextUser)}
+          onClose={() =>
+            setAuth(false)
+          }
+          onAuth={(
+            nextUser
+          ) =>
+            setUser(
+              nextUser
+            )
+          }
         />
+
       )}
+
     </div>
   );
 }
+
 
 /* =========================================================
    START REACT
 ========================================================= */
 
-const rootElement = document.getElementById("root");
+const rootElement =
+  document.getElementById(
+    "root"
+  );
 
 if (!rootElement) {
   throw new Error(
@@ -1473,7 +2334,9 @@ if (!rootElement) {
   );
 }
 
-createRoot(rootElement).render(
+createRoot(
+  rootElement
+).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>
