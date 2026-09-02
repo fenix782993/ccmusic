@@ -1,61 +1,12 @@
-services:
-  - type: web
-    name: fenix-music
-    runtime: python
-    plan: free
-    rootDir: .
-
-    buildCommand: |
-      python -m pip install --upgrade pip
-      python -m pip install --no-cache-dir httpx==0.28.1
-      python -m pip install --no-cache-dir -r requirements.txt
-      python -m pip install --no-cache-dir -r backend/requirements.txt
-      cd frontend
-      npm install
-      npm run build
-
-    startCommand: python -m backend.run_all
-
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.8
-
-      - key: DATABASE_URL
-        fromDatabase:
-          name: fenix-music-db
-          property: connectionString
-
-      - key: JWT_SECRET
-        generateValue: true
-
-      - key: ACCESS_MINUTES
-        value: "10080"
-
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-
-      - key: TELEGRAM_BOT_USERNAME
-        value: FenixMusicRabot
-
-      - key: PUBLIC_URL
-        sync: false
-
-      - key: ADMIN_EMAIL
-        sync: false
-
-      - key: ADMIN_PASSWORD
-        sync: false
-
-      - key: CORS_ORIGINS
-        value: "*"
-
-    disk:
-      name: fenix-music-media
-      mountPath: /opt/render/project/src/backend/media
-      sizeGB: 10
-
-databases:
-  - name: fenix-music-db
-    databaseName: fenixmusic
-    user: fenix
-    plan: free
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+sqlalchemy==2.0.43
+psycopg[binary]==3.2.9
+aiogram==3.22.0
+aiofiles==24.1.0
+mutagen==1.47.0
+python-dotenv==1.1.1
+email-validator==2.2.0
+requests==2.32.4
+httpx==0.28.1
+bcrypt==4.3.0
