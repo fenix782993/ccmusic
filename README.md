@@ -1,145 +1,85 @@
-# FENIX MUSIC — FULL
+# FENIX MUSIC — FULL REAL
 
-Полноценная V3/FULL основа музыкальной платформы: React/Vite frontend + FastAPI + PostgreSQL + JWT + библиотека + плейлисты + история + поиск + загрузка аудио/обложек + админ API + Render + Docker.
-
-## Структура
-
-```text
-fenix-music/
-├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── index.html
-│   └── src/
-│       ├── main.jsx
-│       ├── App.jsx
-│       ├── index.js
-│       └── styles.css
-├── backend/
-│   ├── server.py
-│   ├── requirements.txt
-│   └── media/
-├── .env.example
-├── Dockerfile
-├── docker-compose.yml
-├── render.yaml
-├── package.json
-└── README.md
-```
+Полный self-contained проект: FastAPI + SQLAlchemy + Telegram bot (aiogram 3) + responsive frontend.
 
 ## Возможности
+- Регистрация и вход через Telegram-бота по одноразовой deep-link ссылке.
+- Локальная регистрация по email/паролю.
+- PostgreSQL или SQLite.
+- Каталог треков.
+- Поиск.
+- Избранное.
+- История.
+- Плейлисты.
+- Очередь и полноценный HTML5-плеер.
+- MP3/M4A/AAC/OGG/WAV/FLAC/OPUS.
+- HTTP Range для нормальной перемотки аудио.
+- Обложки.
+- Радио-раздел.
+- Адаптивный интерфейс для телефона, планшета и ПК.
+- Render-ready.
+- Единое файловое хранилище для web и bot: запускать web и bot в одном Render service либо использовать один Persistent Disk.
+- Админ-загрузка треков.
+- Telegram-бот умеет добавлять аудиофайлы в каталог.
 
-### Frontend
-- FENIX MUSIC premium dark/red UI
-- Home / For You / Browse / Radio
-- Search
-- Tracks / artists / albums / playlists
-- Favorites
-- History
-- Profile + stats
-- Settings
-- Queue
-- Mini player
-- Fullscreen player
-- Responsive mobile UI
-- Login / registration через API
-- JWT token в localStorage
+## Радио
+В `backend/radio.py` добавлены:
+- Retro FM — предоставленный HLS stream.
+- Русское Радио — предоставленный MP3 stream.
+- Радио Дача — текущий MP3 endpoint listen13.vdfm.ru:8000/dacha.
 
-### Backend
-- PostgreSQL/SQLite через SQLAlchemy
-- JWT authentication
-- bcrypt password hashing
-- Users
-- Admin users
-- Tracks
-- Search
-- Recommendations
-- Likes
-- Listening history
-- Playlists + playlist tracks
-- Artist/album aggregation
-- User statistics
-- Audio upload
-- Cover upload
-- Audio streaming endpoint
-- Admin track/user/stat endpoints
-- CORS
+Если конкретный внешний поток изменится, замените URL в `backend/radio.py`.
 
-## Локальный запуск без Docker
+## Локальный запуск
 
 ### Backend
-
+Python 3.12:
 ```bash
 python -m venv .venv
-.venv\\Scripts\\activate
+.venv\Scripts\activate
 pip install -r backend/requirements.txt
-uvicorn backend.server:app --reload --port 8000
+copy .env.example .env
+python -m uvicorn backend.server:app --host 127.0.0.1 --port 8000
 ```
 
-### Frontend
+Откройте:
+http://127.0.0.1:8000
 
+### Telegram bot
+Если хотите отдельный процесс локально:
 ```bash
-cd frontend
-npm install
-npm run dev
+python -m backend.telegram_bot.bot
 ```
 
-Frontend: http://localhost:5173
-Backend: http://localhost:8000
-API docs: http://localhost:8000/docs
+На Render рекомендуется запускать web и bot вместе через `backend/run_all.py`, чтобы они видели один Persistent Disk.
 
-Для frontend можно создать `frontend/.env`:
-
+## .env
+Минимально:
 ```env
-VITE_API_URL=http://localhost:8000/api
+DATABASE_URL=sqlite:///./data/fenix.db
+JWT_SECRET=change-me
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_BOT_USERNAME=
+ADMIN_EMAIL=admin@fenix.local
+ADMIN_PASSWORD=change-me
+MEDIA_DIR=./media
 ```
 
-## Docker
-
-```bash
-docker compose up --build
+Для PostgreSQL:
+```env
+DATABASE_URL=postgresql+psycopg://user:password@host:5432/fenixmusic
 ```
-
-PostgreSQL: localhost:5432
-API: http://localhost:8000
-
-Локальный admin из compose:
-
-```text
-email: admin@fenixmusic.local
-password: admin123456
-```
-
-После первого запуска обязательно поменяй пароль/секрет для реального сервера.
 
 ## Render
+`render.yaml` уже содержит один Web Service и Persistent Disk. Build собирает frontend, а запуск идёт через `backend/run_all.py`.
 
-`render.yaml` создаёт Web Service + PostgreSQL + persistent disk для media.
+Важно: Render Persistent Disk хранит MP3/обложки между деплоями. Web и Telegram bot внутри одного сервиса используют один и тот же `/opt/render/project/src/media`.
 
-В Render задай:
+## Telegram auth
+На сайте нажмите "Войти через Telegram". Сервер создаст одноразовый токен и выдаст ссылку:
+`https://t.me/<BOT>?start=auth_<token>`
 
-- `ADMIN_EMAIL`
-- `ADMIN_PASSWORD`
+Бот открывает подтверждение. После подтверждения аккаунт создаётся/связывается с Telegram ID. Сайт проверяет токен и авторизует пользователя.
 
-`JWT_SECRET` генерируется автоматически.
-
-Для отдельного frontend deployment:
-
-```env
-VITE_API_URL=https://YOUR-API.onrender.com/api
-```
-
-## Админ API
-
-После входа admin используй Bearer JWT:
-
-- `GET /api/admin/stats`
-- `GET /api/admin/users`
-- `POST /api/admin/tracks` — multipart: title, artist, album, genre, duration, audio, cover
-- `DELETE /api/admin/tracks/{track_id}`
-
-## Важное про музыку
-
-Демо-каталог содержит только метаданные и внешние изображения. Реальные аудиофайлы загружаются через admin upload. Не загружай музыку, на которую у тебя нет прав.
-
-Для большой production-библиотеки лучше вынести audio/covers в S3/R2/Bunny Storage/CDN. Render disk подходит для V1/V2 и небольшого каталога, но не является идеальной архитектурой для большой музыкальной платформы.
+## Лицензии музыки
+Проект не содержит коммерческие аудиофайлы. Загружайте только музыку/контент, на который у вас есть права. Радио URL являются внешними потоками и могут меняться владельцами.

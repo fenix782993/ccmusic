@@ -1,0 +1,12 @@
+fastapi>=0.134,<1
+uvicorn[standard]>=0.35,<1
+sqlalchemy>=2.0,<3
+psycopg[binary]>=3.2,<4
+pydantic[email]>=2.10,<3
+python-multipart>=0.0.20,<1
+PyJWT>=2.10,<3
+passlib[bcrypt]>=1.7,<2
+bcrypt>=4.2,<5
+aiogram>=3.26,<4
+mutagen>=1.47,<2
+python-dotenv>=1.1,<2

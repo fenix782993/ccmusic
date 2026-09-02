@@ -1,0 +1,32 @@
+RADIO_STATIONS = [
+    {
+        "id": "retro-fm",
+        "name": "Ретро FM",
+        "description": "Любимые хиты и атмосфера 80-х, 90-х и 2000-х",
+        "genre": "Ретро",
+        "bitrate": "128 kbps",
+        "type": "hls",
+        "stream_url": "https://hls-01-retro.emgsound.ru/12/128/playlist.m3u8",
+        "cover": "/api/media/radio/retro-fm.svg",
+    },
+    {
+        "id": "russkoe-radio",
+        "name": "Русское Радио",
+        "description": "Главные русские хиты",
+        "genre": "Русская музыка",
+        "bitrate": "128 kbps",
+        "type": "mp3",
+        "stream_url": "https://rusradio.hostingradio.ru/rusradio128.mp3",
+        "cover": "/api/media/radio/russkoe-radio.svg",
+    },
+    {
+        "id": "radio-dacha",
+        "name": "Радио Дача",
+        "description": "Тёплая музыка и любимые хиты",
+        "genre": "Поп / Ретро",
+        "bitrate": "128 kbps",
+        "type": "mp3",
+        "stream_url": "http://listen13.vdfm.ru:8000/dacha",
+        "cover": "/api/media/radio/radio-dacha.svg",
+    },
+]

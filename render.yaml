@@ -2,27 +2,31 @@ services:
   - type: web
     name: fenix-music
     runtime: python
-    plan: free
-
-    buildCommand: "python -m pip install --upgrade pip && python -m pip install -r backend/requirements.txt && cd frontend && npm install && npm run build"
-
-    startCommand: "python -m uvicorn backend.server:app --host 0.0.0.0 --port $PORT"
-
+    rootDir: .
+    buildCommand: pip install -r requirements.txt && npm --prefix frontend install && npm --prefix frontend run build
+    startCommand: python -m backend.run_all
     envVars:
       - key: PYTHON_VERSION
-        value: "3.12.8"
-
+        value: 3.12.8
       - key: DATABASE_URL
         sync: false
-
       - key: JWT_SECRET
         generateValue: true
-
       - key: ACCESS_MINUTES
         value: "10080"
-
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
       - key: ADMIN_EMAIL
         sync: false
-
       - key: ADMIN_PASSWORD
         sync: false
+      - key: MEDIA_DIR
+        value: /opt/render/project/src/media
+      - key: CORS_ORIGINS
+        value: "*"
+    disk:
+      name: fenix-music-media
+      mountPath: /opt/render/project/src/media
+      sizeGB: 10
