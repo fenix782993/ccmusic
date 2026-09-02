@@ -1,15 +1,24 @@
-import asyncio, os, threading, uvicorn
-from dotenv import load_dotenv
-load_dotenv()
+import os
+import threading
+import uvicorn
+
+from backend.server import app
 
 def run_bot():
-    if not os.getenv("TELEGRAM_BOT_TOKEN"):
-        print("[BOT] TELEGRAM_BOT_TOKEN is empty; bot disabled.")
-        return
-    from .telegram_bot.bot import run
-    asyncio.run(run())
+    from backend.telegram_bot.bot import run_bot
+    run_bot()
 
 if __name__ == "__main__":
-    threading.Thread(target=run_bot, daemon=True).start()
-    port=int(os.getenv("PORT","8000"))
-    uvicorn.run("backend.server:app",host="0.0.0.0",port=port)
+    port = int(os.environ.get("PORT", "10000"))
+
+    bot_thread = threading.Thread(
+        target=run_bot,
+        daemon=True,
+    )
+    bot_thread.start()
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+    )
