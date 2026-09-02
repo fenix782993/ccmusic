@@ -1467,6 +1467,12 @@ def get_cover(
     )
 
 
+@app.get("/api/media/covers/{filename}")
+def get_media_cover(filename: str):
+    """Compatibility alias used by older frontend builds."""
+    return get_cover(filename)
+
+
 # ============================================================
 # TELEGRAM AUTH
 # ============================================================
@@ -1579,6 +1585,15 @@ def telegram_auth_status(
             "is_admin": user.is_admin,
         },
     }
+
+
+@app.get("/api/auth/telegram/status/{token}")
+def telegram_auth_status_path(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    """Compatibility alias for clients using a path token."""
+    return telegram_auth_status(token=token, db=db)
 
 
 # ============================================================
