@@ -2,31 +2,57 @@ services:
   - type: web
     name: fenix-music
     runtime: python
+    plan: free
     rootDir: .
-    buildCommand: pip install -r requirements.txt && npm --prefix frontend install && npm --prefix frontend run build
+
+    buildCommand: |
+      pip install -r requirements.txt
+      cd frontend
+      npm install
+      npm run build
+
     startCommand: python -m backend.run_all
+
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
+
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: fenix-music-db
+          property: connectionString
+
       - key: JWT_SECRET
         generateValue: true
+
       - key: ACCESS_MINUTES
         value: "10080"
+
       - key: TELEGRAM_BOT_TOKEN
         sync: false
+
       - key: TELEGRAM_BOT_USERNAME
+        value: FenixMusicRabot
+
+      - key: PUBLIC_URL
         sync: false
+
       - key: ADMIN_EMAIL
         sync: false
+
       - key: ADMIN_PASSWORD
         sync: false
-      - key: MEDIA_DIR
-        value: /opt/render/project/src/media
+
       - key: CORS_ORIGINS
         value: "*"
+
     disk:
       name: fenix-music-media
-      mountPath: /opt/render/project/src/media
+      mountPath: /opt/render/project/src/backend/media
       sizeGB: 10
+
+databases:
+  - name: fenix-music-db
+    databaseName: fenixmusic
+    user: fenix
+    plan: free
