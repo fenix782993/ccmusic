@@ -1,24 +1,28 @@
+import asyncio
 import os
 import threading
+
 import uvicorn
 
-from backend.server import app
 
-def run_bot():
-    from backend.telegram_bot.bot import run_bot
-    run_bot()
+def start_bot():
+    from .telegram_bot.bot import run
+    asyncio.run(run())
+
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "10000"))
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if token:
+        thread = threading.Thread(target=start_bot, name="fenix-telegram-bot", daemon=True)
+        thread.start()
+    else:
+        print("[BOT] TELEGRAM_BOT_TOKEN is not set")
 
-    bot_thread = threading.Thread(
-        target=run_bot,
-        daemon=True,
-    )
-    bot_thread.start()
-
+    port = int(os.getenv("PORT", "8000"))
     uvicorn.run(
-        app,
+        "backend.server:app",
         host="0.0.0.0",
         port=port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
     )
