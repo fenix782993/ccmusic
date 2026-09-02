@@ -28,7 +28,8 @@ from sqlalchemy import (
     or_,
 )
 from sqlalchemy.orm import Session
-import httpx
+from urllib.request import Request as UrlRequest, urlopen
+from urllib.error import HTTPError, URLError
 
 from backend.database import (
     Base,
@@ -1289,24 +1290,37 @@ async def radio_stream(station_id: str):
     if not source_url:
         raise HTTPException(status_code=404, detail="Radio station not found")
 
-    async def proxy():
-        timeout = httpx.Timeout(connect=15.0, read=None, write=15.0, pool=15.0)
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            async with client.stream(
-                "GET",
-                source_url,
-                headers={
-                    "User-Agent": "FENIX-MUSIC/1.0",
-                    "Icy-MetaData": "1",
-                },
-            ) as response:
-                if response.status_code >= 400:
-                    raise HTTPException(
-                        status_code=502,
-                        detail=f"Radio upstream returned {response.status_code}",
-                    )
-                async for chunk in response.aiter_bytes(1024 * 64):
-                    yield chunk
+    def proxy():
+        request = UrlRequest(
+            source_url,
+            headers={
+                "User-Agent": "FENIX-MUSIC/1.0",
+                "Icy-MetaData": "1",
+                "Accept": "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
+            },
+            method="GET",
+        )
+        try:
+            response = urlopen(request, timeout=20)
+        except HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Radio upstream returned {exc.code}",
+            )
+        except URLError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Radio upstream unavailable: {exc.reason}",
+            )
+
+        try:
+            while True:
+                chunk = response.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            response.close()
 
     return StreamingResponse(
         proxy(),
