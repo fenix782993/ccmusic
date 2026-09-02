@@ -1,13 +1,18 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#09090b" />
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <meta name="theme-color" content="#08080a">
 
   <title>FENIX MUSIC</title>
 
   <style>
+
     * {
       box-sizing: border-box;
       margin: 0;
@@ -16,32 +21,37 @@
 
     :root {
       --bg: #08080a;
-      --bg2: #101014;
-      --panel: rgba(22, 22, 27, .88);
-      --panel2: #18181d;
+      --panel: #111115;
+      --panel2: #17171c;
       --border: rgba(255,255,255,.08);
-      --text: #fff;
-      --muted: #92929d;
-      --accent: #ff1744;
-      --accent2: #ff3158;
-      --green: #30d158;
-      --shadow: 0 20px 60px rgba(0,0,0,.45);
+      --text: #ffffff;
+      --muted: #96969f;
+      --red: #ff1744;
+      --red2: #ff3158;
     }
 
     body {
+      min-height: 100vh;
+      color: var(--text);
       font-family:
         Inter,
         -apple-system,
         BlinkMacSystemFont,
         "Segoe UI",
         sans-serif;
+
       background:
-        radial-gradient(circle at 75% -10%, rgba(255,23,68,.15), transparent 35%),
-        radial-gradient(circle at 15% 20%, rgba(255,23,68,.05), transparent 30%),
+        radial-gradient(
+          circle at 75% -10%,
+          rgba(255,23,68,.18),
+          transparent 35%
+        ),
+        radial-gradient(
+          circle at 10% 30%,
+          rgba(255,23,68,.06),
+          transparent 30%
+        ),
         var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      overflow-x: hidden;
     }
 
     button,
@@ -50,64 +60,94 @@
     }
 
     button {
-      border: 0;
       cursor: pointer;
+      border: 0;
     }
 
     /* =========================
-       LAYOUT
+       APP
     ========================= */
 
     .app {
       min-height: 100vh;
-      padding-bottom: 105px;
+      padding-bottom: 30px;
     }
+
+    /* =========================
+       SIDEBAR
+    ========================= */
 
     .sidebar {
       position: fixed;
+      z-index: 100;
+
       left: 0;
       top: 0;
       bottom: 0;
+
       width: 245px;
+
       padding: 25px 17px;
-      background: rgba(8,8,10,.86);
-      border-right: 1px solid var(--border);
+
+      background: rgba(8,8,10,.9);
+
+      border-right:
+        1px solid var(--border);
+
       backdrop-filter: blur(25px);
-      z-index: 100;
     }
 
     .logo {
       display: flex;
       align-items: center;
+
       gap: 11px;
-      padding: 5px 10px 28px;
-      font-size: 23px;
+
+      padding:
+        5px 10px 30px;
+
+      font-size: 22px;
       font-weight: 900;
+
       letter-spacing: -1px;
     }
 
     .logo-icon {
-      width: 37px;
-      height: 37px;
-      border-radius: 12px;
+      width: 38px;
+      height: 38px;
+
       display: grid;
       place-items: center;
-      background: linear-gradient(135deg,#ff1744,#9d0024);
-      box-shadow: 0 8px 30px rgba(255,23,68,.35);
-      font-size: 19px;
+
+      border-radius: 12px;
+
+      background:
+        linear-gradient(
+          135deg,
+          #ff1744,
+          #9d0024
+        );
+
+      box-shadow:
+        0 10px 35px
+        rgba(255,23,68,.35);
     }
 
     .logo span {
-      color: var(--accent);
+      color: var(--red);
     }
 
     .menu-title {
+      padding:
+        0 12px 9px;
+
       color: #5f5f68;
-      font-size: 11px;
-      text-transform: uppercase;
+
+      font-size: 10px;
+      font-weight: 800;
+
       letter-spacing: 1.5px;
-      font-weight: 700;
-      padding: 0 12px 9px;
+      text-transform: uppercase;
     }
 
     .nav {
@@ -118,73 +158,101 @@
 
     .nav button {
       width: 100%;
+
       display: flex;
       align-items: center;
+
       gap: 13px;
+
       padding: 12px;
-      border-radius: 11px;
-      background: transparent;
+
       color: #a7a7af;
+
+      background: transparent;
+
+      border-radius: 11px;
+
       text-align: left;
+
       transition: .2s;
     }
 
     .nav button:hover {
-      background: rgba(255,255,255,.06);
-      color: #fff;
+      color: white;
+
+      background:
+        rgba(255,255,255,.06);
     }
 
     .nav button.active {
-      background: linear-gradient(
-        90deg,
-        rgba(255,23,68,.18),
-        rgba(255,23,68,.05)
-      );
-      color: #fff;
+      color: white;
+
+      background:
+        linear-gradient(
+          90deg,
+          rgba(255,23,68,.18),
+          rgba(255,23,68,.04)
+        );
     }
 
     .nav button.active .nav-icon {
-      color: var(--accent);
+      color: var(--red);
     }
 
     .nav-icon {
       width: 21px;
-      text-align: center;
+
       font-size: 18px;
+
+      text-align: center;
     }
 
-    .premium-box {
-      margin-top: 25px;
+    .premium {
+      margin-top: 28px;
+
       padding: 16px;
+
+      border:
+        1px solid
+        rgba(255,23,68,.18);
+
       border-radius: 16px;
+
       background:
         linear-gradient(
           145deg,
-          rgba(255,23,68,.18),
-          rgba(255,23,68,.03)
+          rgba(255,23,68,.16),
+          rgba(255,23,68,.02)
         );
-      border: 1px solid rgba(255,23,68,.18);
     }
 
-    .premium-box strong {
+    .premium strong {
       display: block;
-      margin-bottom: 5px;
+
+      margin-bottom: 6px;
     }
 
-    .premium-box p {
+    .premium p {
       color: var(--muted);
+
       font-size: 12px;
-      line-height: 1.45;
+      line-height: 1.5;
+
       margin-bottom: 13px;
     }
 
-    .premium-btn {
+    .premium button {
       width: 100%;
+
       padding: 10px;
-      border-radius: 10px;
-      background: var(--accent);
+
       color: white;
-      font-weight: 700;
+
+      background: var(--red);
+
+      border-radius: 10px;
+
+      font-weight: 800;
     }
 
     /* =========================
@@ -193,104 +261,141 @@
 
     .content {
       margin-left: 245px;
+
       min-height: 100vh;
-      padding: 22px 32px;
+
+      padding:
+        22px 32px;
     }
 
     .topbar {
       position: sticky;
+
       top: 0;
+
       z-index: 50;
+
       display: flex;
       align-items: center;
-      gap: 18px;
-      padding: 7px 0 20px;
-      background: linear-gradient(
-        var(--bg) 55%,
-        transparent
-      );
+
+      gap: 15px;
+
+      padding:
+        7px 0 20px;
+
+      background:
+        linear-gradient(
+          var(--bg) 60%,
+          transparent
+        );
     }
 
     .mobile-menu {
       display: none;
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
-      background: var(--panel2);
+
+      width: 43px;
+      height: 43px;
+
       color: white;
+
+      background:
+        var(--panel2);
+
+      border-radius: 12px;
     }
 
     .search {
       position: relative;
-      max-width: 550px;
+
       flex: 1;
+
+      max-width: 600px;
     }
 
     .search input {
       width: 100%;
       height: 44px;
-      padding: 0 17px 0 43px;
+
+      padding:
+        0 16px 0 43px;
+
       color: white;
-      border: 1px solid var(--border);
-      border-radius: 13px;
+
       outline: none;
-      background: rgba(255,255,255,.055);
+
+      background:
+        rgba(255,255,255,.055);
+
+      border:
+        1px solid
+        var(--border);
+
+      border-radius: 13px;
+
       transition: .2s;
     }
 
     .search input:focus {
-      border-color: rgba(255,23,68,.5);
-      background: rgba(255,255,255,.075);
+      background:
+        rgba(255,255,255,.075);
+
+      border-color:
+        rgba(255,23,68,.45);
     }
 
     .search-icon {
       position: absolute;
+
       left: 15px;
-      top: 12px;
-      color: #888891;
+      top: 11px;
+
+      color: #85858d;
+
+      font-size: 20px;
     }
 
-    .top-actions {
-      display: flex;
-      gap: 9px;
+    .profile {
       margin-left: auto;
-    }
 
-    .icon-btn {
-      width: 43px;
-      height: 43px;
-      border-radius: 12px;
-      background: rgba(255,255,255,.055);
-      color: white;
-      border: 1px solid var(--border);
-      transition: .2s;
-    }
-
-    .icon-btn:hover {
-      background: rgba(255,255,255,.1);
-    }
-
-    .profile-btn {
-      height: 43px;
       display: flex;
       align-items: center;
+
       gap: 9px;
-      padding: 4px 12px 4px 5px;
-      border-radius: 13px;
+
+      height: 43px;
+
+      padding:
+        4px 12px 4px 5px;
+
       color: white;
-      background: rgba(255,255,255,.055);
-      border: 1px solid var(--border);
+
+      background:
+        rgba(255,255,255,.055);
+
+      border:
+        1px solid
+        var(--border);
+
+      border-radius: 13px;
     }
 
     .avatar {
-      width: 33px;
-      height: 33px;
-      border-radius: 10px;
-      object-fit: cover;
-      background: linear-gradient(135deg,#ff1744,#42101c);
+      width: 34px;
+      height: 34px;
+
       display: grid;
       place-items: center;
-      font-weight: 800;
+
+      border-radius: 10px;
+
+      background:
+        linear-gradient(
+          135deg,
+          #ff1744,
+          #470914
+        );
+
+      font-weight: 900;
     }
 
     /* =========================
@@ -299,72 +404,106 @@
 
     .hero {
       position: relative;
-      min-height: 310px;
-      overflow: hidden;
-      border-radius: 25px;
-      padding: 42px;
+
+      min-height: 390px;
+
       display: flex;
       align-items: center;
-      margin-bottom: 35px;
+
+      overflow: hidden;
+
+      padding: 45px;
+
+      border-radius: 27px;
+
       background:
         linear-gradient(
           90deg,
-          rgba(0,0,0,.88),
-          rgba(0,0,0,.42),
-          rgba(0,0,0,.15)
+          rgba(0,0,0,.94),
+          rgba(0,0,0,.58),
+          rgba(0,0,0,.25)
         ),
-        url("https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1600&q=85")
-        center/cover;
-      box-shadow: var(--shadow);
+        url(
+          "https://images.unsplash.com/photo-1516280440614-37939bbacd81?auto=format&fit=crop&w=1800&q=90"
+        )
+        center / cover;
+
+      box-shadow:
+        0 30px 80px
+        rgba(0,0,0,.45);
     }
 
     .hero::after {
       content: "";
+
       position: absolute;
       inset: 0;
-      background: linear-gradient(
-        135deg,
-        rgba(255,23,68,.18),
-        transparent 45%
-      );
-      pointer-events: none;
+
+      background:
+        linear-gradient(
+          135deg,
+          rgba(255,23,68,.18),
+          transparent 45%
+        );
     }
 
     .hero-content {
       position: relative;
+
       z-index: 2;
-      max-width: 600px;
+
+      max-width: 650px;
     }
 
-    .hero-label {
+    .badge {
       display: inline-flex;
-      padding: 6px 10px;
+
+      padding:
+        7px 11px;
+
+      margin-bottom: 18px;
+
+      color: #ff7089;
+
+      background:
+        rgba(255,23,68,.12);
+
+      border:
+        1px solid
+        rgba(255,23,68,.2);
+
       border-radius: 8px;
-      background: rgba(255,23,68,.16);
-      color: #ff6683;
+
       font-size: 11px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-bottom: 14px;
+      font-weight: 900;
+
+      letter-spacing: 1.5px;
     }
 
     .hero h1 {
-      font-size: clamp(35px,5vw,62px);
-      line-height: .98;
-      letter-spacing: -3px;
-      margin-bottom: 15px;
+      font-size:
+        clamp(40px, 6vw, 75px);
+
+      line-height: .95;
+
+      letter-spacing: -4px;
+
+      margin-bottom: 20px;
     }
 
     .hero h1 span {
-      color: var(--accent);
+      color: var(--red);
     }
 
     .hero p {
-      color: #bdbdc5;
-      line-height: 1.6;
-      max-width: 480px;
-      margin-bottom: 22px;
+      max-width: 510px;
+
+      color: #b9b9c1;
+
+      font-size: 15px;
+      line-height: 1.7;
+
+      margin-bottom: 25px;
     }
 
     .hero-buttons {
@@ -372,469 +511,342 @@
       gap: 10px;
     }
 
-    .primary-btn {
-      padding: 12px 19px;
+    .btn {
+      padding:
+        13px 20px;
+
       border-radius: 11px;
-      background: var(--accent);
-      color: white;
+
       font-weight: 800;
-      box-shadow: 0 10px 25px rgba(255,23,68,.25);
-    }
 
-    .secondary-btn {
-      padding: 12px 19px;
-      border-radius: 11px;
-      background: rgba(255,255,255,.08);
-      color: white;
-      border: 1px solid rgba(255,255,255,.1);
-      font-weight: 700;
-    }
-
-    /* =========================
-       SECTIONS
-    ========================= */
-
-    .section {
-      margin-bottom: 38px;
-    }
-
-    .section-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 17px;
-    }
-
-    .section-head h2 {
-      font-size: 21px;
-      letter-spacing: -.6px;
-    }
-
-    .see-all {
-      color: #898992;
-      background: transparent;
-      font-size: 13px;
-    }
-
-    .see-all:hover {
-      color: white;
-    }
-
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(6,minmax(0,1fr));
-      gap: 17px;
-    }
-
-    .music-card {
-      min-width: 0;
-      cursor: pointer;
-      transition: transform .2s;
-    }
-
-    .music-card:hover {
-      transform: translateY(-4px);
-    }
-
-    .cover-wrap {
-      position: relative;
-      aspect-ratio: 1;
-      overflow: hidden;
-      border-radius: 15px;
-      background: #19191e;
-      margin-bottom: 10px;
-    }
-
-    .cover {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      transition: .3s;
-    }
-
-    .music-card:hover .cover {
-      transform: scale(1.04);
-    }
-
-    .cover-play {
-      position: absolute;
-      right: 10px;
-      bottom: 10px;
-      width: 43px;
-      height: 43px;
-      border-radius: 50%;
-      background: var(--accent);
-      color: white;
-      display: grid;
-      place-items: center;
-      opacity: 0;
-      transform: translateY(7px);
-      transition: .2s;
-      box-shadow: 0 8px 25px rgba(0,0,0,.5);
-    }
-
-    .music-card:hover .cover-play {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    .card-title {
-      font-size: 14px;
-      font-weight: 700;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .card-subtitle {
-      color: var(--muted);
-      font-size: 12px;
-      margin-top: 4px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    /* =========================
-       QUICK CARDS
-    ========================= */
-
-    .quick-grid {
-      display: grid;
-      grid-template-columns: repeat(3,1fr);
-      gap: 13px;
-    }
-
-    .quick-card {
-      display: flex;
-      align-items: center;
-      gap: 13px;
-      padding: 10px;
-      border-radius: 13px;
-      background: rgba(255,255,255,.045);
-      border: 1px solid var(--border);
-      cursor: pointer;
       transition: .2s;
     }
 
-    .quick-card:hover {
-      background: rgba(255,255,255,.08);
-    }
-
-    .quick-cover {
-      width: 58px;
-      height: 58px;
-      border-radius: 9px;
-      object-fit: cover;
-    }
-
-    .quick-info {
-      min-width: 0;
-      flex: 1;
-    }
-
-    .quick-info strong,
-    .quick-info span {
-      display: block;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .quick-info span {
-      color: var(--muted);
-      font-size: 12px;
-      margin-top: 4px;
-    }
-
-    .quick-play {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      background: rgba(255,255,255,.08);
+    .btn-primary {
       color: white;
+
+      background: var(--red);
+
+      box-shadow:
+        0 10px 30px
+        rgba(255,23,68,.25);
+    }
+
+    .btn-primary:hover {
+      background: var(--red2);
+
+      transform:
+        translateY(-2px);
+    }
+
+    .btn-secondary {
+      color: white;
+
+      background:
+        rgba(255,255,255,.08);
+
+      border:
+        1px solid
+        rgba(255,255,255,.1);
+    }
+
+    .btn-secondary:hover {
+      background:
+        rgba(255,255,255,.13);
     }
 
     /* =========================
        RADIO
     ========================= */
 
+    .radio-section {
+      margin-top: 40px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+
+      margin-bottom: 17px;
+    }
+
+    .section-head h2 {
+      font-size: 24px;
+
+      letter-spacing: -.7px;
+    }
+
+    .section-head span {
+      color: var(--muted);
+
+      font-size: 12px;
+    }
+
     .radio-grid {
       display: grid;
-      grid-template-columns: repeat(3,1fr);
-      gap: 15px;
+
+      grid-template-columns:
+        repeat(3, 1fr);
+
+      gap: 17px;
     }
 
     .radio-card {
       position: relative;
+
+      min-height: 190px;
+
       overflow: hidden;
-      min-height: 145px;
-      padding: 20px;
-      border-radius: 17px;
-      border: 1px solid var(--border);
-      background: linear-gradient(145deg,#17171c,#0e0e11);
+
+      padding: 23px;
+
+      border:
+        1px solid
+        var(--border);
+
+      border-radius: 19px;
+
+      background:
+        linear-gradient(
+          145deg,
+          #19191e,
+          #0e0e11
+        );
+
       cursor: pointer;
+
+      transition: .25s;
+    }
+
+    .radio-card:hover {
+      transform:
+        translateY(-5px);
+
+      border-color:
+        rgba(255,23,68,.25);
+
+      box-shadow:
+        0 20px 50px
+        rgba(0,0,0,.35);
     }
 
     .radio-card::after {
       content: "◉";
+
       position: absolute;
-      right: 17px;
-      bottom: 5px;
-      font-size: 70px;
-      color: rgba(255,23,68,.07);
+
+      right: 15px;
+      bottom: -20px;
+
+      color:
+        rgba(255,23,68,.06);
+
+      font-size: 100px;
     }
 
-    .radio-live {
-      color: #ff506f;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 1px;
-      text-transform: uppercase;
-      margin-bottom: 15px;
+    .live {
+      display: inline-flex;
+
+      align-items: center;
+
+      gap: 6px;
+
+      color: #ff5573;
+
+      font-size: 10px;
+      font-weight: 900;
+
+      letter-spacing: 1.5px;
+
+      margin-bottom: 18px;
+    }
+
+    .live-dot {
+      width: 7px;
+      height: 7px;
+
+      border-radius: 50%;
+
+      background: var(--red);
+
+      box-shadow:
+        0 0 12px
+        var(--red);
     }
 
     .radio-card h3 {
-      font-size: 18px;
-      margin-bottom: 7px;
+      position: relative;
+      z-index: 2;
+
+      font-size: 21px;
+
+      margin-bottom: 8px;
     }
 
     .radio-card p {
+      position: relative;
+      z-index: 2;
+
       color: var(--muted);
-      font-size: 12px;
+
+      font-size: 13px;
+    }
+
+    .radio-play {
+      position: absolute;
+
+      z-index: 5;
+
+      right: 20px;
+      top: 20px;
+
+      width: 45px;
+      height: 45px;
+
+      display: grid;
+      place-items: center;
+
+      color: white;
+
+      background:
+        var(--red);
+
+      border-radius: 50%;
+
+      box-shadow:
+        0 10px 30px
+        rgba(255,23,68,.3);
     }
 
     /* =========================
-       EMPTY / SEARCH
+       RADIO PLAYER
     ========================= */
 
-    .empty {
-      padding: 60px 20px;
-      text-align: center;
-      color: var(--muted);
-    }
-
-    .empty-icon {
-      font-size: 42px;
-      margin-bottom: 12px;
-      opacity: .5;
-    }
-
-    /* =========================
-       PLAYER
-    ========================= */
-
-    .player {
+    .radio-player {
       position: fixed;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      height: 88px;
+
+      left: 50%;
+      bottom: 22px;
+
       z-index: 500;
+
+      width: min(720px, calc(100% - 30px));
+
       display: flex;
       align-items: center;
-      gap: 20px;
-      padding: 10px 25px;
-      background: rgba(14,14,17,.93);
-      border-top: 1px solid var(--border);
-      backdrop-filter: blur(25px);
-      box-shadow: 0 -15px 50px rgba(0,0,0,.35);
+
+      gap: 15px;
+
+      padding: 13px 16px;
+
+      transform:
+        translate(-50%, 130px);
+
+      opacity: 0;
+
+      pointer-events: none;
+
+      background:
+        rgba(18,18,22,.94);
+
+      border:
+        1px solid
+        var(--border);
+
+      border-radius: 17px;
+
+      backdrop-filter:
+        blur(25px);
+
+      box-shadow:
+        0 25px 70px
+        rgba(0,0,0,.55);
+
+      transition: .3s;
     }
 
-    .now-playing {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      width: 265px;
-      min-width: 200px;
+    .radio-player.active {
+      transform:
+        translate(-50%, 0);
+
+      opacity: 1;
+
+      pointer-events: auto;
     }
 
-    .now-cover {
-      width: 58px;
-      height: 58px;
-      border-radius: 9px;
-      object-fit: cover;
-      background: #202025;
+    .station-icon {
+      width: 52px;
+      height: 52px;
+
+      display: grid;
+      place-items: center;
+
+      flex-shrink: 0;
+
+      color: white;
+
+      background:
+        linear-gradient(
+          135deg,
+          #ff1744,
+          #7b001c
+        );
+
+      border-radius: 12px;
+
+      font-size: 21px;
     }
 
-    .now-info {
+    .station-info {
       min-width: 0;
+      flex: 1;
     }
 
-    .now-info strong,
-    .now-info span {
+    .station-info strong,
+    .station-info span {
       display: block;
+
       overflow: hidden;
+
       white-space: nowrap;
+
       text-overflow: ellipsis;
     }
 
-    .now-info span {
+    .station-info span {
       color: var(--muted);
+
       font-size: 12px;
+
       margin-top: 4px;
     }
 
-    .like-btn {
-      background: transparent;
-      color: #aaa;
-      font-size: 19px;
-      margin-left: auto;
-    }
-
-    .like-btn.active {
-      color: var(--accent);
-    }
-
-    .player-center {
-      flex: 1;
-      max-width: 650px;
+    .radio-controls {
       display: flex;
-      flex-direction: column;
-      gap: 7px;
-      margin: auto;
-    }
-
-    .controls {
-      display: flex;
-      justify-content: center;
       align-items: center;
-      gap: 17px;
+
+      gap: 8px;
     }
 
-    .control {
-      width: 31px;
-      height: 31px;
-      border-radius: 50%;
-      color: #ddd;
-      background: transparent;
-    }
+    .radio-controls button {
+      width: 42px;
+      height: 42px;
 
-    .control:hover {
+      display: grid;
+      place-items: center;
+
       color: white;
-    }
 
-    .play-btn {
-      width: 40px;
-      height: 40px;
-      background: white;
-      color: #09090b;
-      font-size: 16px;
-    }
-
-    .progress-line {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      font-size: 10px;
-      color: #777780;
-    }
-
-    .progress {
-      flex: 1;
-      height: 4px;
-      border-radius: 10px;
-      background: #39393f;
-      cursor: pointer;
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      width: 0%;
-      height: 100%;
-      background: var(--accent);
-    }
-
-    .player-right {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      width: 220px;
-      justify-content: flex-end;
-    }
-
-    .volume {
-      width: 90px;
-    }
-
-    .range {
-      width: 100%;
-      accent-color: var(--accent);
-    }
-
-    /* =========================
-       FULLSCREEN PLAYER
-    ========================= */
-
-    .fullscreen {
-      position: fixed;
-      inset: 0;
-      z-index: 1000;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 30px;
       background:
-        radial-gradient(circle at 50% 35%,rgba(255,23,68,.18),transparent 35%),
-        rgba(6,6,8,.98);
-      backdrop-filter: blur(30px);
-    }
+        rgba(255,255,255,.07);
 
-    .fullscreen.open {
-      display: flex;
-    }
-
-    .close-full {
-      position: absolute;
-      right: 25px;
-      top: 25px;
-      width: 44px;
-      height: 44px;
       border-radius: 50%;
-      background: rgba(255,255,255,.08);
-      color: white;
-      font-size: 20px;
     }
 
-    .full-content {
-      width: min(440px,90vw);
-      text-align: center;
-    }
-
-    .full-cover {
-      width: min(400px,75vw);
-      aspect-ratio: 1;
-      object-fit: cover;
-      border-radius: 22px;
-      box-shadow: 0 35px 100px rgba(0,0,0,.6);
-      margin-bottom: 25px;
-    }
-
-    .full-content h2 {
-      font-size: 27px;
-    }
-
-    .full-content p {
-      color: var(--muted);
-      margin-top: 6px;
-    }
-
-    .full-controls {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 22px;
-      margin-top: 25px;
-    }
-
-    .full-play {
-      width: 62px;
-      height: 62px;
-      border-radius: 50%;
+    .radio-controls .main {
       background: white;
-      color: black;
-      font-size: 22px;
+      color: #08080a;
     }
 
     /* =========================
@@ -843,22 +855,44 @@
 
     .toast {
       position: fixed;
-      right: 25px;
-      top: 25px;
+
       z-index: 2000;
-      padding: 13px 17px;
+
+      top: 25px;
+      right: 25px;
+
+      padding:
+        13px 17px;
+
+      color: white;
+
+      background:
+        #202025;
+
+      border:
+        1px solid
+        var(--border);
+
       border-radius: 12px;
-      background: #202025;
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
-      transform: translateY(-20px);
+
+      box-shadow:
+        0 20px 60px
+        rgba(0,0,0,.4);
+
+      transform:
+        translateY(-20px);
+
       opacity: 0;
+
       pointer-events: none;
+
       transition: .25s;
     }
 
     .toast.show {
-      transform: translateY(0);
+      transform:
+        translateY(0);
+
       opacity: 1;
     }
 
@@ -866,135 +900,85 @@
        MOBILE
     ========================= */
 
-    @media(max-width:1100px) {
-      .cards {
-        grid-template-columns: repeat(4,1fr);
-      }
+    @media(max-width: 850px) {
 
-      .player-right {
-        width: auto;
-      }
-
-      .volume {
-        display: none;
-      }
-    }
-
-    @media(max-width:800px) {
       .sidebar {
-        transform: translateX(-100%);
+        transform:
+          translateX(-100%);
+
         transition: .25s;
-        box-shadow: 20px 0 50px rgba(0,0,0,.4);
       }
 
       .sidebar.open {
-        transform: translateX(0);
+        transform:
+          translateX(0);
       }
 
       .content {
         margin-left: 0;
-        padding: 15px;
+
+        padding:
+          15px;
       }
 
       .mobile-menu {
         display: block;
       }
 
-      .top-actions .icon-btn {
+      .profile span {
         display: none;
       }
 
       .hero {
+        min-height: 420px;
+
         padding: 28px;
-        min-height: 300px;
+
+        align-items: flex-end;
       }
 
       .hero h1 {
-        font-size: 38px;
+        font-size: 43px;
+
+        letter-spacing: -2px;
       }
 
-      .cards {
-        grid-template-columns: repeat(3,1fr);
-        gap: 12px;
-      }
-
-      .quick-grid,
       .radio-grid {
         grid-template-columns: 1fr;
       }
 
-      .player {
-        height: 75px;
-        padding: 8px 12px;
-      }
-
-      .now-playing {
-        width: auto;
-        min-width: 0;
-        flex: 1;
-      }
-
-      .now-cover {
-        width: 50px;
-        height: 50px;
-      }
-
-      .player-center {
-        flex: 0;
-      }
-
-      .controls .secondary-control {
-        display: none;
-      }
-
-      .player-right {
-        display: none;
-      }
-
-      .like-btn {
-        display: none;
-      }
     }
 
-    @media(max-width:500px) {
-      .topbar {
-        gap: 8px;
-      }
-
-      .profile-btn span {
-        display: none;
-      }
+    @media(max-width: 500px) {
 
       .search {
         min-width: 0;
       }
 
       .hero {
-        min-height: 340px;
-        align-items: flex-end;
-      }
-
-      .hero h1 {
-        letter-spacing: -1.5px;
+        border-radius: 20px;
       }
 
       .hero p {
         font-size: 13px;
       }
 
-      .cards {
-        grid-template-columns: repeat(2,1fr);
+      .hero-buttons {
+        flex-direction: column;
       }
 
-      .cover-play {
-        opacity: 1;
-        transform: none;
+      .btn {
+        width: 100%;
+
+        text-align: center;
       }
 
-      .now-info strong {
-        max-width: 130px;
+      .radio-player {
+        bottom: 10px;
       }
+
     }
+
   </style>
 </head>
 
@@ -1004,89 +988,99 @@
 
   <!-- ================= SIDEBAR ================= -->
 
-  <aside class="sidebar" id="sidebar">
+  <aside
+    class="sidebar"
+    id="sidebar"
+  >
 
     <div class="logo">
-      <div class="logo-icon">🔥</div>
-      FENIX <span>MUSIC</span>
+
+      <div class="logo-icon">
+        🔥
+      </div>
+
+      FENIX
+      <span>MUSIC</span>
+
     </div>
 
-    <div class="menu-title">Навигация</div>
+    <div class="menu-title">
+      Навигация
+    </div>
 
     <nav class="nav">
 
-      <button class="active" data-page="home">
+      <button
+        class="active"
+        onclick="home()"
+      >
         <span class="nav-icon">⌂</span>
-        <span>Для вас</span>
+        Для вас
       </button>
 
-      <button data-page="new">
-        <span class="nav-icon">✦</span>
-        <span>Новинки</span>
-      </button>
-
-      <button data-page="popular">
-        <span class="nav-icon">♨</span>
-        <span>Популярное</span>
-      </button>
-
-      <button data-page="mixes">
-        <span class="nav-icon">◈</span>
-        <span>Миксы</span>
-      </button>
-
-      <button data-page="history">
-        <span class="nav-icon">◷</span>
-        <span>История</span>
-      </button>
-
-      <button data-page="favorites">
-        <span class="nav-icon">♡</span>
-        <span>Избранное</span>
-      </button>
-
-      <button data-page="playlists">
-        <span class="nav-icon">☷</span>
-        <span>Плейлисты</span>
-      </button>
-
-      <button data-page="radio">
+      <button onclick="scrollRadio()">
         <span class="nav-icon">◉</span>
-        <span>Радио</span>
+        Радио
+      </button>
+
+      <button onclick="showMessage('Избранное')">
+        <span class="nav-icon">♡</span>
+        Избранное
+      </button>
+
+      <button onclick="showMessage('Плейлисты')">
+        <span class="nav-icon">☷</span>
+        Плейлисты
+      </button>
+
+      <button onclick="showMessage('История')">
+        <span class="nav-icon">◷</span>
+        История
       </button>
 
     </nav>
 
-    <div class="menu-title" style="margin-top:25px;">
-      Моя библиотека
+    <div
+      class="menu-title"
+      style="margin-top:25px;"
+    >
+      Аккаунт
     </div>
 
     <nav class="nav">
-      <button data-page="tracks">
-        <span class="nav-icon">♫</span>
-        <span>Треки</span>
+
+      <button onclick="telegramLogin()">
+        <span class="nav-icon">➜</span>
+        Войти через Telegram
       </button>
 
-      <button data-page="albums">
-        <span class="nav-icon">▣</span>
-        <span>Альбомы</span>
+      <button onclick="showMessage('Настройки')">
+        <span class="nav-icon">⚙</span>
+        Настройки
       </button>
 
-      <button data-page="artists">
-        <span class="nav-icon">♙</span>
-        <span>Исполнители</span>
-      </button>
     </nav>
 
-    <div class="premium-box">
-      <strong>💎 PREMIUM</strong>
+    <div class="premium">
+
+      <strong>
+        💎 PREMIUM
+      </strong>
+
       <p>
-        Музыка без рекламы, высокое качество
-        и расширенные возможности.
+        Музыка без рекламы,
+        высокое качество и
+        дополнительные функции.
       </p>
-      <button class="premium-btn" onclick="showToast('Раздел PREMIUM скоро будет доступен')">
+
+      <button
+        onclick="
+          showMessage('Раздел PREMIUM скоро будет доступен')
+        "
+      >
         Подключить
       </button>
+
     </div>
 
   </aside>
@@ -1097,37 +1091,42 @@
 
     <header class="topbar">
 
-      <button class="mobile-menu" id="mobileMenu">
+      <button
+        class="mobile-menu"
+        onclick="toggleMenu()"
+      >
         ☰
       </button>
 
       <div class="search">
-        <span class="search-icon">⌕</span>
+
+        <span class="search-icon">
+          ⌕
+        </span>
+
         <input
-          id="searchInput"
+          id="search"
           type="search"
-          placeholder="Найти трек, исполнителя или альбом..."
-        />
+          placeholder="Поиск в FENIX MUSIC..."
+          onkeydown="searchKey(event)"
+        >
+
       </div>
 
-      <div class="top-actions">
+      <button
+        class="profile"
+        onclick="telegramLogin()"
+      >
 
-        <button
-          class="icon-btn"
-          onclick="showToast('Уведомления пока пусты')"
-        >
-          ♧
-        </button>
+        <div class="avatar">
+          F
+        </div>
 
-        <button
-          class="profile-btn"
-          onclick="showToast('Профиль пользователя')"
-        >
-          <div class="avatar">F</div>
-          <span>Fenix</span>
-        </button>
+        <span>
+          Войти
+        </span>
 
-      </div>
+      </button>
 
     </header>
 
@@ -1137,1352 +1136,625 @@
 
       <div class="hero-content">
 
-        <div class="hero-label">
+        <div class="badge">
           FENIX MUSIC
         </div>
 
         <h1>
-          Музыка,<br>
-          которая <span>тебе подходит.</span>
+          Твоя музыка.
+          <br>
+          Твои <span>правила.</span>
         </h1>
 
         <p>
-          Слушай любимые треки, открывай новых исполнителей
-          и собирай свою музыкальную вселенную.
+          Слушай радио, открывай новую музыку
+          и создавай свою музыкальную коллекцию
+          вместе с FENIX MUSIC.
         </p>
 
         <div class="hero-buttons">
-          <button class="primary-btn" onclick="playFirstTrack()">
-            ▶ Начать слушать
+
+          <button
+            class="btn btn-primary"
+            onclick="scrollRadio()"
+          >
+            ◉ Слушать радио
           </button>
 
           <button
-            class="secondary-btn"
-            onclick="openRadio()"
+            class="btn btn-secondary"
+            onclick="telegramLogin()"
           >
-            ◉ Радио
+            Войти через Telegram
           </button>
+
         </div>
 
       </div>
-
-    </section>
-
-    <!-- ================= QUICK ================= -->
-
-    <section class="section">
-
-      <div class="section-head">
-        <h2>Недавно прослушанное</h2>
-        <button class="see-all">Показать всё</button>
-      </div>
-
-      <div class="quick-grid" id="recentGrid">
-        <!-- JS -->
-      </div>
-
-    </section>
-
-    <!-- ================= FOR YOU ================= -->
-
-    <section class="section">
-
-      <div class="section-head">
-        <h2>Для вас</h2>
-        <button class="see-all">Все рекомендации</button>
-      </div>
-
-      <div class="cards" id="recommendations"></div>
-
-    </section>
-
-    <!-- ================= POPULAR ================= -->
-
-    <section class="section">
-
-      <div class="section-head">
-        <h2>Популярное</h2>
-        <button class="see-all">Смотреть всё</button>
-      </div>
-
-      <div class="cards" id="popular"></div>
-
-    </section>
-
-    <!-- ================= NEW ================= -->
-
-    <section class="section">
-
-      <div class="section-head">
-        <h2>Новинки</h2>
-        <button class="see-all">Все новинки</button>
-      </div>
-
-      <div class="cards" id="newTracks"></div>
 
     </section>
 
     <!-- ================= RADIO ================= -->
 
-    <section class="section" id="radioSection">
+    <section
+      class="radio-section"
+      id="radio"
+    >
 
       <div class="section-head">
-        <h2>Радио</h2>
-        <button class="see-all">Все станции</button>
+
+        <div>
+          <h2>
+            Радио
+          </h2>
+
+          <span>
+            Слушай станции прямо сейчас
+          </span>
+        </div>
+
       </div>
 
       <div class="radio-grid">
 
-        <div
+        <!-- RETRO -->
+
+        <article
           class="radio-card"
           onclick="playRadio('retro')"
         >
-          <div class="radio-live">● LIVE</div>
-          <h3>Retro FM</h3>
-          <p>Лучшие хиты прошлых лет</p>
-        </div>
 
-        <div
+          <button
+            class="radio-play"
+            onclick="
+              event.stopPropagation();
+              playRadio('retro')
+            "
+          >
+            ▶
+          </button>
+
+          <div class="live">
+            <span class="live-dot"></span>
+            LIVE
+          </div>
+
+          <h3>
+            Retro FM
+          </h3>
+
+          <p>
+            Лучшие хиты прошлых лет
+          </p>
+
+        </article>
+
+        <!-- RUSSIAN RADIO -->
+
+        <article
           class="radio-card"
           onclick="playRadio('russian')"
         >
-          <div class="radio-live">● LIVE</div>
-          <h3>Русское Радио</h3>
-          <p>Главные русские хиты</p>
-        </div>
 
-        <div
+          <button
+            class="radio-play"
+            onclick="
+              event.stopPropagation();
+              playRadio('russian')
+            "
+          >
+            ▶
+          </button>
+
+          <div class="live">
+            <span class="live-dot"></span>
+            LIVE
+          </div>
+
+          <h3>
+            Русское Радио
+          </h3>
+
+          <p>
+            Главные русские хиты
+          </p>
+
+        </article>
+
+        <!-- DACHA -->
+
+        <article
           class="radio-card"
           onclick="playRadio('dacha')"
         >
-          <div class="radio-live">● LIVE</div>
-          <h3>Радио Дача</h3>
-          <p>Музыка для хорошего настроения</p>
-        </div>
+
+          <button
+            class="radio-play"
+            onclick="
+              event.stopPropagation();
+              playRadio('dacha')
+            "
+          >
+            ▶
+          </button>
+
+          <div class="live">
+            <span class="live-dot"></span>
+            LIVE
+          </div>
+
+          <h3>
+            Радио Дача
+          </h3>
+
+          <p>
+            Музыка для хорошего настроения
+          </p>
+
+        </article>
 
       </div>
 
     </section>
 
-    <div id="searchResults"></div>
-
   </main>
 
 </div>
 
-<!-- ================= PLAYER ================= -->
-
-<div class="player">
-
-  <div class="now-playing">
-
-    <img
-      class="now-cover"
-      id="playerCover"
-      src="https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=300&q=80"
-    />
-
-    <div class="now-info">
-      <strong id="playerTitle">FENIX MUSIC</strong>
-      <span id="playerArtist">Выберите трек</span>
-    </div>
-
-    <button
-      class="like-btn"
-      id="likeBtn"
-      onclick="toggleLike()"
-    >
-      ♡
-    </button>
-
-  </div>
-
-  <div class="player-center">
-
-    <div class="controls">
-
-      <button class="control secondary-control" onclick="previousTrack()">
-        ↶
-      </button>
-
-      <button class="control" onclick="previousTrack()">
-        ◀
-      </button>
-
-      <button
-        class="control play-btn"
-        id="playBtn"
-        onclick="togglePlay()"
-      >
-        ▶
-      </button>
-
-      <button class="control" onclick="nextTrack()">
-        ▶
-      </button>
-
-      <button class="control secondary-control" onclick="toggleShuffle()">
-        🔀
-      </button>
-
-    </div>
-
-    <div class="progress-line">
-
-      <span id="currentTime">0:00</span>
-
-      <div
-        class="progress"
-        id="progressBar"
-      >
-        <div
-          class="progress-fill"
-          id="progressFill"
-        ></div>
-      </div>
-
-      <span id="duration">0:00</span>
-
-    </div>
-
-  </div>
-
-  <div class="player-right">
-
-    <button
-      class="icon-btn"
-      onclick="openFullscreenPlayer()"
-    >
-      ⛶
-    </button>
-
-    <button
-      class="icon-btn"
-      onclick="toggleMute()"
-    >
-      🔊
-    </button>
-
-    <input
-      class="range volume"
-      id="volume"
-      type="range"
-      min="0"
-      max="1"
-      step=".01"
-      value=".8"
-    />
-
-  </div>
-
-</div>
-
-<!-- ================= FULLSCREEN ================= -->
+<!-- ================= RADIO PLAYER ================= -->
 
 <div
-  class="fullscreen"
-  id="fullscreenPlayer"
+  class="radio-player"
+  id="radioPlayer"
 >
 
-  <button
-    class="close-full"
-    onclick="closeFullscreenPlayer()"
-  >
-    ×
-  </button>
+  <div class="station-icon">
+    ◉
+  </div>
 
-  <div class="full-content">
+  <div class="station-info">
 
-    <img
-      class="full-cover"
-      id="fullCover"
-      src=""
-    />
+    <strong id="stationName">
+      Радио
+    </strong>
 
-    <h2 id="fullTitle">FENIX MUSIC</h2>
+    <span id="stationStatus">
+      Готово к воспроизведению
+    </span>
 
-    <p id="fullArtist">Выберите трек</p>
+  </div>
 
-    <div
-      class="progress-line"
-      style="margin-top:25px;"
+  <div class="radio-controls">
+
+    <button
+      onclick="stopRadio()"
     >
-      <span id="fullCurrent">0:00</span>
+      ■
+    </button>
 
-      <div
-        class="progress"
-        id="fullProgress"
-      >
-        <div
-          class="progress-fill"
-          id="fullProgressFill"
-        ></div>
-      </div>
-
-      <span id="fullDuration">0:00</span>
-    </div>
-
-    <div class="full-controls">
-
-      <button class="control" onclick="previousTrack()">
-        ↶
-      </button>
-
-      <button
-        class="full-play"
-        id="fullPlay"
-        onclick="togglePlay()"
-      >
-        ▶
-      </button>
-
-      <button class="control" onclick="nextTrack()">
-        ↷
-      </button>
-
-    </div>
+    <button
+      class="main"
+      id="radioPlayButton"
+      onclick="toggleRadio()"
+    >
+      ▶
+    </button>
 
   </div>
 
 </div>
+
+<!-- ================= AUDIO ================= -->
+
+<audio
+  id="radioAudio"
+  preload="none"
+></audio>
+
+<!-- ================= TOAST ================= -->
 
 <div
   class="toast"
   id="toast"
 ></div>
 
-<audio
-  id="audio"
-  preload="metadata"
-></audio>
 
 <script>
-/* =========================================================
-   FENIX MUSIC FRONTEND
-========================================================= */
-
-const API = "/api";
-
-const audio = document.getElementById("audio");
-
-let tracks = [];
-let currentIndex = -1;
-let shuffled = false;
-let liked = false;
-
-
-/* =========================================================
-   HELPERS
-========================================================= */
-
-function formatTime(seconds) {
-
-  if (!Number.isFinite(seconds)) {
-    return "0:00";
-  }
-
-  const min = Math.floor(seconds / 60);
-  const sec = Math.floor(seconds % 60)
-    .toString()
-    .padStart(2, "0");
-
-  return `${min}:${sec}`;
-}
-
-
-function showToast(text) {
-
-  const toast = document.getElementById("toast");
-
-  toast.textContent = text;
-  toast.classList.add("show");
-
-  clearTimeout(window.toastTimer);
-
-  window.toastTimer = setTimeout(() => {
-    toast.classList.remove("show");
-  }, 2500);
-}
-
-
-function coverUrl(track) {
-
-  if (!track) return "";
-
-  if (track.cover_url) {
-
-    if (track.cover_url.startsWith("http")) {
-      return track.cover_url;
-    }
-
-    return track.cover_url;
-  }
-
-  return "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80";
-}
-
-
-/* =========================================================
-   LOAD TRACKS
-========================================================= */
-
-async function loadTracks() {
-
-  try {
-
-    const response = await fetch(`${API}/tracks`);
-
-    if (!response.ok) {
-      throw new Error("Tracks API error");
-    }
-
-    const data = await response.json();
-
-    tracks = Array.isArray(data)
-      ? data
-      : data.items || data.tracks || [];
-
-    renderTracks();
-
-  } catch (error) {
-
-    console.error(error);
-
-    /*
-      Если API ещё пустой,
-      показываем красивое состояние,
-      а не ошибку.
-    */
-
-    renderEmptyStates();
-  }
-}
-
-
-/* =========================================================
-   RENDER
-========================================================= */
-
-function createTrackCard(track, index) {
-
-  const title =
-    track.title ||
-    track.name ||
-    "Без названия";
-
-  const artist =
-    track.artist ||
-    track.artist_name ||
-    "Неизвестный исполнитель";
-
-  return `
-    <article
-      class="music-card"
-      onclick="playTrack(${index})"
-    >
-
-      <div class="cover-wrap">
-
-        <img
-          class="cover"
-          src="${coverUrl(track)}"
-          alt=""
-          loading="lazy"
-          onerror="this.src='https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=600&q=80'"
-        />
-
-        <button
-          class="cover-play"
-          onclick="event.stopPropagation(); playTrack(${index})"
-        >
-          ▶
-        </button>
-
-      </div>
-
-      <div class="card-title">
-        ${escapeHtml(title)}
-      </div>
-
-      <div class="card-subtitle">
-        ${escapeHtml(artist)}
-      </div>
-
-    </article>
-  `;
-}
-
-
-function renderTracks() {
-
-  const recommendations =
-    document.getElementById("recommendations");
-
-  const popular =
-    document.getElementById("popular");
-
-  const newTracks =
-    document.getElementById("newTracks");
-
-  const recentGrid =
-    document.getElementById("recentGrid");
-
-
-  if (!tracks.length) {
-
-    renderEmptyStates();
-    return;
-  }
-
-
-  const recommendationTracks =
-    tracks.slice(0, 12);
-
-  const popularTracks =
-    [...tracks]
-      .sort((a,b) =>
-        (b.plays || b.play_count || 0) -
-        (a.plays || a.play_count || 0)
-      )
-      .slice(0, 12);
-
-  const newestTracks =
-    [...tracks]
-      .reverse()
-      .slice(0, 12);
-
-
-  recommendations.innerHTML =
-    recommendationTracks
-      .map((track,index) =>
-        createTrackCard(track,index)
-      )
-      .join("");
-
-
-  popular.innerHTML =
-    popularTracks
-      .map(track => {
-
-        const index = tracks.indexOf(track);
-
-        return createTrackCard(track,index);
-
-      })
-      .join("");
-
-
-  newTracks.innerHTML =
-    newestTracks
-      .map(track => {
-
-        const index = tracks.indexOf(track);
-
-        return createTrackCard(track,index);
-
-      })
-      .join("");
-
-
-  recentGrid.innerHTML =
-    tracks
-      .slice(0,6)
-      .map((track,index) => {
-
-        return `
-          <div
-            class="quick-card"
-            onclick="playTrack(${index})"
-          >
-
-            <img
-              class="quick-cover"
-              src="${coverUrl(track)}"
-              onerror="this.src='https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=300&q=80'"
-            />
-
-            <div class="quick-info">
-
-              <strong>
-                ${escapeHtml(track.title || "Без названия")}
-              </strong>
-
-              <span>
-                ${escapeHtml(track.artist || "Исполнитель")}
-              </span>
-
-            </div>
-
-            <button
-              class="quick-play"
-              onclick="event.stopPropagation();playTrack(${index})"
-            >
-              ▶
-            </button>
-
-          </div>
-        `;
-
-      })
-      .join("");
-}
-
-
-function renderEmptyStates() {
-
-  const html = `
-    <div class="empty">
-      <div class="empty-icon">♫</div>
-      <h3>Музыки пока нет</h3>
-      <p style="margin-top:8px;">
-        Добавьте свои треки через админ-панель.
-      </p>
-    </div>
-  `;
-
-  document.getElementById("recommendations").innerHTML = html;
-  document.getElementById("popular").innerHTML = html;
-  document.getElementById("newTracks").innerHTML = html;
-  document.getElementById("recentGrid").innerHTML = "";
-}
-
-
-/* =========================================================
-   PLAYER
-========================================================= */
-
-function playTrack(index) {
-
-  if (!tracks[index]) {
-    return;
-  }
-
-  currentIndex = index;
-
-  const track = tracks[index];
-
-  const title =
-    track.title ||
-    track.name ||
-    "Без названия";
-
-  const artist =
-    track.artist ||
-    track.artist_name ||
-    "Неизвестный исполнитель";
-
-  let streamUrl =
-    track.stream_url ||
-    `/api/tracks/${track.id}/stream`;
-
-  audio.src = streamUrl;
-
-  document.getElementById("playerTitle").textContent = title;
-  document.getElementById("playerArtist").textContent = artist;
-
-  document.getElementById("playerCover").src =
-    coverUrl(track);
-
-  document.getElementById("fullCover").src =
-    coverUrl(track);
-
-  document.getElementById("fullTitle").textContent =
-    title;
-
-  document.getElementById("fullArtist").textContent =
-    artist;
-
-  liked = !!track.liked;
-
-  updateLikeButton();
-
-  audio.play()
-    .then(() => updatePlayButtons())
-    .catch(error => {
-      console.warn("Playback error:", error);
-      showToast("Не удалось воспроизвести этот трек");
-    });
 
   /*
-    Уведомляем backend об истории,
-    если endpoint доступен.
-  */
+   * ==========================================
+   * FENIX MUSIC
+   * RADIO ONLY FRONTEND
+   * ==========================================
+   */
 
-  if (track.id) {
+  const radioAudio =
+    document.getElementById("radioAudio");
 
-    fetch(`${API}/history`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        track_id: track.id
-      })
-    }).catch(() => {});
+  const radioPlayer =
+    document.getElementById("radioPlayer");
 
-  }
-}
+  const radioPlayButton =
+    document.getElementById("radioPlayButton");
 
+  const stationName =
+    document.getElementById("stationName");
 
-function playFirstTrack() {
-
-  if (tracks.length) {
-    playTrack(0);
-  } else {
-    showToast("Добавьте музыку в библиотеку");
-  }
-}
+  const stationStatus =
+    document.getElementById("stationStatus");
 
 
-function togglePlay() {
-
-  if (!audio.src) {
-
-    playFirstTrack();
-    return;
-  }
-
-  if (audio.paused) {
-
-    audio.play();
-
-  } else {
-
-    audio.pause();
-
-  }
-
-  updatePlayButtons();
-}
+  let currentRadio = null;
 
 
-function updatePlayButtons() {
+  /*
+   * ==========================================
+   * RADIO
+   * ==========================================
+   */
 
-  const symbol =
-    audio.paused ? "▶" : "Ⅱ";
+  const RADIO = {
 
-  document.getElementById("playBtn").textContent =
-    symbol;
+    retro: {
+      name: "Retro FM",
+      url:
+        "https://hls-01-retro.emgsound.ru/12/128/playlist.m3u8"
+    },
 
-  document.getElementById("fullPlay").textContent =
-    symbol;
-}
+    russian: {
+      name: "Русское Радио",
+      url:
+        "/api/radio/russkoe-radio/stream"
+    },
+
+    dacha: {
+      name: "Радио Дача",
+      url:
+        "/api/radio/radio-dacha/stream"
+    }
+
+  };
 
 
-function nextTrack() {
+  /*
+   * ==========================================
+   * PLAY RADIO
+   * ==========================================
+   */
 
-  if (!tracks.length) return;
+  function playRadio(station) {
 
-  let next;
+    const radio =
+      RADIO[station];
 
-  if (shuffled) {
+    if (!radio) {
+      return;
+    }
 
-    next = Math.floor(
-      Math.random() * tracks.length
+    currentRadio =
+      station;
+
+    stationName.textContent =
+      radio.name;
+
+    stationStatus.textContent =
+      "Подключение...";
+
+    radioPlayer.classList.add(
+      "active"
     );
 
-  } else {
+    radioAudio.src =
+      radio.url;
 
-    next =
-      currentIndex + 1 >= tracks.length
-        ? 0
-        : currentIndex + 1;
-  }
+    radioAudio.load();
 
-  playTrack(next);
-}
+    radioAudio.play()
+      .then(() => {
 
+        stationStatus.textContent =
+          "● LIVE";
 
-function previousTrack() {
+        radioPlayButton.textContent =
+          "Ⅱ";
 
-  if (!tracks.length) return;
+      })
+      .catch(error => {
 
-  if (audio.currentTime > 5) {
-
-    audio.currentTime = 0;
-    return;
-  }
-
-  const prev =
-    currentIndex <= 0
-      ? tracks.length - 1
-      : currentIndex - 1;
-
-  playTrack(prev);
-}
-
-
-function toggleShuffle() {
-
-  shuffled = !shuffled;
-
-  showToast(
-    shuffled
-      ? "Перемешивание включено"
-      : "Перемешивание выключено"
-  );
-}
-
-
-function toggleMute() {
-
-  audio.muted = !audio.muted;
-
-  showToast(
-    audio.muted
-      ? "Звук выключен"
-      : "Звук включён"
-  );
-}
-
-
-function toggleLike() {
-
-  if (currentIndex < 0) return;
-
-  liked = !liked;
-
-  updateLikeButton();
-
-  const track = tracks[currentIndex];
-
-  if (track?.id) {
-
-    fetch(`${API}/tracks/${track.id}/like`, {
-      method: liked ? "POST" : "DELETE"
-    }).catch(() => {});
-
-  }
-
-  showToast(
-    liked
-      ? "Добавлено в избранное ❤️"
-      : "Удалено из избранного"
-  );
-}
-
-
-function updateLikeButton() {
-
-  const btn =
-    document.getElementById("likeBtn");
-
-  btn.textContent =
-    liked ? "♥" : "♡";
-
-  btn.classList.toggle(
-    "active",
-    liked
-  );
-}
-
-
-/* =========================================================
-   PROGRESS
-========================================================= */
-
-audio.addEventListener("loadedmetadata", () => {
-
-  document.getElementById("duration").textContent =
-    formatTime(audio.duration);
-
-  document.getElementById("fullDuration").textContent =
-    formatTime(audio.duration);
-
-});
-
-
-audio.addEventListener("timeupdate", () => {
-
-  const percent =
-    audio.duration
-      ? audio.currentTime / audio.duration * 100
-      : 0;
-
-  document.getElementById("progressFill").style.width =
-    `${percent}%`;
-
-  document.getElementById("fullProgressFill").style.width =
-    `${percent}%`;
-
-  document.getElementById("currentTime").textContent =
-    formatTime(audio.currentTime);
-
-  document.getElementById("fullCurrent").textContent =
-    formatTime(audio.currentTime);
-
-});
-
-
-audio.addEventListener("play", updatePlayButtons);
-
-audio.addEventListener("pause", updatePlayButtons);
-
-audio.addEventListener("ended", nextTrack);
-
-
-document.getElementById("progressBar")
-  .addEventListener("click", event => {
-
-    if (!audio.duration) return;
-
-    const rect =
-      event.currentTarget.getBoundingClientRect();
-
-    const percent =
-      (event.clientX - rect.left) / rect.width;
-
-    audio.currentTime =
-      audio.duration * percent;
-
-  });
-
-
-document.getElementById("fullProgress")
-  .addEventListener("click", event => {
-
-    if (!audio.duration) return;
-
-    const rect =
-      event.currentTarget.getBoundingClientRect();
-
-    const percent =
-      (event.clientX - rect.left) / rect.width;
-
-    audio.currentTime =
-      audio.duration * percent;
-
-  });
-
-
-document.getElementById("volume")
-  .addEventListener("input", event => {
-
-    audio.volume =
-      Number(event.target.value);
-
-  });
-
-
-/* =========================================================
-   FULLSCREEN PLAYER
-========================================================= */
-
-function openFullscreenPlayer() {
-
-  if (currentIndex < 0) {
-    showToast("Сначала выберите трек");
-    return;
-  }
-
-  document
-    .getElementById("fullscreenPlayer")
-    .classList.add("open");
-}
-
-
-function closeFullscreenPlayer() {
-
-  document
-    .getElementById("fullscreenPlayer")
-    .classList.remove("open");
-}
-
-
-/* =========================================================
-   RADIO
-========================================================= */
-
-const RADIO = {
-
-  retro:
-    "https://hls-01-retro.emgsound.ru/12/128/playlist.m3u8",
-
-  russian:
-    "/api/radio/russkoe-radio/stream",
-
-  dacha:
-    "/api/radio/radio-dacha/stream"
-
-};
-
-
-function playRadio(station) {
-
-  const url = RADIO[station];
-
-  if (!url) return;
-
-  audio.src = url;
-
-  let name = "Радио";
-
-  if (station === "retro") {
-    name = "Retro FM";
-  }
-
-  if (station === "russian") {
-    name = "Русское Радио";
-  }
-
-  if (station === "dacha") {
-    name = "Радио Дача";
-  }
-
-  document.getElementById("playerTitle").textContent =
-    name;
-
-  document.getElementById("playerArtist").textContent =
-    "LIVE • Радиостанция";
-
-  audio.play()
-    .then(updatePlayButtons)
-    .catch(() => {
-      showToast("Не удалось запустить радио");
-    });
-
-}
-
-
-function openRadio() {
-
-  document
-    .getElementById("radioSection")
-    .scrollIntoView({
-      behavior: "smooth"
-    });
-
-}
-
-
-/* =========================================================
-   SEARCH
-========================================================= */
-
-let searchTimer = null;
-
-document
-  .getElementById("searchInput")
-  .addEventListener("input", event => {
-
-    clearTimeout(searchTimer);
-
-    const query =
-      event.target.value.trim().toLowerCase();
-
-    searchTimer = setTimeout(() => {
-
-      if (!query) {
-
-        document
-          .getElementById("searchResults")
-          .innerHTML = "";
-
-        return;
-      }
-
-      searchTracks(query);
-
-    }, 250);
-
-  });
-
-
-function searchTracks(query) {
-
-  const results =
-    tracks.filter(track => {
-
-      const title =
-        String(track.title || "")
-          .toLowerCase();
-
-      const artist =
-        String(track.artist || "")
-          .toLowerCase();
-
-      const album =
-        String(track.album || "")
-          .toLowerCase();
-
-      return (
-        title.includes(query) ||
-        artist.includes(query) ||
-        album.includes(query)
-      );
-
-    });
-
-  const container =
-    document.getElementById("searchResults");
-
-  container.innerHTML = `
-
-    <section class="section">
-
-      <div class="section-head">
-        <h2>Результаты поиска</h2>
-      </div>
-
-      ${
-        results.length
-          ? `<div class="cards">
-              ${
-                results
-                  .map(track => {
-
-                    const index =
-                      tracks.indexOf(track);
-
-                    return createTrackCard(
-                      track,
-                      index
-                    );
-
-                  })
-                  .join("")
-              }
-            </div>`
-          : `
-            <div class="empty">
-              <div class="empty-icon">⌕</div>
-              <h3>Ничего не найдено</h3>
-              <p style="margin-top:8px;">
-                Попробуйте другой запрос.
-              </p>
-            </div>
-          `
-      }
-
-    </section>
-  `;
-
-}
-
-
-/* =========================================================
-   NAVIGATION
-========================================================= */
-
-document
-  .querySelectorAll(".nav button")
-  .forEach(button => {
-
-    button.addEventListener("click", () => {
-
-      document
-        .querySelectorAll(".nav button")
-        .forEach(item =>
-          item.classList.remove("active")
+        console.error(
+          "Radio error:",
+          error
         );
 
-      button.classList.add("active");
+        stationStatus.textContent =
+          "Не удалось запустить радио";
 
-      const page =
-        button.dataset.page;
+        showMessage(
+          "Не удалось запустить радио"
+        );
 
-      handlePage(page);
+      });
 
-      document
-        .getElementById("sidebar")
-        .classList.remove("open");
-
-    });
-
-  });
+  }
 
 
-function handlePage(page) {
+  /*
+   * ==========================================
+   * TOGGLE RADIO
+   * ==========================================
+   */
 
-  if (page === "home") {
+  function toggleRadio() {
+
+    if (!radioAudio.src) {
+
+      playRadio("retro");
+
+      return;
+    }
+
+    if (radioAudio.paused) {
+
+      radioAudio.play()
+        .then(() => {
+
+          radioPlayButton.textContent =
+            "Ⅱ";
+
+          stationStatus.textContent =
+            "● LIVE";
+
+        })
+        .catch(() => {
+
+          showMessage(
+            "Не удалось запустить радио"
+          );
+
+        });
+
+    } else {
+
+      radioAudio.pause();
+
+      radioPlayButton.textContent =
+        "▶";
+
+      stationStatus.textContent =
+        "Пауза";
+
+    }
+
+  }
+
+
+  /*
+   * ==========================================
+   * STOP
+   * ==========================================
+   */
+
+  function stopRadio() {
+
+    radioAudio.pause();
+
+    radioAudio.removeAttribute(
+      "src"
+    );
+
+    radioAudio.load();
+
+    currentRadio = null;
+
+    radioPlayButton.textContent =
+      "▶";
+
+    stationStatus.textContent =
+      "Остановлено";
+
+  }
+
+
+  /*
+   * ==========================================
+   * AUDIO EVENTS
+   * ==========================================
+   */
+
+  radioAudio.addEventListener(
+    "play",
+    () => {
+
+      radioPlayButton.textContent =
+        "Ⅱ";
+
+    }
+  );
+
+
+  radioAudio.addEventListener(
+    "pause",
+    () => {
+
+      radioPlayButton.textContent =
+        "▶";
+
+    }
+  );
+
+
+  radioAudio.addEventListener(
+    "error",
+    () => {
+
+      stationStatus.textContent =
+        "Ошибка соединения";
+
+    }
+  );
+
+
+  /*
+   * ==========================================
+   * NAVIGATION
+   * ==========================================
+   */
+
+  function scrollRadio() {
+
+    document
+      .getElementById("radio")
+      .scrollIntoView({
+        behavior: "smooth"
+      });
+
+  }
+
+
+  function home() {
 
     window.scrollTo({
       top: 0,
       behavior: "smooth"
     });
 
-    return;
   }
 
 
-  if (page === "radio") {
+  /*
+   * ==========================================
+   * MOBILE MENU
+   * ==========================================
+   */
 
-    openRadio();
-    return;
-  }
-
-
-  if (page === "favorites") {
-
-    showToast("Открываем избранное");
-
-    const favorites =
-      tracks.filter(track => track.liked);
-
-    renderSpecialPage(
-      "Избранное",
-      favorites
-    );
-
-    return;
-  }
-
-
-  if (page === "history") {
-
-    showToast("История прослушиваний");
-
-    renderSpecialPage(
-      "История",
-      tracks.slice(0,10)
-    );
-
-    return;
-  }
-
-
-  if (page === "popular") {
-
-    renderSpecialPage(
-      "Популярное",
-      [...tracks]
-        .sort((a,b) =>
-          (b.plays || 0) -
-          (a.plays || 0)
-        )
-    );
-
-    return;
-  }
-
-
-  if (page === "new") {
-
-    renderSpecialPage(
-      "Новинки",
-      [...tracks].reverse()
-    );
-
-    return;
-  }
-
-
-  showToast(
-    `Раздел «${page}» готовится`
-  );
-
-}
-
-
-function renderSpecialPage(title, list) {
-
-  const results =
-    document.getElementById("searchResults");
-
-  results.innerHTML = `
-
-    <section class="section">
-
-      <div class="section-head">
-
-        <h2>${escapeHtml(title)}</h2>
-
-      </div>
-
-      ${
-        list.length
-          ? `
-            <div class="cards">
-              ${
-                list.map(track => {
-
-                  const index =
-                    tracks.indexOf(track);
-
-                  return createTrackCard(
-                    track,
-                    index
-                  );
-
-                }).join("")
-              }
-            </div>
-          `
-          : `
-            <div class="empty">
-
-              <div class="empty-icon">
-                ♡
-              </div>
-
-              <h3>
-                Здесь пока пусто
-              </h3>
-
-            </div>
-          `
-      }
-
-    </section>
-  `;
-
-  results.scrollIntoView({
-    behavior: "smooth"
-  });
-
-}
-
-
-/* =========================================================
-   MOBILE MENU
-========================================================= */
-
-document
-  .getElementById("mobileMenu")
-  .addEventListener("click", () => {
+  function toggleMenu() {
 
     document
       .getElementById("sidebar")
       .classList.toggle("open");
 
-  });
-
-
-/* =========================================================
-   ESC
-========================================================= */
-
-document.addEventListener("keydown", event => {
-
-  if (event.key === "Escape") {
-    closeFullscreenPlayer();
   }
 
-});
+
+  /*
+   * ==========================================
+   * TELEGRAM LOGIN
+   * ==========================================
+   */
+
+  async function telegramLogin() {
+
+    try {
+
+      const response =
+        await fetch(
+          "/api/auth/telegram/start",
+          {
+            method: "POST"
+          }
+        );
+
+      if (!response.ok) {
+
+        throw new Error(
+          "Telegram auth error"
+        );
+
+      }
+
+      const data =
+        await response.json();
+
+      if (data.deep_link) {
+
+        window.open(
+          data.deep_link,
+          "_blank"
+        );
+
+        return;
+      }
+
+      showMessage(
+        "Откройте Telegram для входа"
+      );
+
+    } catch (error) {
+
+      console.error(error);
+
+      showMessage(
+        "Telegram авторизация временно недоступна"
+      );
+
+    }
+
+  }
 
 
-/* =========================================================
-   SECURITY
-========================================================= */
+  /*
+   * ==========================================
+   * SEARCH
+   * ==========================================
+   */
 
-function escapeHtml(value) {
+  function searchKey(event) {
 
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    const query =
+      event.target.value.trim();
+
+    if (!query) {
+      return;
+    }
+
+    showMessage(
+      `Поиск: ${query}`
+    );
+
+  }
 
 
-/* =========================================================
-   START
-========================================================= */
+  /*
+   * ==========================================
+   * MESSAGE
+   * ==========================================
+   */
 
-audio.volume = .8;
+  function showMessage(text) {
 
-loadTracks();
+    const toast =
+      document.getElementById(
+        "toast"
+      );
+
+    toast.textContent =
+      text;
+
+    toast.classList.add(
+      "show"
+    );
+
+    clearTimeout(
+      window.toastTimer
+    );
+
+    window.toastTimer =
+      setTimeout(
+        () => {
+
+          toast.classList.remove(
+            "show"
+          );
+
+        },
+        2500
+      );
+
+  }
 
 </script>
 
