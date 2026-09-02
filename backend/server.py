@@ -8,6 +8,7 @@ from typing import Optional
 
 from fastapi import (
     FastAPI,
+    Request,
     Depends,
     HTTPException,
     UploadFile,
@@ -27,6 +28,7 @@ from sqlalchemy import (
     or_,
 )
 from sqlalchemy.orm import Session
+import httpx
 
 from backend.database import (
     Base,
@@ -497,12 +499,51 @@ def scan_music():
 # STARTUP
 # ============================================================
 
+DEMO_TRACKS = {
+    "Blinding Lights",
+    "Save Your Tears",
+    "Starboy",
+    "Die For You",
+    "I Feel It Coming",
+    "After Hours",
+}
+
+def remove_demo_tracks():
+    """Удаляет только старые демо-треки The Weeknd. Пользовательские треки не трогает."""
+    db = SessionLocal()
+    try:
+        tracks = (
+            db.query(Track)
+            .filter(
+                Track.artist.ilike("%The Weeknd%"),
+                Track.title.in_(DEMO_TRACKS),
+            )
+            .all()
+        )
+        if not tracks:
+            return
+
+        ids = [t.id for t in tracks]
+        db.query(Like).filter(Like.track_id.in_(ids)).delete(synchronize_session=False)
+        db.query(History).filter(History.track_id.in_(ids)).delete(synchronize_session=False)
+        db.query(PlaylistTrack).filter(PlaylistTrack.track_id.in_(ids)).delete(synchronize_session=False)
+        for track in tracks:
+            db.delete(track)
+        db.commit()
+        print(f"Removed old demo tracks: {len(tracks)}")
+    except Exception as exc:
+        db.rollback()
+        print(f"Demo cleanup error: {exc}")
+    finally:
+        db.close()
+
+
 @app.on_event("startup")
 def startup():
     print("Starting FENIX MUSIC...")
 
     seed_admin()
-
+    remove_demo_tracks()
     scan_music()
 
     print("FENIX MUSIC startup complete.")
@@ -704,62 +745,90 @@ def get_track(
 @app.get("/api/tracks/{track_id}/stream")
 def stream_track(
     track_id: int,
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    track = db.query(Track).filter(
-        Track.id == track_id
-    ).first()
+    track = db.query(Track).filter(Track.id == track_id).first()
 
     if not track:
-        raise HTTPException(
-            status_code=404,
-            detail="Track not found",
-        )
+        raise HTTPException(status_code=404, detail="Track not found")
 
-    path = resolve_path(
-        track.audio_path
-    )
+    path = resolve_path(track.audio_path)
 
     if not path or not path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="Audio file not found",
-        )
+        raise HTTPException(status_code=404, detail="Audio file not found")
 
-    def iter_file():
-        with open(path, "rb") as audio:
-            while True:
-                chunk = audio.read(
-                    1024 * 1024
-                )
-
-                if not chunk:
-                    break
-
-                yield chunk
+    size = path.stat().st_size
+    range_header = request.headers.get("range")
 
     content_type = "audio/mpeg"
-
     extension = path.suffix.lower()
+    content_types = {
+        ".wav": "audio/wav",
+        ".ogg": "audio/ogg",
+        ".flac": "audio/flac",
+        ".m4a": "audio/mp4",
+        ".aac": "audio/aac",
+        ".webm": "audio/webm",
+        ".opus": "audio/ogg",
+    }
+    content_type = content_types.get(extension, content_type)
 
-    if extension == ".wav":
-        content_type = "audio/wav"
-    elif extension == ".ogg":
-        content_type = "audio/ogg"
-    elif extension == ".flac":
-        content_type = "audio/flac"
-    elif extension == ".m4a":
-        content_type = "audio/mp4"
-    elif extension == ".aac":
-        content_type = "audio/aac"
-    elif extension == ".webm":
-        content_type = "audio/webm"
+    if not range_header:
+        def iter_file():
+            with path.open("rb") as audio:
+                while True:
+                    chunk = audio.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    yield chunk
+
+        return StreamingResponse(
+            iter_file(),
+            media_type=content_type,
+            headers={
+                "Accept-Ranges": "bytes",
+                "Content-Length": str(size),
+                "Cache-Control": "no-cache",
+            },
+        )
+
+    match = re.match(r"bytes=(\d*)-(\d*)", range_header)
+    if not match:
+        raise HTTPException(status_code=416, detail="Invalid Range")
+
+    start_byte = int(match.group(1) or 0)
+    end_byte = int(match.group(2) or size - 1)
+
+    if start_byte >= size or start_byte > end_byte:
+        raise HTTPException(
+            status_code=416,
+            detail="Requested range not satisfiable",
+            headers={"Content-Range": f"bytes */{size}"},
+        )
+
+    end_byte = min(end_byte, size - 1)
+    length = end_byte - start_byte + 1
+
+    def iter_range():
+        with path.open("rb") as audio:
+            audio.seek(start_byte)
+            remaining = length
+            while remaining:
+                chunk = audio.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
 
     return StreamingResponse(
-        iter_file(),
+        iter_range(),
+        status_code=206,
         media_type=content_type,
         headers={
             "Accept-Ranges": "bytes",
+            "Content-Length": str(length),
+            "Content-Range": f"bytes {start_byte}-{end_byte}/{size}",
             "Cache-Control": "no-cache",
         },
     )
@@ -1183,50 +1252,86 @@ RADIO_STATIONS = [
         "name": "Retro FM",
         "description": "Ретро-хиты",
         "stream": "https://hls-01-retro.emgsound.ru/12/128/playlist.m3u8",
+        "type": "hls",
         "cover": "/api/radio/retro-fm/cover",
     },
     {
         "id": "russkoe-radio",
         "name": "Русское Радио",
         "description": "Главное русское радио",
-        "stream": "https://rusradio.hostingradio.ru/rusradio128.mp3",
+        "stream": "/api/radio/russkoe-radio/stream",
+        "type": "mp3",
         "cover": "/api/radio/russkoe-radio/cover",
     },
     {
         "id": "radio-dacha",
         "name": "Радио Дача",
         "description": "Музыка для хорошего настроения",
-        "stream": "http://listen13.vdfm.ru:8000/dacha",
+        "stream": "/api/radio/radio-dacha/stream",
+        "type": "mp3",
         "cover": "/api/radio/radio-dacha/cover",
     },
 ]
 
+RADIO_SOURCE_URLS = {
+    "russkoe-radio": "https://rusradio.hostingradio.ru/rusradio128.mp3",
+    "radio-dacha": "http://listen13.vdfm.ru:8000/dacha",
+}
 
 @app.get("/api/radio")
 def radio():
     return RADIO_STATIONS
 
 
-@app.get("/api/radio/{station_id}/cover")
-def radio_cover(
-    station_id: str,
-):
-    filename = (
-        f"{station_id}.svg"
+@app.get("/api/radio/{station_id}/stream")
+async def radio_stream(station_id: str):
+    source_url = RADIO_SOURCE_URLS.get(station_id)
+    if not source_url:
+        raise HTTPException(status_code=404, detail="Radio station not found")
+
+    async def proxy():
+        timeout = httpx.Timeout(connect=15.0, read=None, write=15.0, pool=15.0)
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            async with client.stream(
+                "GET",
+                source_url,
+                headers={
+                    "User-Agent": "FENIX-MUSIC/1.0",
+                    "Icy-MetaData": "1",
+                },
+            ) as response:
+                if response.status_code >= 400:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Radio upstream returned {response.status_code}",
+                    )
+                async for chunk in response.aiter_bytes(1024 * 64):
+                    yield chunk
+
+    return StreamingResponse(
+        proxy(),
+        media_type="audio/mpeg",
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            "Accept-Ranges": "none",
+            "Access-Control-Allow-Origin": "*",
+        },
     )
 
+
+@app.get("/api/radio/{station_id}/cover")
+def radio_cover(station_id: str):
+    filename = f"{station_id}.svg"
     path = RADIO_DIR / filename
 
     if path.exists():
-        return FileResponse(
-            path,
-            media_type="image/svg+xml",
-        )
+        return FileResponse(path, media_type="image/svg+xml")
 
-    return FileResponse(
-        RADIO_DIR / "retro-fm.svg",
-        media_type="image/svg+xml",
-    )
+    fallback = RADIO_DIR / "retro-fm.svg"
+    if fallback.exists():
+        return FileResponse(fallback, media_type="image/svg+xml")
+
+    raise HTTPException(status_code=404, detail="Radio cover not found")
 
 
 # ============================================================
@@ -1377,8 +1482,8 @@ def telegram_auth_start(
 
     bot_username = os.getenv(
         "TELEGRAM_BOT_USERNAME",
-        "",
-    ).lstrip("@")
+        "FenixMusicRabot",
+    ).strip().lstrip("@")
 
     deep_link = None
 
