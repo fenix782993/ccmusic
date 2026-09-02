@@ -1,14 +1,19 @@
+# backend/server.py
+
 import os
-import re
+import json
+import mimetypes
 import secrets
 import shutil
-from datetime import datetime, timedelta, timezone
+import urllib.request
+import urllib.error
+
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import (
     FastAPI,
-    Request,
     Depends,
     HTTPException,
     UploadFile,
@@ -16,26 +21,18 @@ from fastapi import (
     Form,
     Query,
 )
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
     StreamingResponse,
+    JSONResponse,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
-from sqlalchemy import (
-    func,
-    or_,
-)
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from urllib.request import Request as UrlRequest, urlopen
-from urllib.error import HTTPError, URLError
+from sqlalchemy import or_
 
-from backend.database import (
-    Base,
-    SessionLocal,
-    engine,
-)
+from backend.database import Base, SessionLocal, engine
 from backend.models import (
     User,
     Track,
@@ -45,7 +42,6 @@ from backend.models import (
     PlaylistTrack,
     TelegramAuth,
 )
-
 from backend.auth import (
     hash_password,
     verify_password,
@@ -55,45 +51,7 @@ from backend.auth import (
 
 
 # ============================================================
-# APP
-# ============================================================
-
-app = FastAPI(
-    title="FENIX MUSIC API",
-    version="10.1.0",
-)
-
-
-# ============================================================
-# CORS
-# ============================================================
-
-CORS_ORIGINS = os.getenv(
-    "CORS_ORIGINS",
-    "*",
-)
-
-if CORS_ORIGINS == "*":
-    allow_origins = ["*"]
-else:
-    allow_origins = [
-        x.strip()
-        for x in CORS_ORIGINS.split(",")
-        if x.strip()
-    ]
-
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allow_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-# ============================================================
-# PATHS
+# CONFIG
 # ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -101,15 +59,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 FRONTEND_DIST = FRONTEND_DIR / "dist"
 
-DEFAULT_MEDIA_DIR = BASE_DIR / "backend" / "media"
-
-MEDIA_DIR = Path(
-    os.getenv(
-        "MEDIA_DIR",
-        str(DEFAULT_MEDIA_DIR),
-    )
-)
-
+MEDIA_DIR = BASE_DIR / "backend" / "media"
 AUDIO_DIR = MEDIA_DIR / "audio"
 MUSIC_DIR = MEDIA_DIR / "music"
 UPLOAD_DIR = MEDIA_DIR / "uploads"
@@ -124,10 +74,54 @@ for directory in (
     COVER_DIR,
     RADIO_DIR,
 ):
-    directory.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    directory.mkdir(parents=True, exist_ok=True)
+
+
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+JWT_SECRET = os.getenv(
+    "JWT_SECRET",
+    "fenix-music-development-secret-change-this",
+)
+
+ACCESS_MINUTES = int(
+    os.getenv("ACCESS_MINUTES", "10080")
+)
+
+ADMIN_EMAIL = os.getenv(
+    "ADMIN_EMAIL",
+    "Kfeofilov52@gmail.com",
+).strip()
+
+ADMIN_PASSWORD = os.getenv(
+    "ADMIN_PASSWORD",
+    "ChangeMe123!",
+)
+
+ADMIN_USERNAME = os.getenv(
+    "ADMIN_USERNAME",
+    "FenixAdmin",
+).strip()
+
+
+# ============================================================
+# APP
+# ============================================================
+
+app = FastAPI(
+    title="FENIX MUSIC API",
+    version="4.0.0",
+    description="FENIX MUSIC backend",
+)
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ============================================================
@@ -147,46 +141,43 @@ def get_db():
 
 
 # ============================================================
-# ENV
-# ============================================================
-
-ADMIN_EMAIL = os.getenv(
-    "ADMIN_EMAIL",
-    "Kfeofilov52@gmail.com",
-).strip()
-
-ADMIN_PASSWORD = os.getenv(
-    "ADMIN_PASSWORD",
-    "ChangeMe123!",
-)
-
-ADMIN_USERNAME = os.getenv(
-    "ADMIN_USERNAME",
-    "FenixAdmin",
-).strip()
-
-
-# ============================================================
 # HELPERS
 # ============================================================
 
-def normalize_email(email: str) -> str:
-    return email.strip().lower()
+def utcnow():
+    return datetime.now(timezone.utc)
 
 
 def safe_filename(filename: str) -> str:
-    filename = Path(filename).name
+    filename = Path(filename or "file").name
 
-    filename = re.sub(
-        r"[^a-zA-Z0-9а-яА-ЯёЁ._ -]",
-        "_",
-        filename,
+    allowed = (
+        "abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "0123456789"
+        "._- "
     )
 
-    return filename or "file"
+    cleaned = "".join(
+        char if char in allowed else "_"
+        for char in filename
+    )
+
+    cleaned = cleaned.strip(" .")
+
+    return cleaned or "file"
 
 
-def resolve_path(path_value: str | None):
+def unique_filename(original_name: str) -> str:
+    suffix = Path(original_name).suffix.lower()
+
+    if not suffix:
+        suffix = ".bin"
+
+    return f"{secrets.token_hex(16)}{suffix}"
+
+
+def resolve_path(path_value: Optional[str]) -> Optional[Path]:
     if not path_value:
         return None
 
@@ -201,374 +192,221 @@ def resolve_path(path_value: str | None):
             [
                 BASE_DIR / raw,
                 BASE_DIR / "backend" / raw,
-                Path.cwd() / raw,
                 MEDIA_DIR / raw,
                 AUDIO_DIR / raw,
+                COVER_DIR / raw,
+                MUSIC_DIR / raw,
                 UPLOAD_DIR / raw,
             ]
         )
 
     for candidate in candidates:
         try:
-            if candidate.exists():
-                return candidate.resolve()
-        except OSError:
+            candidate = candidate.resolve()
+
+            if candidate.exists() and candidate.is_file():
+                return candidate
+        except Exception:
             continue
 
     return None
 
 
-def track_to_dict(
-    track: Track,
-    liked: bool = False,
-):
+def relative_media_path(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(BASE_DIR.resolve())).replace(
+            "\\",
+            "/",
+        )
+    except Exception:
+        return str(path).replace("\\", "/")
+
+
+def track_to_dict(track: Track, liked: bool = False):
+    audio_file = resolve_path(track.audio_path)
+
+    cover_url = None
+
+    if getattr(track, "cover_path", None):
+        cover_path = resolve_path(track.cover_path)
+
+        if cover_path:
+            cover_url = (
+                f"/api/covers/{cover_path.name}"
+            )
+
     return {
         "id": track.id,
-        "title": track.title,
-        "artist": track.artist or "Unknown Artist",
-        "album": track.album or "",
-        "genre": track.genre or "",
-        "duration": track.duration or 0,
-        "cover_url": track.cover_url,
-        "audio_path": track.audio_path,
-        "plays": track.plays or 0,
-        "lyrics": track.lyrics,
+        "title": getattr(track, "title", "") or "",
+        "artist": getattr(track, "artist", "") or "",
+        "album": getattr(track, "album", "") or "",
+        "genre": getattr(track, "genre", "") or "",
+        "duration": getattr(track, "duration", 0) or 0,
+        "cover_url": cover_url,
+        "audio_url": (
+            f"/api/tracks/{track.id}/stream"
+            if audio_file
+            else None
+        ),
         "liked": liked,
+        "available": bool(audio_file),
+        "created_at": (
+            track.created_at.isoformat()
+            if getattr(track, "created_at", None)
+            else None
+        ),
     }
 
 
-def get_current_user(
-    token: Optional[str],
+def user_to_dict(user: User):
+    return {
+        "id": user.id,
+        "email": getattr(user, "email", "") or "",
+        "username": getattr(user, "username", "") or "",
+        "avatar_url": getattr(user, "avatar_url", None),
+        "telegram_id": getattr(user, "telegram_id", None),
+        "is_admin": bool(
+            getattr(user, "is_admin", False)
+        ),
+        "subscription": getattr(
+            user,
+            "subscription",
+            "FREE",
+        ) or "FREE",
+    }
+
+
+def get_user_from_token(
+    token: str,
     db: Session,
 ):
     if not token:
         raise HTTPException(
             status_code=401,
-            detail="Not authenticated",
+            detail="Токен отсутствует",
         )
 
-    payload = decode_access_token(token)
+    try:
+        payload = decode_access_token(token)
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Недействительный токен",
+        )
 
     if not payload:
         raise HTTPException(
             status_code=401,
-            detail="Invalid or expired token",
+            detail="Недействительный токен",
         )
 
-    user_id = payload.get("user_id")
+    user_id = payload.get("sub")
 
-    if user_id is None:
-        user_id = payload.get("sub")
-
-    try:
-        user_id = int(user_id)
-    except (TypeError, ValueError):
+    if not user_id:
         raise HTTPException(
             status_code=401,
-            detail="Invalid token",
+            detail="Некорректный токен",
         )
 
     user = db.query(User).filter(
-        User.id == user_id
+        User.id == int(user_id)
     ).first()
 
     if not user:
         raise HTTPException(
             status_code=401,
-            detail="User not found",
+            detail="Пользователь не найден",
         )
 
     return user
 
 
 def require_admin(
-    token: Optional[str],
+    token: str,
     db: Session,
 ):
-    user = get_current_user(
+    user = get_user_from_token(
         token,
         db,
     )
 
-    if not user.is_admin:
+    if not getattr(user, "is_admin", False):
         raise HTTPException(
             status_code=403,
-            detail="Admin access required",
+            detail="Доступ только для администратора",
         )
 
     return user
 
 
-# ============================================================
-# ADMIN SEED
-# ============================================================
+def ensure_admin(db: Session):
+    admin = db.query(User).filter(
+        User.email == ADMIN_EMAIL
+    ).first()
 
-def seed_admin():
-    """
-    Создаёт администратора только если его нет.
-
-    Если email уже существует:
-    - НЕ создаёт второго пользователя;
-    - назначает пользователя администратором;
-    - обновляет username;
-    - обновляет пароль.
-    """
-
-    db = SessionLocal()
-
-    try:
-        email = normalize_email(
-            ADMIN_EMAIL
-        )
-
-        if not email:
-            print(
-                "ADMIN_EMAIL is empty. "
-                "Admin seed skipped."
-            )
-            return
-
-        admin = db.query(User).filter(
-            func.lower(User.email) == email
-        ).first()
-
-        if admin:
-            print(
-                f"Admin already exists: {admin.email}"
-            )
-
-            changed = False
-
-            if not admin.is_admin:
-                admin.is_admin = True
-                changed = True
-
-            if ADMIN_USERNAME and (
-                admin.username != ADMIN_USERNAME
-            ):
-                admin.username = ADMIN_USERNAME
-                changed = True
-
-            if ADMIN_PASSWORD:
-                admin.password_hash = hash_password(
-                    ADMIN_PASSWORD
-                )
-                changed = True
-
-            if changed:
-                db.commit()
-
-            print(
-                f"Admin ready: {admin.email}"
-            )
-
-            return
-
+    if not admin:
         admin = User(
-            email=email,
-            password_hash=hash_password(
-                ADMIN_PASSWORD
-            ),
+            email=ADMIN_EMAIL,
             username=ADMIN_USERNAME,
+            password_hash=hash_password(ADMIN_PASSWORD),
             is_admin=True,
         )
 
         db.add(admin)
-
         db.commit()
+        db.refresh(admin)
 
-        print(
-            f"Admin created: {email}"
-        )
+    else:
+        changed = False
 
-    except Exception as exc:
-        db.rollback()
+        if not getattr(admin, "is_admin", False):
+            admin.is_admin = True
+            changed = True
 
-        print(
-            f"Admin seed error: {exc}"
-        )
+        if not getattr(admin, "username", None):
+            admin.username = ADMIN_USERNAME
+            changed = True
 
-    finally:
-        db.close()
-
-
-# ============================================================
-# MUSIC SCANNER
-# ============================================================
-
-AUDIO_EXTENSIONS = {
-    ".mp3",
-    ".wav",
-    ".ogg",
-    ".m4a",
-    ".aac",
-    ".flac",
-    ".webm",
-}
-
-
-def scan_music():
-    """
-    Сканирует media/audio, media/music и media/uploads.
-    """
-
-    db = SessionLocal()
-
-    try:
-        folders = [
-            AUDIO_DIR,
-            MUSIC_DIR,
-            UPLOAD_DIR,
-        ]
-
-        existing_paths = {
-            str(track.audio_path)
-            for track in db.query(Track).all()
-            if track.audio_path
-        }
-
-        added = 0
-
-        for folder in folders:
-            if not folder.exists():
-                continue
-
-            for path in folder.rglob("*"):
-
-                if not path.is_file():
-                    continue
-
-                if path.suffix.lower() not in AUDIO_EXTENSIONS:
-                    continue
-
-                relative_path = str(
-                    path.relative_to(BASE_DIR)
-                ).replace("\\", "/")
-
-                if relative_path in existing_paths:
-                    continue
-
-                filename = path.stem
-
-                artist = "Unknown Artist"
-                title = filename
-
-                if " - " in filename:
-                    artist, title = filename.split(
-                        " - ",
-                        1,
-                    )
-
-                track = Track(
-                    title=title.strip(),
-                    artist=artist.strip(),
-                    album="",
-                    genre="",
-                    duration=0,
-                    audio_path=relative_path,
-                    cover_url=None,
-                    plays=0,
-                )
-
-                db.add(track)
-
-                existing_paths.add(
-                    relative_path
-                )
-
-                added += 1
-
-        if added:
+        if changed:
             db.commit()
 
-        print(
-            f"Music scan complete. Added: {added}"
-        )
-
-    except Exception as exc:
-        db.rollback()
-
-        print(
-            f"Music scan error: {exc}"
-        )
-
-    finally:
-        db.close()
+    return admin
 
 
 # ============================================================
 # STARTUP
 # ============================================================
 
-DEMO_TRACKS = {
-    "Blinding Lights",
-    "Save Your Tears",
-    "Starboy",
-    "Die For You",
-    "I Feel It Coming",
-    "After Hours",
-}
-
-def remove_demo_tracks():
-    """Удаляет только старые демо-треки The Weeknd. Пользовательские треки не трогает."""
-    db = SessionLocal()
-    try:
-        tracks = (
-            db.query(Track)
-            .filter(
-                Track.artist.ilike("%The Weeknd%"),
-                Track.title.in_(DEMO_TRACKS),
-            )
-            .all()
-        )
-        if not tracks:
-            return
-
-        ids = [t.id for t in tracks]
-        db.query(Like).filter(Like.track_id.in_(ids)).delete(synchronize_session=False)
-        db.query(History).filter(History.track_id.in_(ids)).delete(synchronize_session=False)
-        db.query(PlaylistTrack).filter(PlaylistTrack.track_id.in_(ids)).delete(synchronize_session=False)
-        for track in tracks:
-            db.delete(track)
-        db.commit()
-        print(f"Removed old demo tracks: {len(tracks)}")
-    except Exception as exc:
-        db.rollback()
-        print(f"Demo cleanup error: {exc}")
-    finally:
-        db.close()
-
-
 @app.on_event("startup")
 def startup():
-    print("Starting FENIX MUSIC...")
+    db = SessionLocal()
 
-    seed_admin()
-    remove_demo_tracks()
-    scan_music()
-
-    print("FENIX MUSIC startup complete.")
+    try:
+        ensure_admin(db)
+    finally:
+        db.close()
 
 
 # ============================================================
 # HEALTH
 # ============================================================
 
-@app.get("/health")
+@app.get("/api/health")
 def health():
     return {
         "status": "ok",
-        "app": "FENIX MUSIC",
-        "version": "10.1.0",
+        "service": "fenix-music",
+        "version": "4.0.0",
+        "time": utcnow().isoformat(),
     }
 
 
-@app.get("/api/health")
-def api_health():
+@app.get("/api")
+def api_root():
     return {
-        "status": "ok",
-        "app": "FENIX MUSIC",
-        "version": "10.1.0",
+        "name": "FENIX MUSIC API",
+        "version": "4.0.0",
+        "status": "online",
     }
 
 
@@ -576,35 +414,54 @@ def api_health():
 # AUTH
 # ============================================================
 
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    username: str = ""
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
 @app.post("/api/auth/register")
 def register(
-    email: str = Form(...),
-    password: str = Form(...),
-    username: str = Form(...),
+    data: RegisterRequest,
     db: Session = Depends(get_db),
 ):
-    email = normalize_email(email)
+    email = data.email.strip().lower()
+    username = data.username.strip()
 
-    if len(password) < 6:
+    if not email or "@" not in email:
         raise HTTPException(
             status_code=400,
-            detail="Password must contain at least 6 characters",
+            detail="Введите корректную почту",
+        )
+
+    if len(data.password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Пароль должен содержать минимум 6 символов",
         )
 
     existing = db.query(User).filter(
-        func.lower(User.email) == email
+        User.email == email
     ).first()
 
     if existing:
         raise HTTPException(
             status_code=409,
-            detail="Email already registered",
+            detail="Пользователь с такой почтой уже существует",
         )
+
+    if not username:
+        username = email.split("@")[0]
 
     user = User(
         email=email,
-        password_hash=hash_password(password),
-        username=username.strip(),
+        username=username,
+        password_hash=hash_password(data.password),
         is_admin=False,
     )
 
@@ -613,85 +470,161 @@ def register(
     db.refresh(user)
 
     token = create_access_token(
-        user.id,
-        user.email,
-        user.is_admin,
+        {
+            "sub": str(user.id),
+        },
+        expires_delta=timedelta(
+            minutes=ACCESS_MINUTES
+        ),
     )
 
     return {
         "token": token,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "username": user.username,
-            "avatar_url": user.avatar_url,
-            "is_admin": user.is_admin,
-        },
+        "user": user_to_dict(user),
     }
 
 
 @app.post("/api/auth/login")
 def login(
-    email: str = Form(...),
-    password: str = Form(...),
+    data: LoginRequest,
     db: Session = Depends(get_db),
 ):
-    email = normalize_email(email)
+    email = data.email.strip().lower()
 
     user = db.query(User).filter(
-        func.lower(User.email) == email
+        User.email == email
     ).first()
 
     if not user:
         raise HTTPException(
             status_code=401,
-            detail="Invalid email or password",
+            detail="Неверная почта или пароль",
         )
 
-    if not verify_password(
-        password,
-        user.password_hash,
+    password_hash = getattr(
+        user,
+        "password_hash",
+        "",
+    )
+
+    if not password_hash or not verify_password(
+        data.password,
+        password_hash,
     ):
         raise HTTPException(
             status_code=401,
-            detail="Invalid email or password",
+            detail="Неверная почта или пароль",
         )
 
     token = create_access_token(
-        user.id,
-        user.email,
-        user.is_admin,
+        {
+            "sub": str(user.id),
+        },
+        expires_delta=timedelta(
+            minutes=ACCESS_MINUTES
+        ),
     )
 
     return {
         "token": token,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "username": user.username,
-            "avatar_url": user.avatar_url,
-            "is_admin": user.is_admin,
-        },
+        "user": user_to_dict(user),
     }
 
 
 @app.get("/api/auth/me")
-def me(
-    token: Optional[str] = Query(None),
+def auth_me(
+    token: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    user = get_current_user(
+    user = get_user_from_token(
         token,
         db,
     )
 
+    return user_to_dict(user)
+
+
+# ============================================================
+# TELEGRAM AUTH
+# ============================================================
+
+@app.get("/api/auth/telegram")
+def telegram_auth(
+    db: Session = Depends(get_db),
+):
+    """
+    Возвращает deep-link для Telegram Mini App / bot auth.
+
+    BOT_USERNAME можно задать в Render.
+    """
+
+    bot_username = os.getenv(
+        "BOT_USERNAME",
+        "",
+    ).strip().lstrip("@")
+
+    if not bot_username:
+        return {
+            "enabled": False,
+            "url": None,
+        }
+
+    auth_token = secrets.token_urlsafe(32)
+
+    auth_record = TelegramAuth(
+        token=auth_token,
+        created_at=utcnow(),
+    )
+
+    db.add(auth_record)
+    db.commit()
+
+    url = (
+        f"https://t.me/{bot_username}"
+        f"?start=auth_{auth_token}"
+    )
+
     return {
-        "id": user.id,
-        "email": user.email,
-        "username": user.username,
-        "avatar_url": user.avatar_url,
-        "telegram_id": user.telegram_id,
-        "is_admin": user.is_admin,
+        "enabled": True,
+        "url": url,
+        "deep_link": url,
+        "token": auth_token,
+    }
+
+
+# ============================================================
+# USER
+# ============================================================
+
+@app.get("/api/profile")
+def profile(
+    token: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    tracks_count = db.query(History).filter(
+        History.user_id == user.id
+    ).count()
+
+    likes_count = db.query(Like).filter(
+        Like.user_id == user.id
+    ).count()
+
+    playlists_count = db.query(Playlist).filter(
+        Playlist.user_id == user.id
+    ).count()
+
+    return {
+        **user_to_dict(user),
+        "stats": {
+            "listening": tracks_count,
+            "likes": likes_count,
+            "playlists": playlists_count,
+        },
     }
 
 
@@ -707,18 +640,25 @@ def tracks(
 ):
     rows = (
         db.query(Track)
-        .order_by(
-            Track.created_at.desc()
-        )
+        .order_by(Track.created_at.desc())
         .offset(offset)
         .limit(limit)
         .all()
     )
 
-    return [
-        track_to_dict(track)
-        for track in rows
-    ]
+    result = []
+
+    for track in rows:
+        if not resolve_path(
+            getattr(track, "audio_path", None)
+        ):
+            continue
+
+        result.append(
+            track_to_dict(track)
+        )
+
+    return result
 
 
 @app.get("/api/tracks/{track_id}")
@@ -733,116 +673,19 @@ def get_track(
     if not track:
         raise HTTPException(
             status_code=404,
-            detail="Track not found",
+            detail="Трек не найден",
         )
 
     return track_to_dict(track)
 
 
 # ============================================================
-# STREAM
+# STREAM TRACK
 # ============================================================
 
 @app.get("/api/tracks/{track_id}/stream")
 def stream_track(
     track_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    track = db.query(Track).filter(Track.id == track_id).first()
-
-    if not track:
-        raise HTTPException(status_code=404, detail="Track not found")
-
-    path = resolve_path(track.audio_path)
-
-    if not path or not path.exists():
-        raise HTTPException(status_code=404, detail="Audio file not found")
-
-    size = path.stat().st_size
-    range_header = request.headers.get("range")
-
-    content_type = "audio/mpeg"
-    extension = path.suffix.lower()
-    content_types = {
-        ".wav": "audio/wav",
-        ".ogg": "audio/ogg",
-        ".flac": "audio/flac",
-        ".m4a": "audio/mp4",
-        ".aac": "audio/aac",
-        ".webm": "audio/webm",
-        ".opus": "audio/ogg",
-    }
-    content_type = content_types.get(extension, content_type)
-
-    if not range_header:
-        def iter_file():
-            with path.open("rb") as audio:
-                while True:
-                    chunk = audio.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    yield chunk
-
-        return StreamingResponse(
-            iter_file(),
-            media_type=content_type,
-            headers={
-                "Accept-Ranges": "bytes",
-                "Content-Length": str(size),
-                "Cache-Control": "no-cache",
-            },
-        )
-
-    match = re.match(r"bytes=(\d*)-(\d*)", range_header)
-    if not match:
-        raise HTTPException(status_code=416, detail="Invalid Range")
-
-    start_byte = int(match.group(1) or 0)
-    end_byte = int(match.group(2) or size - 1)
-
-    if start_byte >= size or start_byte > end_byte:
-        raise HTTPException(
-            status_code=416,
-            detail="Requested range not satisfiable",
-            headers={"Content-Range": f"bytes */{size}"},
-        )
-
-    end_byte = min(end_byte, size - 1)
-    length = end_byte - start_byte + 1
-
-    def iter_range():
-        with path.open("rb") as audio:
-            audio.seek(start_byte)
-            remaining = length
-            while remaining:
-                chunk = audio.read(min(1024 * 1024, remaining))
-                if not chunk:
-                    break
-                remaining -= len(chunk)
-                yield chunk
-
-    return StreamingResponse(
-        iter_range(),
-        status_code=206,
-        media_type=content_type,
-        headers={
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(length),
-            "Content-Range": f"bytes {start_byte}-{end_byte}/{size}",
-            "Cache-Control": "no-cache",
-        },
-    )
-
-
-# ============================================================
-# PLAY
-# ============================================================
-
-@app.post("/api/tracks/{track_id}/play")
-def play_track(
-    track_id: int,
-    token: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
     track = db.query(Track).filter(
@@ -852,39 +695,81 @@ def play_track(
     if not track:
         raise HTTPException(
             status_code=404,
-            detail="Track not found",
+            detail="Трек не найден",
         )
 
-    track.plays = (
-        track.plays or 0
-    ) + 1
+    path = resolve_path(
+        getattr(track, "audio_path", None)
+    )
 
-    if token:
-        try:
-            user = get_current_user(
-                token,
-                db,
-            )
+    if not path:
+        raise HTTPException(
+            status_code=404,
+            detail="Файл аудио отсутствует",
+        )
 
-            history = History(
-                user_id=user.id,
-                track_id=track.id,
-                listened_at=datetime.now(
-                    timezone.utc
-                ),
-            )
+    mime_type, _ = mimetypes.guess_type(
+        str(path)
+    )
 
-            db.add(history)
+    mime_type = mime_type or "audio/mpeg"
 
-        except HTTPException:
-            pass
+    file_size = path.stat().st_size
 
-    db.commit()
+    range_header = None
 
-    return {
-        "ok": True,
-        "plays": track.plays,
-    }
+    # FastAPI Request здесь специально не используется,
+    # чтобы сохранить совместимость с текущей структурой.
+    # Браузер может получить полный файл через FileResponse.
+
+    return FileResponse(
+        path=str(path),
+        media_type=mime_type,
+        filename=path.name,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Length": str(file_size),
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
+
+
+# ============================================================
+# COVERS
+# ============================================================
+
+@app.get("/api/covers/{filename}")
+def get_cover(
+    filename: str,
+):
+    filename = Path(filename).name
+
+    path = COVER_DIR / filename
+
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Обложка не найдена",
+        )
+
+    mime_type, _ = mimetypes.guess_type(
+        str(path)
+    )
+
+    return FileResponse(
+        str(path),
+        media_type=mime_type or "image/jpeg",
+    )
+
+
+# Compatibility route
+# /api/media/covers/filename.jpg
+
+@app.get("/api/media/covers/{filename}")
+def get_cover_compat(
+    filename: str,
+):
+    return get_cover(filename)
 
 
 # ============================================================
@@ -893,17 +778,24 @@ def play_track(
 
 @app.get("/api/search")
 def search(
-    q: str = Query(""),
+    q: str = Query("", min_length=0),
+    limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ):
-    q = q.strip()
+    query = q.strip()
 
-    if not q:
-        return []
+    if not query:
+        return {
+            "tracks": [],
+            "artists": [],
+            "albums": [],
+            "genres": [],
+            "playlists": [],
+        }
 
-    pattern = f"%{q}%"
+    pattern = f"%{query}%"
 
-    rows = (
+    track_rows = (
         db.query(Track)
         .filter(
             or_(
@@ -913,16 +805,138 @@ def search(
                 Track.genre.ilike(pattern),
             )
         )
-        .order_by(
-            Track.plays.desc()
-        )
-        .limit(100)
+        .order_by(Track.created_at.desc())
+        .limit(limit)
         .all()
+    )
+
+    tracks_result = []
+
+    for track in track_rows:
+        if not resolve_path(
+            getattr(track, "audio_path", None)
+        ):
+            continue
+
+        tracks_result.append(
+            track_to_dict(track)
+        )
+
+    artists = sorted(
+        {
+            (track.artist or "").strip()
+            for track in track_rows
+            if (track.artist or "").strip()
+        }
+    )
+
+    albums = sorted(
+        {
+            (track.album or "").strip()
+            for track in track_rows
+            if (track.album or "").strip()
+        }
+    )
+
+    genres = sorted(
+        {
+            (track.genre or "").strip()
+            for track in track_rows
+            if (track.genre or "").strip()
+        }
+    )
+
+    return {
+        "tracks": tracks_result,
+        "artists": artists,
+        "albums": albums,
+        "genres": genres,
+        "playlists": [],
+    }
+
+
+# ============================================================
+# NEW / POPULAR
+# ============================================================
+
+@app.get("/api/catalog/new")
+def catalog_new(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(Track)
+        .order_by(Track.created_at.desc())
+        .limit(limit * 2)
+        .all()
+    )
+
+    result = []
+
+    for track in rows:
+        if not resolve_path(
+            getattr(track, "audio_path", None)
+        ):
+            continue
+
+        result.append(
+            track_to_dict(track)
+        )
+
+        if len(result) >= limit:
+            break
+
+    return result
+
+
+@app.get("/api/catalog/popular")
+def catalog_popular(
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    tracks_rows = (
+        db.query(Track)
+        .all()
+    )
+
+    popularity = []
+
+    for track in tracks_rows:
+        audio = resolve_path(
+            getattr(track, "audio_path", None)
+        )
+
+        if not audio:
+            continue
+
+        likes = db.query(Like).filter(
+            Like.track_id == track.id
+        ).count()
+
+        listens = db.query(History).filter(
+            History.track_id == track.id
+        ).count()
+
+        score = (
+            likes * 5 +
+            listens
+        )
+
+        popularity.append(
+            (
+                score,
+                track,
+            )
+        )
+
+    popularity.sort(
+        key=lambda item: item[0],
+        reverse=True,
     )
 
     return [
         track_to_dict(track)
-        for track in rows
+        for _, track in popularity[:limit]
     ]
 
 
@@ -932,15 +946,515 @@ def search(
 
 @app.get("/api/recommendations")
 def recommendations(
-    token: Optional[str] = Query(None),
+    token: Optional[str] = None,
+    limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     rows = (
         db.query(Track)
-        .order_by(
-            Track.plays.desc()
+        .order_by(Track.created_at.desc())
+        .limit(limit * 3)
+        .all()
+    )
+
+    result = []
+
+    for track in rows:
+        if not resolve_path(
+            getattr(track, "audio_path", None)
+        ):
+            continue
+
+        result.append(
+            track_to_dict(track)
         )
-        .limit(30)
+
+        if len(result) >= limit:
+            break
+
+    return result
+
+
+# ============================================================
+# LIKES
+# ============================================================
+
+@app.get("/api/likes")
+def get_likes(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    likes = (
+        db.query(Like)
+        .filter(Like.user_id == user.id)
+        .all()
+    )
+
+    result = []
+
+    for like in likes:
+        track = db.query(Track).filter(
+            Track.id == like.track_id
+        ).first()
+
+        if not track:
+            continue
+
+        if not resolve_path(
+            getattr(track, "audio_path", None)
+        ):
+            continue
+
+        result.append(
+            track_to_dict(
+                track,
+                liked=True,
+            )
+        )
+
+    return result
+
+
+@app.post("/api/likes/{track_id}")
+def like_track(
+    track_id: int,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    track = db.query(Track).filter(
+        Track.id == track_id
+    ).first()
+
+    if not track:
+        raise HTTPException(
+            status_code=404,
+            detail="Трек не найден",
+        )
+
+    existing = db.query(Like).filter(
+        Like.user_id == user.id,
+        Like.track_id == track_id,
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        liked = False
+    else:
+        db.add(
+            Like(
+                user_id=user.id,
+                track_id=track_id,
+            )
+        )
+        liked = True
+
+    db.commit()
+
+    return {
+        "liked": liked,
+        "track_id": track_id,
+    }
+
+
+@app.delete("/api/likes/{track_id}")
+def unlike_track(
+    track_id: int,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    existing = db.query(Like).filter(
+        Like.user_id == user.id,
+        Like.track_id == track_id,
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        db.commit()
+
+    return {
+        "liked": False,
+        "track_id": track_id,
+    }
+
+
+# ============================================================
+# HISTORY
+# ============================================================
+
+@app.get("/api/history")
+def get_history(
+    token: str,
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    rows = (
+        db.query(History)
+        .filter(History.user_id == user.id)
+        .order_by(History.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+
+    for history in rows:
+        track = db.query(Track).filter(
+            Track.id == history.track_id
+        ).first()
+
+        if not track:
+            continue
+
+        if not resolve_path(
+            getattr(track, "audio_path", None)
+        ):
+            continue
+
+        result.append(
+            track_to_dict(track)
+        )
+
+    return result
+
+
+class HistoryRequest(BaseModel):
+    track_id: int
+
+
+@app.post("/api/history")
+def add_history(
+    data: HistoryRequest,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    track = db.query(Track).filter(
+        Track.id == data.track_id
+    ).first()
+
+    if not track:
+        raise HTTPException(
+            status_code=404,
+            detail="Трек не найден",
+        )
+
+    history = History(
+        user_id=user.id,
+        track_id=track.id,
+        created_at=utcnow(),
+    )
+
+    db.add(history)
+    db.commit()
+
+    return {
+        "success": True,
+        "track_id": track.id,
+    }
+
+
+# ============================================================
+# PLAYLISTS
+# ============================================================
+
+@app.get("/api/playlists")
+def get_playlists(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    playlists = db.query(Playlist).filter(
+        Playlist.user_id == user.id
+    ).order_by(
+        Playlist.created_at.desc()
+    ).all()
+
+    result = []
+
+    for playlist in playlists:
+        result.append(
+            {
+                "id": playlist.id,
+                "name": playlist.name,
+                "description": getattr(
+                    playlist,
+                    "description",
+                    "",
+                ) or "",
+                "created_at": (
+                    playlist.created_at.isoformat()
+                    if getattr(
+                        playlist,
+                        "created_at",
+                        None,
+                    )
+                    else None
+                ),
+            }
+        )
+
+    return result
+
+
+class PlaylistCreateRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
+@app.post("/api/playlists")
+def create_playlist(
+    data: PlaylistCreateRequest,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    name = data.name.strip()
+
+    if not name:
+        raise HTTPException(
+            status_code=400,
+            detail="Введите название плейлиста",
+        )
+
+    playlist = Playlist(
+        user_id=user.id,
+        name=name,
+        description=data.description.strip(),
+        created_at=utcnow(),
+    )
+
+    db.add(playlist)
+    db.commit()
+    db.refresh(playlist)
+
+    return {
+        "id": playlist.id,
+        "name": playlist.name,
+        "description": getattr(
+            playlist,
+            "description",
+            "",
+        ) or "",
+    }
+
+
+@app.get("/api/playlists/{playlist_id}")
+def get_playlist(
+    playlist_id: int,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    playlist = db.query(Playlist).filter(
+        Playlist.id == playlist_id,
+        Playlist.user_id == user.id,
+    ).first()
+
+    if not playlist:
+        raise HTTPException(
+            status_code=404,
+            detail="Плейлист не найден",
+        )
+
+    links = db.query(
+        PlaylistTrack
+    ).filter(
+        PlaylistTrack.playlist_id == playlist.id
+    ).all()
+
+    result = []
+
+    for link in links:
+        track = db.query(Track).filter(
+            Track.id == link.track_id
+        ).first()
+
+        if not track:
+            continue
+
+        if not resolve_path(
+            getattr(track, "audio_path", None)
+        ):
+            continue
+
+        result.append(
+            track_to_dict(track)
+        )
+
+    return {
+        "id": playlist.id,
+        "name": playlist.name,
+        "description": getattr(
+            playlist,
+            "description",
+            "",
+        ) or "",
+        "tracks": result,
+    }
+
+
+@app.post("/api/playlists/{playlist_id}/tracks/{track_id}")
+def add_to_playlist(
+    playlist_id: int,
+    track_id: int,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    playlist = db.query(Playlist).filter(
+        Playlist.id == playlist_id,
+        Playlist.user_id == user.id,
+    ).first()
+
+    if not playlist:
+        raise HTTPException(
+            status_code=404,
+            detail="Плейлист не найден",
+        )
+
+    track = db.query(Track).filter(
+        Track.id == track_id
+    ).first()
+
+    if not track:
+        raise HTTPException(
+            status_code=404,
+            detail="Трек не найден",
+        )
+
+    existing = db.query(
+        PlaylistTrack
+    ).filter(
+        PlaylistTrack.playlist_id == playlist_id,
+        PlaylistTrack.track_id == track_id,
+    ).first()
+
+    if not existing:
+        db.add(
+            PlaylistTrack(
+                playlist_id=playlist_id,
+                track_id=track_id,
+            )
+        )
+
+        db.commit()
+
+    return {
+        "success": True,
+        "playlist_id": playlist_id,
+        "track_id": track_id,
+    }
+
+
+@app.delete("/api/playlists/{playlist_id}/tracks/{track_id}")
+def remove_from_playlist(
+    playlist_id: int,
+    track_id: int,
+    token: str,
+    db: Session = Depends(get_db),
+):
+    user = get_user_from_token(
+        token,
+        db,
+    )
+
+    playlist = db.query(Playlist).filter(
+        Playlist.id == playlist_id,
+        Playlist.user_id == user.id,
+    ).first()
+
+    if not playlist:
+        raise HTTPException(
+            status_code=404,
+            detail="Плейлист не найден",
+        )
+
+    link = db.query(
+        PlaylistTrack
+    ).filter(
+        PlaylistTrack.playlist_id == playlist_id,
+        PlaylistTrack.track_id == track_id,
+    ).first()
+
+    if link:
+        db.delete(link)
+        db.commit()
+
+    return {
+        "success": True,
+    }
+
+
+# ============================================================
+# ADMIN
+# ============================================================
+
+@app.get("/api/admin/me")
+def admin_me(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    admin = require_admin(
+        token,
+        db,
+    )
+
+    return user_to_dict(admin)
+
+
+@app.get("/api/admin/tracks")
+def admin_tracks(
+    token: str,
+    db: Session = Depends(get_db),
+):
+    require_admin(
+        token,
+        db,
+    )
+
+    rows = (
+        db.query(Track)
+        .order_by(Track.created_at.desc())
         .all()
     )
 
@@ -951,405 +1465,7 @@ def recommendations(
 
 
 # ============================================================
-# FAVORITES
-# ============================================================
-
-@app.get("/api/favorites")
-def favorites(
-    token: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user(
-        token,
-        db,
-    )
-
-    rows = (
-        db.query(Track)
-        .join(
-            Like,
-            Like.track_id == Track.id,
-        )
-        .filter(
-            Like.user_id == user.id
-        )
-        .order_by(
-            Track.title.asc()
-        )
-        .all()
-    )
-
-    return [
-        track_to_dict(
-            track,
-            liked=True,
-        )
-        for track in rows
-    ]
-
-
-@app.post("/api/tracks/{track_id}/like")
-def toggle_like(
-    track_id: int,
-    token: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user(
-        token,
-        db,
-    )
-
-    track = db.query(Track).filter(
-        Track.id == track_id
-    ).first()
-
-    if not track:
-        raise HTTPException(
-            status_code=404,
-            detail="Track not found",
-        )
-
-    existing = db.query(Like).filter(
-        Like.user_id == user.id,
-        Like.track_id == track.id,
-    ).first()
-
-    if existing:
-        db.delete(existing)
-        liked = False
-    else:
-        db.add(
-            Like(
-                user_id=user.id,
-                track_id=track.id,
-            )
-        )
-        liked = True
-
-    db.commit()
-
-    return {
-        "liked": liked,
-    }
-
-
-# ============================================================
-# HISTORY
-# ============================================================
-
-@app.get("/api/history")
-def history(
-    token: str = Query(...),
-    limit: int = Query(
-        100,
-        ge=1,
-        le=500,
-    ),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user(
-        token,
-        db,
-    )
-
-    rows = (
-        db.query(History)
-        .filter(
-            History.user_id == user.id
-        )
-        .order_by(
-            History.listened_at.desc()
-        )
-        .limit(limit)
-        .all()
-    )
-
-    result = []
-
-    for item in rows:
-        track = db.query(Track).filter(
-            Track.id == item.track_id
-        ).first()
-
-        if track:
-            result.append(
-                track_to_dict(track)
-            )
-
-    return result
-
-
-# ============================================================
-# PLAYLISTS
-# ============================================================
-
-@app.get("/api/playlists")
-def playlists(
-    token: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user(
-        token,
-        db,
-    )
-
-    rows = db.query(
-        Playlist
-    ).filter(
-        Playlist.user_id == user.id
-    ).all()
-
-    result = []
-
-    for playlist in rows:
-        links = (
-            db.query(PlaylistTrack)
-            .filter(
-                PlaylistTrack.playlist_id
-                == playlist.id
-            )
-            .order_by(
-                PlaylistTrack.position.asc()
-            )
-            .all()
-        )
-
-        tracks_data = []
-
-        for link in links:
-            track = db.query(Track).filter(
-                Track.id == link.track_id
-            ).first()
-
-            if track:
-                tracks_data.append(
-                    track_to_dict(track)
-                )
-
-        result.append({
-            "id": playlist.id,
-            "name": playlist.name,
-            "tracks": tracks_data,
-        })
-
-    return result
-
-
-@app.post("/api/playlists")
-def create_playlist(
-    name: str = Form(...),
-    token: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user(
-        token,
-        db,
-    )
-
-    name = name.strip()
-
-    if not name:
-        raise HTTPException(
-            status_code=400,
-            detail="Playlist name is required",
-        )
-
-    playlist = Playlist(
-        user_id=user.id,
-        name=name,
-    )
-
-    db.add(playlist)
-    db.commit()
-    db.refresh(playlist)
-
-    return {
-        "id": playlist.id,
-        "name": playlist.name,
-        "tracks": [],
-    }
-
-
-@app.post(
-    "/api/playlists/{playlist_id}/tracks/{track_id}"
-)
-def add_to_playlist(
-    playlist_id: int,
-    track_id: int,
-    token: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user(
-        token,
-        db,
-    )
-
-    playlist = db.query(
-        Playlist
-    ).filter(
-        Playlist.id == playlist_id,
-        Playlist.user_id == user.id,
-    ).first()
-
-    if not playlist:
-        raise HTTPException(
-            status_code=404,
-            detail="Playlist not found",
-        )
-
-    track = db.query(Track).filter(
-        Track.id == track_id
-    ).first()
-
-    if not track:
-        raise HTTPException(
-            status_code=404,
-            detail="Track not found",
-        )
-
-    existing = db.query(
-        PlaylistTrack
-    ).filter(
-        PlaylistTrack.playlist_id
-        == playlist.id,
-        PlaylistTrack.track_id
-        == track.id,
-    ).first()
-
-    if existing:
-        return {
-            "ok": True,
-            "message": "Track already in playlist",
-        }
-
-    count = db.query(
-        PlaylistTrack
-    ).filter(
-        PlaylistTrack.playlist_id
-        == playlist.id
-    ).count()
-
-    item = PlaylistTrack(
-        playlist_id=playlist.id,
-        track_id=track.id,
-        position=count,
-    )
-
-    db.add(item)
-    db.commit()
-
-    return {
-        "ok": True,
-    }
-
-
-# ============================================================
-# RADIO
-# ============================================================
-
-RADIO_STATIONS = [
-    {
-        "id": "retro-fm",
-        "name": "Retro FM",
-        "description": "Ретро-хиты",
-        "stream": "https://hls-01-retro.emgsound.ru/12/128/playlist.m3u8",
-        "type": "hls",
-        "cover": "/api/radio/retro-fm/cover",
-    },
-    {
-        "id": "russkoe-radio",
-        "name": "Русское Радио",
-        "description": "Главное русское радио",
-        "stream": "/api/radio/russkoe-radio/stream",
-        "type": "mp3",
-        "cover": "/api/radio/russkoe-radio/cover",
-    },
-    {
-        "id": "radio-dacha",
-        "name": "Радио Дача",
-        "description": "Музыка для хорошего настроения",
-        "stream": "/api/radio/radio-dacha/stream",
-        "type": "mp3",
-        "cover": "/api/radio/radio-dacha/cover",
-    },
-]
-
-RADIO_SOURCE_URLS = {
-    "russkoe-radio": "https://rusradio.hostingradio.ru/rusradio128.mp3",
-    "radio-dacha": "http://listen13.vdfm.ru:8000/dacha",
-}
-
-@app.get("/api/radio")
-def radio():
-    return RADIO_STATIONS
-
-
-@app.get("/api/radio/{station_id}/stream")
-async def radio_stream(station_id: str):
-    source_url = RADIO_SOURCE_URLS.get(station_id)
-    if not source_url:
-        raise HTTPException(status_code=404, detail="Radio station not found")
-
-    def proxy():
-        request = UrlRequest(
-            source_url,
-            headers={
-                "User-Agent": "FENIX-MUSIC/1.0",
-                "Icy-MetaData": "1",
-                "Accept": "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
-            },
-            method="GET",
-        )
-        try:
-            response = urlopen(request, timeout=20)
-        except HTTPError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Radio upstream returned {exc.code}",
-            )
-        except URLError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Radio upstream unavailable: {exc.reason}",
-            )
-
-        try:
-            while True:
-                chunk = response.read(64 * 1024)
-                if not chunk:
-                    break
-                yield chunk
-        finally:
-            response.close()
-
-    return StreamingResponse(
-        proxy(),
-        media_type="audio/mpeg",
-        headers={
-            "Cache-Control": "no-cache, no-store",
-            "Accept-Ranges": "none",
-            "Access-Control-Allow-Origin": "*",
-        },
-    )
-
-
-@app.get("/api/radio/{station_id}/cover")
-def radio_cover(station_id: str):
-    filename = f"{station_id}.svg"
-    path = RADIO_DIR / filename
-
-    if path.exists():
-        return FileResponse(path, media_type="image/svg+xml")
-
-    fallback = RADIO_DIR / "retro-fm.svg"
-    if fallback.exists():
-        return FileResponse(fallback, media_type="image/svg+xml")
-
-    raise HTTPException(status_code=404, detail="Radio cover not found")
-
-
-# ============================================================
-# ADMIN UPLOAD AUDIO
+# ADMIN UPLOAD
 # ============================================================
 
 @app.post("/api/admin/tracks/upload")
@@ -1368,46 +1484,110 @@ async def admin_upload_track(
         db,
     )
 
+    title = title.strip()
+    artist = artist.strip()
+    album = album.strip()
+    genre = genre.strip()
+
+    if not title:
+        raise HTTPException(
+            status_code=400,
+            detail="Введите название трека",
+        )
+
+    if not artist:
+        raise HTTPException(
+            status_code=400,
+            detail="Введите исполнителя",
+        )
+
     if not audio.filename:
         raise HTTPException(
             status_code=400,
-            detail="Audio filename is required",
+            detail="Аудиофайл не выбран",
         )
 
-    filename = safe_filename(
+    audio_original = safe_filename(
         audio.filename
     )
 
-    destination = AUDIO_DIR / filename
+    audio_suffix = (
+        Path(audio_original)
+        .suffix
+        .lower()
+    )
 
-    if destination.exists():
-        destination = (
-            AUDIO_DIR
-            / f"{secrets.token_hex(4)}_{filename}"
+    allowed_audio = {
+        ".mp3",
+        ".wav",
+        ".ogg",
+        ".oga",
+        ".m4a",
+        ".aac",
+        ".flac",
+        ".webm",
+    }
+
+    if audio_suffix not in allowed_audio:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Неподдерживаемый формат аудио. "
+                "Разрешены MP3, WAV, OGG, M4A, AAC, FLAC, WEBM."
+            ),
         )
 
-    with destination.open("wb") as output:
+    audio_filename = unique_filename(
+        audio_original
+    )
+
+    audio_path = AUDIO_DIR / audio_filename
+
+    with audio_path.open("wb") as output:
         shutil.copyfileobj(
             audio.file,
             output,
         )
 
-    cover_url = None
+    cover_path = None
 
     if cover and cover.filename:
-        cover_filename = safe_filename(
+        cover_original = safe_filename(
             cover.filename
         )
 
-        cover_path = (
-            COVER_DIR / cover_filename
+        cover_suffix = (
+            Path(cover_original)
+            .suffix
+            .lower()
         )
 
-        if cover_path.exists():
-            cover_path = (
-                COVER_DIR
-                / f"{secrets.token_hex(4)}_{cover_filename}"
+        allowed_covers = {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".gif",
+        }
+
+        if cover_suffix not in allowed_covers:
+            audio_path.unlink(
+                missing_ok=True
             )
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Неподдерживаемый формат обложки. "
+                    "Разрешены JPG, JPEG, PNG, WEBP, GIF."
+                ),
+            )
+
+        cover_filename = unique_filename(
+            cover_original
+        )
+
+        cover_path = COVER_DIR / cover_filename
 
         with cover_path.open("wb") as output:
             shutil.copyfileobj(
@@ -1415,244 +1595,359 @@ async def admin_upload_track(
                 output,
             )
 
-        cover_url = (
-            "/api/covers/"
-            + cover_path.name
-        )
-
-    relative_audio = str(
-        destination.relative_to(
-            BASE_DIR
-        )
-    ).replace("\\", "/")
-
     track = Track(
-        title=title.strip(),
-        artist=artist.strip(),
-        album=album.strip(),
-        genre=genre.strip(),
-        duration=0,
-        cover_url=cover_url,
-        audio_path=relative_audio,
-        plays=0,
+        title=title,
+        artist=artist,
+        album=album,
+        genre=genre,
+        audio_path=relative_media_path(
+            audio_path
+        ),
+        cover_path=(
+            relative_media_path(cover_path)
+            if cover_path
+            else None
+        ),
+        created_at=utcnow(),
     )
 
     db.add(track)
     db.commit()
     db.refresh(track)
 
-    return track_to_dict(track)
-
-
-# ============================================================
-# COVERS
-# ============================================================
-
-@app.get("/api/covers/{filename}")
-def get_cover(
-    filename: str,
-):
-    filename = Path(filename).name
-
-    path = COVER_DIR / filename
-
-    if not path.exists():
-        raise HTTPException(
-            status_code=404,
-            detail="Cover not found",
-        )
-
-    return FileResponse(
-        path
-    )
-
-
-@app.get("/api/media/covers/{filename}")
-def get_media_cover(filename: str):
-    """Compatibility alias used by older frontend builds."""
-    return get_cover(filename)
-
-
-# ============================================================
-# TELEGRAM AUTH
-# ============================================================
-
-@app.post("/api/auth/telegram/start")
-def telegram_auth_start(
-    db: Session = Depends(get_db),
-):
-    token = secrets.token_urlsafe(32)
-
-    expires_at = (
-        datetime.now(timezone.utc)
-        + timedelta(minutes=10)
-    )
-
-    auth = TelegramAuth(
-        token=token,
-        telegram_id=None,
-        username=None,
-        user_id=None,
-        expires_at=expires_at,
-        used=False,
-    )
-
-    db.add(auth)
-    db.commit()
-
-    bot_username = os.getenv(
-        "TELEGRAM_BOT_USERNAME",
-        "FenixMusicRabot",
-    ).strip().lstrip("@")
-
-    deep_link = None
-
-    if bot_username:
-        deep_link = (
-            f"https://t.me/"
-            f"{bot_username}"
-            f"?start=auth_{token}"
-        )
-
     return {
-        "token": token,
-        "url": deep_link,
-        "expires_at": expires_at.isoformat(),
+        "success": True,
+        "message": "Трек успешно загружен",
+        "track": track_to_dict(track),
     }
 
 
-@app.get("/api/auth/telegram/status")
-def telegram_auth_status(
+# ============================================================
+# ADMIN DELETE TRACK
+# ============================================================
+
+@app.delete("/api/admin/tracks/{track_id}")
+def admin_delete_track(
+    track_id: int,
     token: str,
     db: Session = Depends(get_db),
 ):
-    auth = db.query(
-        TelegramAuth
-    ).filter(
-        TelegramAuth.token == token
+    require_admin(
+        token,
+        db,
+    )
+
+    track = db.query(Track).filter(
+        Track.id == track_id
     ).first()
 
-    if not auth:
+    if not track:
         raise HTTPException(
             status_code=404,
-            detail="Auth session not found",
+            detail="Трек не найден",
         )
 
-    if auth.expires_at:
-        expires = auth.expires_at
+    audio_path = resolve_path(
+        getattr(track, "audio_path", None)
+    )
 
-        if expires.tzinfo is None:
-            expires = expires.replace(
-                tzinfo=timezone.utc
+    cover_path = resolve_path(
+        getattr(track, "cover_path", None)
+    )
+
+    if audio_path:
+        audio_path.unlink(
+            missing_ok=True
+        )
+
+    if cover_path:
+        cover_path.unlink(
+            missing_ok=True
+        )
+
+    db.query(Like).filter(
+        Like.track_id == track_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    db.query(History).filter(
+        History.track_id == track_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    db.query(PlaylistTrack).filter(
+        PlaylistTrack.track_id == track_id
+    ).delete(
+        synchronize_session=False
+    )
+
+    db.delete(track)
+    db.commit()
+
+    return {
+        "success": True,
+        "deleted": track_id,
+    }
+
+
+# ============================================================
+# RADIO
+# ============================================================
+
+RADIO_STATIONS = [
+    {
+        "id": "retro-fm",
+        "name": "Retro FM",
+        "description": "Ретро-хиты",
+        "stream": (
+            "https://hls-01-retro.emgsound.ru/"
+            "12/128/playlist.m3u8"
+        ),
+        "type": "hls",
+    },
+    {
+        "id": "russkoe-radio",
+        "name": "Русское Радио",
+        "description": "Главное русское радио",
+        "stream": "/api/radio/russkoe-radio/stream",
+        "type": "proxy",
+    },
+    {
+        "id": "radio-dacha",
+        "name": "Радио Дача",
+        "description": "Музыка для хорошего настроения",
+        "stream": "/api/radio/radio-dacha/stream",
+        "type": "proxy",
+    },
+]
+
+
+@app.get("/api/radio")
+def radio():
+    return RADIO_STATIONS
+
+
+RADIO_SOURCE_URLS = {
+    "russkoe-radio": (
+        "https://rusradio.hostingradio.ru/"
+        "rusradio96.aacp"
+    ),
+    "radio-dacha": (
+        "https://radiodacha.hostingradio.ru/"
+        "radiodacha96.aacp"
+    ),
+}
+
+
+@app.get("/api/radio/{station_id}/stream")
+def radio_stream(
+    station_id: str,
+):
+    station_id = station_id.strip().lower()
+
+    source_url = RADIO_SOURCE_URLS.get(
+        station_id
+    )
+
+    if not source_url:
+        raise HTTPException(
+            status_code=404,
+            detail="Радиостанция не найдена",
+        )
+
+    try:
+        request = urllib.request.Request(
+            source_url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 "
+                    "(Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 "
+                    "Chrome/150 Safari/537.36"
+                ),
+                "Icy-MetaData": "1",
+            },
+        )
+
+        response = urllib.request.urlopen(
+            request,
+            timeout=20,
+        )
+
+        content_type = (
+            response.headers.get(
+                "Content-Type"
             )
+            or "audio/aac"
+        )
 
-        if datetime.now(timezone.utc) > expires:
-            return {
-                "status": "expired"
-            }
+        def iterator():
+            try:
+                while True:
+                    chunk = response.read(64 * 1024)
 
-    if not auth.user_id:
-        return {
-            "status": "pending"
-        }
+                    if not chunk:
+                        break
 
-    user = db.query(User).filter(
-        User.id == auth.user_id
-    ).first()
+                    yield chunk
 
-    if not user:
-        return {
-            "status": "pending"
-        }
+            finally:
+                try:
+                    response.close()
+                except Exception:
+                    pass
 
-    jwt_token = create_access_token(
-        user.id,
-        user.email,
-        user.is_admin,
+        return StreamingResponse(
+            iterator(),
+            media_type=content_type,
+            headers={
+                "Cache-Control": "no-cache",
+                "Access-Control-Allow-Origin": "*",
+            },
+        )
+
+    except urllib.error.URLError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Ошибка радио: {exc}",
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Ошибка радио: {exc}",
+        )
+
+
+# ============================================================
+# STATIC MEDIA
+# ============================================================
+
+if MEDIA_DIR.exists():
+    app.mount(
+        "/media",
+        StaticFiles(
+            directory=str(MEDIA_DIR)
+        ),
+        name="media",
     )
-
-    auth.used = True
-    db.commit()
-
-    return {
-        "status": "authorized",
-        "token": jwt_token,
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "username": user.username,
-            "avatar_url": user.avatar_url,
-            "is_admin": user.is_admin,
-        },
-    }
-
-
-@app.get("/api/auth/telegram/status/{token}")
-def telegram_auth_status_path(
-    token: str,
-    db: Session = Depends(get_db),
-):
-    """Compatibility alias for clients using a path token."""
-    return telegram_auth_status(token=token, db=db)
 
 
 # ============================================================
 # FRONTEND
 # ============================================================
 
-if FRONTEND_DIST.exists():
-    assets_dir = FRONTEND_DIST / "assets"
+def frontend_file() -> Optional[Path]:
+    candidates = [
+        FRONTEND_DIST / "index.html",
+        FRONTEND_DIR / "index.html",
+    ]
 
-    if assets_dir.exists():
-        app.mount(
-            "/assets",
-            StaticFiles(
-                directory=str(assets_dir)
-            ),
-            name="assets",
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+@app.get("/")
+def frontend_root():
+    index = frontend_file()
+
+    if not index:
+        return JSONResponse(
+            {
+                "service": "FENIX MUSIC",
+                "status": "online",
+                "message": (
+                    "Frontend index.html не найден"
+                ),
+            }
         )
 
-
-@app.get(
-    "/",
-    include_in_schema=False,
-)
-def frontend_index():
-    index = FRONTEND_DIST / "index.html"
-
-    if index.exists():
-        return FileResponse(index)
-
-    return {
-        "message": "FENIX MUSIC API",
-        "frontend": "Build frontend first",
-    }
+    return FileResponse(
+        str(index),
+        media_type="text/html",
+    )
 
 
-@app.get(
-    "/{full_path:path}",
-    include_in_schema=False,
-)
+@app.get("/{path:path}")
 def frontend_fallback(
-    full_path: str,
+    path: str,
 ):
-    if full_path.startswith("api/"):
+    # Не перехватываем API
+    if path.startswith("api/"):
         raise HTTPException(
             status_code=404,
             detail="API endpoint not found",
         )
 
-    requested = FRONTEND_DIST / full_path
+    # Не перехватываем media
+    if path.startswith("media/"):
+        raise HTTPException(
+            status_code=404,
+            detail="Media not found",
+        )
 
-    if requested.exists() and requested.is_file():
-        return FileResponse(requested)
+    # Сначала ищем реальный файл в dist
+    if FRONTEND_DIST.exists():
+        candidate = (
+            FRONTEND_DIST / path
+        ).resolve()
 
-    index = FRONTEND_DIST / "index.html"
+        try:
+            candidate.relative_to(
+                FRONTEND_DIST.resolve()
+            )
+        except ValueError:
+            candidate = None
 
-    if index.exists():
-        return FileResponse(index)
+        if candidate and candidate.exists():
+            if candidate.is_file():
+                mime_type, _ = mimetypes.guess_type(
+                    str(candidate)
+                )
+
+                return FileResponse(
+                    str(candidate),
+                    media_type=mime_type,
+                )
+
+    # Затем файлы непосредственно frontend/
+    candidate = (
+        FRONTEND_DIR / path
+    ).resolve()
+
+    try:
+        candidate.relative_to(
+            FRONTEND_DIR.resolve()
+        )
+    except ValueError:
+        candidate = None
+
+    if candidate and candidate.exists():
+        if candidate.is_file():
+            mime_type, _ = mimetypes.guess_type(
+                str(candidate)
+            )
+
+            return FileResponse(
+                str(candidate),
+                media_type=mime_type,
+            )
+
+    # SPA fallback
+    index = frontend_file()
+
+    if index:
+        return FileResponse(
+            str(index),
+            media_type="text/html",
+        )
 
     raise HTTPException(
         status_code=404,
-        detail="Not found",
+        detail="Frontend not found",
     )
