@@ -10,7 +10,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-from backend.database import SessionLocal, init_db
+frfrom backend.database import SessionLocal, init_db
 from backend.models import User, TelegramAuth, Track
 from backend.server import AUDIO_DIR
 
