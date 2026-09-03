@@ -22,12 +22,13 @@ from .radio import RADIO_STATIONS
 APP_VERSION = "10.0.0"
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
-MEDIA_DIR = Path(os.getenv("MEDIA_DIR", str(PROJECT_DIR / "media")))
+MEDIA_DIR = Path(os.getenv("MEDIA_DIR", str(BASE_DIR / "media")))
 AUDIO_DIR = MEDIA_DIR / "audio"
+MUSIC_DIR = MEDIA_DIR / "music"
 COVER_DIR = MEDIA_DIR / "covers"
 UPLOAD_DIR = MEDIA_DIR / "uploads"
 RADIO_DIR = MEDIA_DIR / "radio"
-for d in (MEDIA_DIR, AUDIO_DIR, COVER_DIR, UPLOAD_DIR, RADIO_DIR):
+for d in (MEDIA_DIR, AUDIO_DIR, MUSIC_DIR, COVER_DIR, UPLOAD_DIR, RADIO_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="FENIX MUSIC API", version=APP_VERSION)
@@ -294,7 +295,7 @@ def search(q:str="", request:Request=None, db:Session=Depends(get_db)):
     q=q.strip()
     if not q: return []
     rows=db.query(Track).filter(or_(Track.title.ilike(f"%{q}%"),Track.artist.ilike(f"%{q}%"),Track.album.ilike(f"%{q}%"),Track.genre.ilike(f"%{q}%"))).limit(100).all()
-    return [track_json(t) for t in rows]
+    return [track_json(t) for t in rows if resolve_path(t.audio_path)]
 
 @app.get("/api/recommendations")
 def recommendations(request:Request, db:Session=Depends(get_db)):
