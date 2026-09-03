@@ -1,0 +1,12 @@
+{
+  "name": "fenix-music-frontend",
+  "private": true,
+  "version": "11.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^7.3.6"
+  }
+}

@@ -3,8 +3,8 @@ services:
     name: fenix-music
     runtime: python
     rootDir: .
-    buildCommand: pip install -r requirements.txt
-    startCommand: python -m backend.run_all
+    buildCommand: pip install -r requirements.txt && npm --prefix frontend install && npm --prefix frontend run build
+    startCommand: PYTHONPATH=/opt/render/project/src python -m backend.run_all
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.8
