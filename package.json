@@ -1,8 +1,1 @@
-{
-  "name": "fenix-music",
-  "private": true,
-  "version": "10.0.0",
-  "scripts": {
-    "build": "npm --prefix frontend install && npm --prefix frontend run build"
-  }
-}
+{"name":"fenix-music","private":true,"version":"5.0.0","scripts":{"start":"python -m backend.run_all"}}
