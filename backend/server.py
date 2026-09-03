@@ -368,9 +368,14 @@ def playlist_add(playlist_id:int,track_id:int,request:Request,db:Session=Depends
     return {"ok":True}
 
 # Render/frontend
-DIST=PROJECT_DIR/"frontend"/"dist"
+DIST = PROJECT_DIR / "frontend" / "dist"
+ASSETS_DIR = DIST / "assets"
+
+# Vite может не создать папку assets, если frontend состоит из одного index.html.
+# Создаём её заранее, чтобы Starlette StaticFiles не падал при старте.
 if DIST.exists():
-    app.mount("/assets", StaticFiles(directory=str(DIST/"assets")), name="assets")
+    ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 @app.get("/{full_path:path}")
 def spa(full_path:str):
