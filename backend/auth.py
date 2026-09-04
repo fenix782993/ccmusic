@@ -257,4 +257,4 @@ __all__ = [
     "get_email_from_token",
     "is_admin_token",
     "is_token_valid",
-]ы
+]
