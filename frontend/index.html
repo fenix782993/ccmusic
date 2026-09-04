@@ -1,380 +1,2303 @@
 <!doctype html>
 <html lang="ru">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#090909">
+<meta name="theme-color" content="#090607">
+<meta name="description" content="FENIX MUSIC — музыка, миксы, радио и FENIX FLOW">
 <title>FENIX MUSIC</title>
+
 <style>
 :root{
-  --bg:#080808;--panel:#111;--panel2:#171717;--panel3:#1d1d1d;--line:#292929;
-  --text:#fff;--muted:#8d8d8d;--orange:#ff1738;--orange2:#ff2948;--green:#43d17b;
-  --danger:#ff5555;--r:20px;--shadow:0 20px 70px #0009
+  --bg:#080607;
+  --bg2:#0d090a;
+  --panel:#120d0e;
+  --panel2:#181012;
+  --panel3:#211417;
+  --line:#342125;
+  --text:#fff;
+  --muted:#9d8d91;
+  --red:#ff1740;
+  --red2:#ff3b59;
+  --red3:#c9002d;
+  --danger:#e00032;
+  --shadow:0 20px 60px rgba(0,0,0,.45);
+  --radius:20px;
 }
-*{box-sizing:border-box}html{scroll-behavior:smooth}
-body{margin:0;background:
- radial-gradient(circle at 20% -5%,#3a1b0722,transparent 30%),
- radial-gradient(circle at 90% 20%,#ff17380c,transparent 25%),#080808;
- color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-button,input{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}
-.app{min-height:100vh}.sidebar{position:fixed;z-index:50;left:0;top:0;bottom:0;width:248px;padding:22px 14px;background:#090909eF;border-right:1px solid var(--line);backdrop-filter:blur(18px)}
-.brand{display:flex;align-items:center;gap:11px;padding:4px 9px 25px}.logo{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,#ff1738,#8b0618);box-shadow:0 8px 35px #ff173830;font-size:23px}.brand b{font-size:17px;letter-spacing:.04em}.brand small{display:block;color:var(--orange);font-size:10px;font-weight:900;letter-spacing:.18em;margin-top:2px}
-.nav{display:grid;gap:4px}.nav button,.mobile-nav button{border:0;background:transparent;color:#8d8d8d;border-radius:13px;padding:11px 13px;text-align:left;transition:.18s}.nav button:hover{background:#151515;color:#fff}.nav button.active{background:#1b160f;color:#ff2948;box-shadow:inset 3px 0 var(--orange)}
-.side-user{position:absolute;left:14px;right:14px;bottom:16px;padding:11px;border:1px solid var(--line);border-radius:16px;background:#101010;display:flex;align-items:center;gap:10px;cursor:pointer}.avatar{width:37px;height:37px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,#ff2948,#760615);font-weight:900}.side-user b{font-size:13px}.side-user small{color:#777}
-.main{margin-left:248px;padding:22px 32px 150px;max-width:1540px}.top{height:52px;display:flex;align-items:center;gap:12px;margin-bottom:20px;position:sticky;top:0;z-index:20;padding:3px 0;background:linear-gradient(#080808 65%,transparent)}
-.mobile-brand{display:none}.search{height:44px;max-width:650px;flex:1;background:#111;border:1px solid var(--line);border-radius:14px;color:#fff;padding:0 15px;outline:0}.search:focus{border-color:#ff173866}.top-actions{margin-left:auto;display:flex;gap:8px}.icon{width:43px;height:43px;border:1px solid var(--line);border-radius:13px;background:#111;color:#fff}
-.view{display:none}.view.active{display:block}.eyebrow{color:var(--orange);font-size:11px;font-weight:900;letter-spacing:.18em}
-.hero{position:relative;overflow:hidden;min-height:330px;border:1px solid #ff173830;border-radius:28px;padding:40px;background:
- radial-gradient(circle at 78% 35%,#ff173830,transparent 28%),
- radial-gradient(circle at 92% 90%,#ff183018,transparent 30%),
- linear-gradient(135deg,#1b130d,#0d0d0d 58%,#15100b);box-shadow:var(--shadow)}
-.hero:after{content:"♫";position:absolute;right:8%;top:8%;font-size:190px;line-height:1;color:#ff173815;transform:rotate(-12deg)}
-.hero h1{position:relative;z-index:1;font-size:clamp(38px,5vw,68px);line-height:.94;margin:13px 0}.hero h1 span{color:var(--orange)}.hero p{position:relative;z-index:1;color:#aaa;max-width:620px;line-height:1.6}.actions{position:relative;z-index:1;display:flex;gap:10px;margin-top:25px}
-.primary,.secondary{border-radius:13px;padding:12px 18px;font-weight:850;border:1px solid transparent}.primary{background:linear-gradient(135deg,#ff2948,#d90429);color:#160b02;box-shadow:0 8px 28px #ff173824}.secondary{background:#181818;color:#fff;border-color:var(--line)}
-.section{margin-top:36px}.head{display:flex;align-items:end;justify-content:space-between;margin-bottom:14px}.head h2{font-size:23px;margin:0}.head span{font-size:12px;color:#777}
-.quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.quick{min-height:120px;border:1px solid var(--line);border-radius:19px;padding:18px;background:linear-gradient(145deg,#171717,#0e0e0e);position:relative;overflow:hidden;cursor:pointer;transition:.18s}.quick:hover{transform:translateY(-2px);border-color:#ff173844}.quick b{display:block;max-width:72%;font-size:15px}.quick p{color:#777;font-size:12px;max-width:75%;line-height:1.45}.quick i{position:absolute;right:15px;bottom:10px;color:#ff2948;font-size:36px;font-style:normal}
-.cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}.music-card{min-width:0;border:1px solid var(--line);border-radius:19px;background:#111;padding:11px;transition:.18s}.music-card:hover{transform:translateY(-2px);background:#151515;border-color:#353535}.cover{aspect-ratio:1;border-radius:15px;overflow:hidden;background:linear-gradient(145deg,#3b1018,#0d0d0d);display:grid;place-items:center;color:#ff2948;font-size:34px;position:relative}.cover img{width:100%;height:100%;object-fit:cover}.cover .play-overlay{position:absolute;right:9px;bottom:9px;width:40px;height:40px;border:0;border-radius:50%;background:#fff;color:#000;font-size:16px;box-shadow:0 5px 20px #0008;opacity:0;transform:translateY(4px);transition:.18s}.music-card:hover .play-overlay{opacity:1;transform:none}.music-card strong{display:block;margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}.music-card small{display:block;color:#777;margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}.card-buttons{display:flex;gap:7px;margin-top:10px}.card-buttons button{border:1px solid var(--line);border-radius:10px;background:#181818;color:#fff;padding:8px 9px;flex:1}.card-buttons button:first-child{color:#ff2948}.like.active{color:#ff5f55!important}
-.radio-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.radio-card{padding:12px;border:1px solid var(--line);border-radius:19px;background:#111}.radio-art{height:150px;border-radius:15px;display:grid;place-items:center;font-size:48px;color:#ff2948;background:radial-gradient(circle at 70% 25%,#ff2948,transparent 17%),linear-gradient(135deg,#321a07,#0b0b0b)}.radio-card b{display:block;margin:12px 0 4px}.radio-card small{color:#777}.radio-card button{width:100%;margin-top:11px;border:1px solid #ff173844;background:#1b130a;color:#ff4058;border-radius:11px;padding:10px}
-.chips{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.chip{border:1px solid var(--line);background:linear-gradient(145deg,#151515,#0f0f0f);color:#ddd;border-radius:16px;padding:16px;text-align:left;min-height:70px}.chip b{display:block}.chip small{color:#777}.empty{border:1px dashed #ffffff18;border-radius:19px;background:#0d0d0d;padding:45px;text-align:center;color:#777;grid-column:1/-1}.empty h2{color:#fff;margin-top:0}
-.mix-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.mix{min-height:190px;padding:22px;border-radius:23px;border:1px solid var(--line);overflow:hidden;position:relative;cursor:pointer;background:linear-gradient(135deg,#241408,#111 55%,#19110a)}.mix:nth-child(2){background:linear-gradient(135deg,#161616,#251506)}.mix:nth-child(3){background:linear-gradient(135deg,#21100b,#101010)}.mix:nth-child(4){background:linear-gradient(135deg,#101820,#12100e)}.mix h3{margin:0;font-size:22px}.mix p{color:#999;max-width:75%;line-height:1.5}.mix .mix-icon{position:absolute;right:22px;bottom:14px;font-size:64px;color:#ff173830}.mix button{margin-top:8px;border:0;border-radius:11px;padding:10px 15px;background:#fff;color:#000;font-weight:800}
-.profile{padding:28px;border:1px solid var(--line);border-radius:25px;background:linear-gradient(145deg,#171717,#0c0c0c);display:flex;gap:18px;align-items:center}.big-avatar{width:90px;height:90px;border-radius:27px;display:grid;place-items:center;background:linear-gradient(135deg,#ff2948,#760615);font-size:32px;font-weight:900}.profile h2{margin:0}.profile p{margin:5px 0;color:#888}.premium{margin-left:auto;border:1px solid #ff173850;background:#201509;color:#ff4058;padding:9px 13px;border-radius:999px;font-weight:800}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-top:14px}.stat{padding:17px;border:1px solid var(--line);border-radius:17px;background:#111}.stat b{display:block;font-size:24px}.stat span{color:#777;font-size:12px}
-.panel{padding:22px;border:1px solid var(--line);border-radius:22px;background:#111}.admin-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:15px}.form{display:grid;gap:10px}.form input{height:45px;background:#0a0a0a;border:1px solid var(--line);border-radius:11px;color:#fff;padding:0 12px;outline:0}.file{padding:13px;border:1px dashed #ff173845;border-radius:12px;color:#888}.file input{height:auto;border:0;padding:0;margin-top:8px;width:100%}
-.bottom{position:fixed;z-index:70;left:265px;right:18px;bottom:15px;height:84px;background:#121212f2;border:1px solid #333;border-radius:22px;display:flex;align-items:center;gap:12px;padding:10px 13px;backdrop-filter:blur(20px);box-shadow:0 20px 60px #000b}.now-cover{width:60px;height:60px;border-radius:14px;background:#2b1707;display:grid;place-items:center;color:#ff2948;overflow:hidden;flex:none}.now-cover img{width:100%;height:100%;object-fit:cover}.now-info{min-width:130px;max-width:230px}.now-info b,.now-info small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.now-info small{color:#777;margin-top:4px}.controls{display:flex;gap:2px}.controls button{width:39px;height:39px;border:0;background:transparent;color:#fff;border-radius:50%}.controls button:hover{background:#222}.controls .play{background:#fff;color:#000}.bar{display:flex;align-items:center;gap:8px;flex:1}.range,.volume{accent-color:var(--orange)}.range{width:100%}.time{font-size:10px;color:#777;white-space:nowrap}.volume{width:95px}
-.overlay{position:fixed;inset:0;background:#000c;backdrop-filter:blur(12px);z-index:100;display:none;align-items:center;justify-content:center;padding:15px}.overlay.open{display:flex}.modal{width:min(470px,100%);background:#121212;border:1px solid #333;border-radius:24px;padding:23px}.close{float:right;border:0;background:transparent;color:#aaa;font-size:25px}.tabs{display:flex;background:#0a0a0a;padding:4px;border-radius:11px;margin:16px 0}.tabs button{flex:1;border:0;background:transparent;color:#777;padding:9px;border-radius:8px}.tabs button.active{background:#21170d;color:#ff4058}
-.full{align-items:stretch}.full-inner{width:min(650px,100%);margin:auto;text-align:center}.full-cover{width:min(430px,78vw);aspect-ratio:1;border-radius:30px;margin:30px auto 0;background:linear-gradient(145deg,#3b1018,#090909);display:grid;place-items:center;font-size:80px;color:#ff4058;overflow:hidden;box-shadow:0 35px 100px #000b}.full-cover img{width:100%;height:100%;object-fit:cover}.full-inner h1{margin:22px 0 4px;font-size:34px}.full-inner p{margin:0;color:#888}.full-buttons{display:flex;justify-content:center;gap:12px;margin-top:20px}.full-buttons button{width:52px;height:52px;border-radius:50%;background:#171717;color:#fff;border:1px solid #333}.full-buttons .main{width:68px;height:68px;background:#fff;color:#000;font-size:20px}
-.toast{position:fixed;right:18px;top:18px;z-index:140;background:#181818;border:1px solid #ff173855;border-radius:13px;padding:12px 15px;opacity:0;transform:translateY(-10px);transition:.25s}.toast.show{opacity:1;transform:none}
-.mobile-nav{display:none}
-@media(max-width:1150px){.sidebar{width:220px}.main{margin-left:220px;padding-left:22px;padding-right:22px}.bottom{left:238px}.cards{grid-template-columns:repeat(4,1fr)}.quick-grid{grid-template-columns:repeat(2,1fr)}.radio-grid{grid-template-columns:repeat(3,1fr)}.chips{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:760px){.sidebar{display:none}.main{margin:0;padding:12px 11px 145px}.top{height:auto;flex-wrap:wrap;padding-top:2px}.mobile-brand{display:block;font-weight:900}.mobile-brand span{color:var(--orange)}.search{order:3;flex-basis:100%;max-width:none}.hero{min-height:390px;padding:27px}.hero h1{font-size:42px}.quick-grid,.cards,.radio-grid,.chips{grid-template-columns:repeat(2,1fr);gap:9px}.quick{min-height:118px;padding:14px}.quick b{font-size:14px}.cards .music-card{padding:9px}.mix-grid{grid-template-columns:1fr}.admin-grid{grid-template-columns:1fr}.profile{padding:19px}.big-avatar{width:70px;height:70px}.premium{display:none}.stats{grid-template-columns:repeat(2,1fr)}.bottom{left:8px;right:8px;bottom:70px;height:69px;border-radius:18px;padding:7px}.now-cover{width:53px;height:53px}.now-info{min-width:0;flex:1}.bar,.volume{display:none}.controls button{width:33px}.mobile-nav{position:fixed;left:8px;right:8px;bottom:8px;height:56px;z-index:80;display:flex;justify-content:space-around;background:#111f;border:1px solid #292929;border-radius:18px;backdrop-filter:blur(15px)}.mobile-nav button{text-align:center;padding:5px 8px;font-size:10px}.mobile-nav button.active{color:var(--orange)}.full-cover{width:min(350px,88vw)}}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:Inter,Arial,sans-serif}
+body{overflow-x:hidden}
+button,input,select,textarea{font:inherit}
+button{cursor:pointer}
+img{max-width:100%;display:block}
+.hidden{display:none!important}
+
+::-webkit-scrollbar{width:8px}
+::-webkit-scrollbar-track{background:#0a0708}
+::-webkit-scrollbar-thumb{background:#3c2027;border-radius:20px}
+::-webkit-scrollbar-thumb:hover{background:var(--red3)}
+
+.app{
+  min-height:100vh;
+  display:grid;
+  grid-template-columns:250px minmax(0,1fr);
+}
+
+.sidebar{
+  position:fixed;
+  inset:0 auto 0 0;
+  width:250px;
+  padding:22px 15px;
+  background:rgba(12,8,9,.96);
+  border-right:1px solid var(--line);
+  z-index:30;
+  display:flex;
+  flex-direction:column;
+}
+.logo{
+  display:flex;
+  align-items:center;
+  gap:11px;
+  padding:5px 10px 25px;
+  font-weight:900;
+  font-size:21px;
+  letter-spacing:-.7px;
+}
+.logo-mark{
+  width:38px;height:38px;border-radius:12px;
+  display:grid;place-items:center;
+  background:linear-gradient(145deg,var(--red),#9d0029);
+  box-shadow:0 8px 30px rgba(255,23,64,.3);
+}
+.logo-mark:after{content:"F";font-weight:1000}
+.nav-title{
+  color:#6f6064;
+  text-transform:uppercase;
+  font-size:10px;
+  font-weight:800;
+  padding:12px 12px 7px;
+  letter-spacing:1.5px;
+}
+.nav{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.nav button{
+  border:0;
+  color:#b7a9ad;
+  background:transparent;
+  text-align:left;
+  border-radius:13px;
+  padding:11px 12px;
+  display:flex;
+  align-items:center;
+  gap:11px;
+  transition:.18s;
+}
+.nav button:hover{background:#1a1012;color:#fff}
+.nav button.active{
+  background:linear-gradient(90deg,rgba(255,23,64,.18),rgba(255,23,64,.04));
+  color:#fff;
+  box-shadow:inset 3px 0 var(--red);
+}
+.nav-icon{width:22px;text-align:center;font-size:17px}
+.side-bottom{margin-top:auto}
+.user-mini{
+  margin-top:15px;
+  padding:12px;
+  border:1px solid var(--line);
+  background:var(--panel);
+  border-radius:16px;
+}
+.user-mini-row{display:flex;align-items:center;gap:10px}
+.avatar{
+  width:38px;height:38px;border-radius:50%;
+  display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--red),#71001e);
+  font-weight:900;
+}
+.user-mini b{display:block;font-size:13px}
+.user-mini span{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+
+.main{
+  grid-column:2;
+  min-width:0;
+  padding-bottom:120px;
+}
+.topbar{
+  position:sticky;
+  top:0;
+  z-index:20;
+  height:74px;
+  padding:14px 26px;
+  display:flex;
+  align-items:center;
+  gap:15px;
+  background:rgba(8,6,7,.88);
+  backdrop-filter:blur(20px);
+  border-bottom:1px solid rgba(52,33,37,.7);
+}
+.search{
+  flex:1;
+  max-width:650px;
+  position:relative;
+}
+.search input{
+  width:100%;
+  border:1px solid var(--line);
+  background:#130c0e;
+  color:#fff;
+  outline:none;
+  border-radius:14px;
+  padding:13px 45px 13px 16px;
+}
+.search input:focus{border-color:#71303d;box-shadow:0 0 0 3px rgba(255,23,64,.08)}
+.search-k{
+  position:absolute;
+  right:11px;top:9px;
+  color:#6f6064;font-size:12px;
+  border:1px solid var(--line);
+  padding:3px 6px;border-radius:6px;
+}
+.top-actions{margin-left:auto;display:flex;gap:8px}
+.icon-btn{
+  width:42px;height:42px;
+  border:1px solid var(--line);
+  background:#130c0e;
+  color:#ddd;
+  border-radius:12px;
+}
+.icon-btn:hover{border-color:#73303d;color:#fff}
+.login-btn,.primary{
+  border:0;
+  color:#fff;
+  background:linear-gradient(135deg,var(--red),var(--red3));
+  border-radius:12px;
+  padding:11px 16px;
+  font-weight:800;
+  box-shadow:0 8px 25px rgba(255,23,64,.18);
+}
+.login-btn:hover,.primary:hover{filter:brightness(1.08)}
+
+.page{display:none;padding:28px 30px}
+.page.active{display:block}
+.page-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:end;
+  gap:20px;
+  margin-bottom:20px;
+}
+.page-head h1,.page-head h2{margin:0}
+.page-head p{margin:7px 0 0;color:var(--muted)}
+
+.hero{
+  min-height:350px;
+  border:1px solid var(--line);
+  border-radius:28px;
+  overflow:hidden;
+  position:relative;
+  background:
+    radial-gradient(circle at 80% 20%,rgba(255,23,64,.27),transparent 35%),
+    radial-gradient(circle at 20% 100%,rgba(255,23,64,.12),transparent 35%),
+    linear-gradient(120deg,#14090c,#0c0708 60%,#1b0a0e);
+  padding:38px;
+  display:flex;
+  align-items:flex-end;
+  box-shadow:var(--shadow);
+}
+.hero:before{
+  content:"";
+  position:absolute;
+  width:450px;height:450px;
+  right:-100px;top:-150px;
+  border-radius:50%;
+  background:rgba(255,23,64,.09);
+  filter:blur(5px);
+}
+.hero-content{position:relative;z-index:1;max-width:650px}
+.eyebrow{
+  color:#ff667d;
+  text-transform:uppercase;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:2px;
+}
+.hero h1{
+  font-size:52px;
+  line-height:1;
+  margin:13px 0;
+  letter-spacing:-2.5px;
+}
+.hero p{color:#c2b5b8;max-width:540px;line-height:1.6}
+.hero-buttons{display:flex;gap:10px;margin-top:22px;flex-wrap:wrap}
+.secondary{
+  border:1px solid #4b2930;
+  background:#160c0f;
+  color:#fff;
+  border-radius:12px;
+  padding:11px 16px;
+  font-weight:700;
+}
+.secondary:hover{border-color:var(--red)}
+
+.section{margin-top:30px}
+.section-title{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:14px;
+}
+.section-title h2{font-size:20px;margin:0}
+.section-title button{
+  background:none;border:0;color:#ff4b66;font-size:12px;
+}
+
+.tiles{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;
+}
+.tile{
+  min-height:145px;
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:18px;
+  position:relative;
+  overflow:hidden;
+  background:linear-gradient(145deg,#1a0f11,#100a0b);
+  transition:.2s;
+}
+.tile:hover{transform:translateY(-3px);border-color:#5c2932}
+.tile .tile-icon{font-size:29px;margin-bottom:18px}
+.tile b{font-size:15px}
+.tile p{margin:6px 0;color:var(--muted);font-size:12px}
+
+.cards{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:16px;
+}
+.card{
+  min-width:0;
+  background:#120c0e;
+  border:1px solid var(--line);
+  border-radius:18px;
+  overflow:hidden;
+  transition:.2s;
+}
+.card:hover{transform:translateY(-3px);border-color:#5b2832}
+.cover{
+  aspect-ratio:1;
+  background:linear-gradient(135deg,#241317,#0f090a);
+  position:relative;
+  overflow:hidden;
+}
+.cover img{width:100%;height:100%;object-fit:cover}
+.cover-placeholder{
+  width:100%;height:100%;
+  display:grid;place-items:center;
+  font-size:42px;
+  color:#63303b;
+  background:
+    radial-gradient(circle at 30% 20%,rgba(255,23,64,.3),transparent 35%),
+    linear-gradient(135deg,#271116,#0f080a);
+}
+.card-body{padding:12px}
+.card-title{
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-weight:800;font-size:14px;
+}
+.card-sub{
+  color:var(--muted);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:12px;margin-top:5px;
+}
+.card-actions{display:flex;gap:6px;margin-top:10px}
+.small-btn{
+  flex:1;
+  border:1px solid var(--line);
+  background:#160c0f;
+  color:#ddd;
+  border-radius:9px;
+  padding:7px;
+}
+.small-btn:hover{border-color:var(--red);color:#fff}
+.play-small{
+  background:var(--red);
+  border-color:var(--red);
+  color:#fff;
+}
+.like-on{color:#ff3154!important;border-color:#652735!important}
+
+.radio-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:14px;
+}
+.radio-card{
+  border:1px solid var(--line);
+  background:var(--panel);
+  border-radius:20px;
+  padding:18px;
+  display:flex;
+  gap:14px;
+  align-items:center;
+}
+.radio-cover{
+  width:75px;height:75px;
+  border-radius:16px;
+  overflow:hidden;
+  background:#261216;
+  flex:none;
+}
+.radio-cover img{width:100%;height:100%;object-fit:cover}
+.radio-info{min-width:0}
+.radio-info b{display:block}
+.radio-info span{display:block;color:var(--muted);font-size:12px;margin-top:5px}
+.radio-card button{margin-left:auto;flex:none}
+
+.mix-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;
+}
+.mix{
+  min-height:190px;
+  border-radius:20px;
+  border:1px solid var(--line);
+  padding:20px;
+  position:relative;
+  overflow:hidden;
+  cursor:pointer;
+}
+.mix:after{
+  content:"";
+  position:absolute;
+  width:180px;height:180px;
+  border-radius:50%;
+  right:-65px;bottom:-65px;
+  background:rgba(255,23,64,.18);
+}
+.mix:nth-child(2){background:linear-gradient(145deg,#1e0d11,#11090b)}
+.mix:nth-child(3){background:linear-gradient(145deg,#1a0b0e,#0d0809)}
+.mix:nth-child(4){background:linear-gradient(145deg,#250c12,#100709)}
+.mix b{font-size:19px;position:relative;z-index:1}
+.mix p{color:#aa989d;font-size:12px;max-width:180px;position:relative;z-index:1}
+.mix-icon{font-size:34px;margin-bottom:22px;position:relative;z-index:1}
+
+.chips{display:flex;gap:9px;flex-wrap:wrap}
+.chip{
+  border:1px solid var(--line);
+  background:#130c0e;
+  color:#ddd;
+  border-radius:999px;
+  padding:10px 14px;
+}
+.chip:hover{border-color:var(--red);color:#fff}
+
+.empty{
+  border:1px dashed #3d252b;
+  background:#10090b;
+  border-radius:18px;
+  padding:35px;
+  text-align:center;
+  color:var(--muted);
+}
+.empty h2{color:#fff}
+
+.profile-box{
+  display:grid;
+  grid-template-columns:180px 1fr;
+  gap:25px;
+  align-items:center;
+  padding:30px;
+  border:1px solid var(--line);
+  border-radius:25px;
+  background:linear-gradient(145deg,#1b0e11,#0f090a);
+}
+.profile-avatar{
+  width:150px;height:150px;border-radius:50%;
+  display:grid;place-items:center;
+  font-size:55px;font-weight:1000;
+  background:linear-gradient(135deg,var(--red),#65001b);
+  box-shadow:0 20px 50px rgba(255,23,64,.2);
+}
+.profile-box h1{margin:0 0 8px}
+.profile-box p{color:var(--muted)}
+.stats{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+  margin-top:16px;
+}
+.stat{
+  border:1px solid var(--line);
+  background:var(--panel);
+  border-radius:16px;
+  padding:18px;
+}
+.stat b{display:block;font-size:26px}
+.stat span{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+
+.admin-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:18px;
+}
+.panel{
+  border:1px solid var(--line);
+  background:var(--panel);
+  border-radius:20px;
+  padding:20px;
+}
+.panel h3{margin:0 0 15px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field.full{grid-column:1/-1}
+.field label{font-size:11px;color:var(--muted)}
+.field input,.field textarea,.field select{
+  width:100%;
+  border:1px solid var(--line);
+  background:#0c0809;
+  color:#fff;
+  outline:none;
+  border-radius:10px;
+  padding:11px;
+}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:#70303c}
+.file{
+  padding:10px!important;
+}
+
+.table-wrap{overflow:auto}
+.table{width:100%;border-collapse:collapse}
+.table th,.table td{
+  padding:12px;
+  text-align:left;
+  border-bottom:1px solid var(--line);
+  font-size:12px;
+}
+.table th{color:#8e7e83}
+
+.overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.72);
+  backdrop-filter:blur(12px);
+  z-index:100;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+}
+.overlay.open{display:flex}
+.modal{
+  width:min(500px,100%);
+  max-height:90vh;
+  overflow:auto;
+  background:#130b0d;
+  border:1px solid #4a252d;
+  border-radius:24px;
+  padding:23px;
+  box-shadow:var(--shadow);
+}
+.modal-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:18px;
+}
+.modal-head h2{margin:0}
+.close{border:0;background:none;color:#aaa;font-size:25px}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:5px;background:#0b0708;padding:4px;border-radius:12px;margin-bottom:15px}
+.tabs button{
+  border:0;background:none;color:#8e7d82;padding:10px;border-radius:9px;
+}
+.tabs button.active{background:#231115;color:#fff}
+.auth-form{display:flex;flex-direction:column;gap:11px}
+
+#toast{
+  position:fixed;
+  right:22px;
+  bottom:105px;
+  z-index:200;
+  background:#1b0d10;
+  border:1px solid #5a2733;
+  color:#fff;
+  padding:12px 16px;
+  border-radius:13px;
+  box-shadow:var(--shadow);
+  transform:translateY(20px);
+  opacity:0;
+  pointer-events:none;
+  transition:.2s;
+}
+#toast.show{transform:none;opacity:1}
+
+.player{
+  position:fixed;
+  left:250px;right:0;bottom:0;
+  height:88px;
+  z-index:40;
+  background:rgba(15,8,10,.96);
+  border-top:1px solid #42232a;
+  backdrop-filter:blur(25px);
+  display:grid;
+  grid-template-columns:260px 1fr 260px;
+  gap:20px;
+  align-items:center;
+  padding:10px 18px;
+}
+.now{
+  display:flex;align-items:center;gap:10px;min-width:0;
+}
+.now-cover{
+  width:60px;height:60px;border-radius:10px;overflow:hidden;background:#251217;flex:none;
+}
+.now-cover img{width:100%;height:100%;object-fit:cover}
+.now-info{min-width:0}
+.now-info b,.now-info span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now-info span{color:var(--muted);font-size:11px;margin-top:4px}
+.player-center{min-width:0}
+.controls{display:flex;justify-content:center;align-items:center;gap:7px}
+.controls button{
+  width:34px;height:34px;border:0;background:none;color:#ddd;border-radius:50%;
+}
+.controls button:hover{background:#241116}
+.controls .main-play{
+  width:42px;height:42px;
+  background:#fff;color:#12090b;
+}
+.progress-row{display:flex;align-items:center;gap:8px;margin-top:5px}
+.time{font-size:10px;color:#806f74;min-width:31px}
+.range{
+  flex:1;
+  accent-color:var(--red);
+}
+.player-right{display:flex;justify-content:flex-end;align-items:center;gap:7px}
+.player-right .range{max-width:100px}
+.fullscreen-player{
+  position:fixed;inset:0;z-index:90;
+  display:none;
+  background:
+    radial-gradient(circle at 50% 35%,rgba(255,23,64,.25),transparent 35%),
+    #090607;
+  align-items:center;justify-content:center;
+}
+.fullscreen-player.open{display:flex}
+.fs-inner{text-align:center;width:min(500px,90%)}
+.fs-cover{
+  width:min(360px,80vw);
+  aspect-ratio:1;
+  margin:auto;
+  border-radius:25px;
+  overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.6);
+}
+.fs-cover img{width:100%;height:100%;object-fit:cover}
+.fs-title{font-size:25px;font-weight:900;margin-top:20px}
+.fs-artist{color:var(--muted);margin-top:5px}
+.fs-controls{display:flex;justify-content:center;gap:15px;margin-top:22px}
+.fs-controls button{
+  width:52px;height:52px;border-radius:50%;
+  border:1px solid var(--line);
+  background:#160c0f;color:#fff;
+}
+.fs-controls .fs-play{background:var(--red);border-color:var(--red)}
+
+.command{
+  position:fixed;inset:0;z-index:110;
+  display:none;align-items:flex-start;justify-content:center;
+  padding-top:12vh;background:rgba(0,0,0,.72);
+  backdrop-filter:blur(15px);
+}
+.command.open{display:flex}
+.command-box{
+  width:min(650px,94vw);
+  background:#130b0d;
+  border:1px solid #522731;
+  border-radius:20px;
+  overflow:hidden;
+  box-shadow:var(--shadow);
+}
+.command-box input{
+  width:100%;padding:18px 20px;
+  background:#0d0809;color:#fff;
+  border:0;border-bottom:1px solid var(--line);
+  outline:0;font-size:17px;
+}
+.command-results{max-height:420px;overflow:auto}
+.command-item{
+  display:flex;gap:12px;align-items:center;
+  padding:13px 17px;
+  border-bottom:1px solid #211417;
+}
+.command-item:hover{background:#1d1013}
+.command-item img{width:45px;height:45px;border-radius:8px;object-fit:cover}
+.command-item small{display:block;color:var(--muted);margin-top:3px}
+
+.mobile-nav{
+  display:none;
+}
+
+@media(max-width:1100px){
+  .cards{grid-template-columns:repeat(4,1fr)}
+  .tiles{grid-template-columns:repeat(2,1fr)}
+  .mix-grid{grid-template-columns:repeat(2,1fr)}
+  .player{grid-template-columns:220px 1fr 190px}
+}
+@media(max-width:800px){
+  .app{display:block}
+  .sidebar{display:none}
+  .main{padding-bottom:150px}
+  .topbar{padding:10px 13px;height:64px}
+  .top-actions .icon-btn{display:none}
+  .page{padding:18px 13px}
+  .hero{min-height:390px;padding:25px 20px;border-radius:22px}
+  .hero h1{font-size:39px}
+  .cards{grid-template-columns:repeat(2,1fr);gap:10px}
+  .radio-grid{grid-template-columns:1fr}
+  .mix-grid{grid-template-columns:1fr 1fr}
+  .profile-box{grid-template-columns:1fr;text-align:center}
+  .profile-avatar{margin:auto}
+  .stats{grid-template-columns:1fr 1fr}
+  .admin-grid{grid-template-columns:1fr}
+  .player{
+    left:0;right:0;bottom:59px;
+    height:75px;
+    grid-template-columns:1fr auto;
+    padding:7px 10px;
+  }
+  .player-center{display:none}
+  .player-right{display:none}
+  .now-cover{width:52px;height:52px}
+  .mobile-nav{
+    display:grid;
+    position:fixed;
+    left:0;right:0;bottom:0;
+    height:59px;
+    z-index:50;
+    grid-template-columns:repeat(5,1fr);
+    background:rgba(12,7,8,.98);
+    border-top:1px solid var(--line);
+  }
+  .mobile-nav button{
+    border:0;background:none;color:#837277;
+    font-size:10px;
+  }
+  .mobile-nav button span{display:block;font-size:18px;margin-bottom:3px}
+  .mobile-nav button.active{color:#fff}
+  .form-grid{grid-template-columns:1fr}
+  .field.full{grid-column:auto}
+}
+@media(max-width:480px){
+  .tiles{grid-template-columns:1fr 1fr}
+  .tile{min-height:120px;padding:14px}
+  .cards{grid-template-columns:1fr 1fr}
+  .mix-grid{grid-template-columns:1fr}
+  .hero-buttons button{width:100%}
+}
 </style>
 </head>
+
 <body>
+
 <div class="app">
+
 <aside class="sidebar">
-  <div class="brand"><div class="logo">🔥</div><div><b>FENIX</b><small>MUSIC</small></div></div>
-  <nav class="nav" id="nav">
-    <button data-view="home" class="active">⌂ &nbsp; Для вас</button>
-    <button data-view="new">✦ &nbsp; Новинки</button>
-    <button data-view="popular">↗ &nbsp; Популярное</button>
-    <button data-view="mixes">◈ &nbsp; Миксы</button>
-    <button data-view="artists">♙ &nbsp; Исполнители</button>
-    <button data-view="albums">▣ &nbsp; Альбомы</button>
-    <button data-view="genres">◉ &nbsp; Жанры</button>
-    <button data-view="radio">📻 &nbsp; Радио</button>
-    <button data-view="collection">♡ &nbsp; Коллекция</button>
-    <button data-view="profile">◯ &nbsp; Профиль</button>
-    <button data-view="admin" id="adminBtn" style="display:none">⚙ &nbsp; Админ-панель</button>
+  <div class="logo">
+    <div class="logo-mark"></div>
+    <span>FENIX MUSIC</span>
+  </div>
+
+  <div class="nav-title">Основное</div>
+  <nav class="nav">
+    <button data-view="home" class="active"><span class="nav-icon">⌂</span>Главная</button>
+    <button data-view="searchPage"><span class="nav-icon">⌕</span>Поиск</button>
+    <button data-view="flow"><span class="nav-icon">🔥</span>FENIX FLOW</button>
+    <button data-view="radio"><span class="nav-icon">📻</span>Радио</button>
+    <button data-view="mixes"><span class="nav-icon">🎧</span>Миксы</button>
   </nav>
-  <div class="side-user" onclick="showView('profile')">
-    <div class="avatar" id="sideAvatar">F</div>
-    <div style="min-width:0"><b id="sideName">Гость</b><small id="sideSub">Войти</small></div>
+
+  <div class="nav-title">Медиатека</div>
+  <nav class="nav">
+    <button data-view="collection"><span class="nav-icon">❤️</span>Любимое</button>
+    <button data-view="playlists"><span class="nav-icon">☷</span>Плейлисты</button>
+    <button data-view="artists"><span class="nav-icon">🎤</span>Артисты</button>
+    <button data-view="albums"><span class="nav-icon">💿</span>Альбомы</button>
+    <button data-view="genres"><span class="nav-icon">◈</span>Жанры</button>
+    <button data-view="history"><span class="nav-icon">◷</span>История</button>
+  </nav>
+
+  <div class="nav-title">FENIX</div>
+  <nav class="nav">
+    <button data-view="stats"><span class="nav-icon">📊</span>Статистика</button>
+    <button data-view="wrapped"><span class="nav-icon">🏆</span>FENIX Wrapped</button>
+    <button data-view="premium"><span class="nav-icon">💎</span>Premium</button>
+    <button data-view="profile"><span class="nav-icon">👤</span>Профиль</button>
+    <button id="adminNav" data-view="admin" class="hidden"><span class="nav-icon">⚙</span>Админка</button>
+  </nav>
+
+  <div class="side-bottom">
+    <div class="user-mini" id="sideUser"></div>
   </div>
 </aside>
 
 <main class="main">
-<header class="top">
-  <div class="mobile-brand"><span>🔥</span> FENIX MUSIC</div>
-  <input id="search" class="search" placeholder="Что хотите послушать? Исполнитель, трек, альбом...">
+
+<header class="topbar">
+  <div class="search">
+    <input id="globalSearch" placeholder="Поиск музыки, артистов, альбомов..." autocomplete="off">
+    <span class="search-k">Ctrl K</span>
+  </div>
   <div class="top-actions">
-    <button class="icon" onclick="showView('profile')">♙</button>
-    <button class="icon" onclick="openSettings()">⚙</button>
+    <button class="icon-btn" onclick="openCommand()">⌘</button>
+    <button class="icon-btn" onclick="showView('profile')">👤</button>
+    <button class="login-btn" id="topLogin" onclick="openAuth()">Войти</button>
   </div>
 </header>
 
-<section class="view active" id="view-home">
+<!-- HOME -->
+<section class="page active" id="view-home">
   <div class="hero">
-    <div class="eyebrow">FENIX MUSIC</div>
-    <h1>Твоя музыка.<br><span>Твой ритм.</span></h1>
-    <p>Слушай реальные треки из каталога FENIX MUSIC, запускай готовые миксы, открывай артистов и собирай свою коллекцию.</p>
-    <div class="actions">
-      <button class="primary" onclick="startBestMix()">▶ Слушать микс</button>
-      <button class="secondary" onclick="showView('new')">Открыть новинки</button>
+    <div class="hero-content">
+      <div class="eyebrow">FENIX MUSIC</div>
+      <h1>Музыка.<br><span style="color:#ff2448">По-твоему.</span></h1>
+      <p>Слушай любимые треки, создавай миксы и запускай FENIX FLOW — персональное бесконечное музыкальное радио.</p>
+      <div class="hero-buttons">
+        <button class="primary" onclick="startBestMix()">▶ Слушать микс</button>
+        <button class="secondary" onclick="showView('flow')">🔥 FENIX FLOW</button>
+      </div>
     </div>
   </div>
 
   <div class="section">
-    <div class="head"><h2>Для вас</h2><span>быстрый доступ</span></div>
-    <div class="quick-grid">
-      <div class="quick" onclick="startBestMix()"><b>Микс дня</b><p>Собран из доступной музыки каталога.</p><i>🔥</i></div>
-      <div class="quick" onclick="showView('popular')"><b>Популярное</b><p>Треки с наибольшим количеством прослушиваний.</p><i>↗</i></div>
-      <div class="quick" onclick="showView('collection');loadCollection('history')"><b>Продолжить слушать</b><p>Вернись к тому, что слушал недавно.</p><i>▶</i></div>
-      <div class="quick" onclick="showView('collection');loadCollection('favorites')"><b>Моя музыка</b><p>Любимые треки и личная коллекция.</p><i>♡</i></div>
+    <div class="section-title"><h2>Быстрый доступ</h2></div>
+    <div class="tiles">
+      <div class="tile" onclick="startBestMix()"><div class="tile-icon">🔥</div><b>Микс дня</b><p>Лучшее прямо сейчас</p></div>
+      <div class="tile" onclick="showView('new')"><div class="tile-icon">✨</div><b>Новинки</b><p>Свежая музыка</p></div>
+      <div class="tile" onclick="showView('popular')"><div class="tile-icon">📈</div><b>Популярное</b><p>Что слушают сейчас</p></div>
+      <div class="tile" onclick="showView('collection')"><div class="tile-icon">❤️</div><b>Моя музыка</b><p>Избранное и история</p></div>
     </div>
   </div>
 
   <div class="section">
-    <div class="head"><h2>Радио</h2><span>слушай без остановки</span></div>
+    <div class="section-title"><h2>Миксы для тебя</h2><button onclick="showView('mixes')">Все миксы →</button></div>
+    <div class="mix-grid">
+      <div class="mix" onclick="startBestMix()"><div class="mix-icon">🔥</div><b>Микс дня</b><p>Персональная подборка FENIX</p></div>
+      <div class="mix" onclick="startPopularMix()"><div class="mix-icon">📈</div><b>Популярное</b><p>Самые слушаемые треки</p></div>
+      <div class="mix" onclick="startGenreMix()"><div class="mix-icon">🌙</div><b>Ночной микс</b><p>Спокойная музыка</p></div>
+      <div class="mix" onclick="startFlow()"><div class="mix-icon">⚡</div><b>FENIX FLOW</b><p>Бесконечный поток</p></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title"><h2>Радио</h2><button onclick="showView('radio')">Все станции →</button></div>
     <div id="homeRadio" class="radio-grid"></div>
   </div>
 </section>
 
-<section class="view" id="view-new">
-  <div class="head"><h2>Новинки</h2><span>реальные доступные треки</span></div>
-  <div id="newCatalog" class="cards"></div>
+<!-- SEARCH -->
+<section class="page" id="view-searchPage">
+  <div class="page-head"><div><h1>Поиск</h1><p>Треки, артисты, альбомы и жанры</p></div></div>
+  <div id="searchContent"></div>
 </section>
 
-<section class="view" id="view-popular">
-  <div class="head"><h2>Популярное</h2><span>по прослушиваниям</span></div>
-  <div id="popularCatalog" class="cards"></div>
+<!-- NEW -->
+<section class="page" id="view-new">
+  <div class="page-head"><div><h1>Новинки</h1><p>Последние доступные треки</p></div></div>
+  <div id="newContent" class="cards"></div>
 </section>
 
-<section class="view" id="view-mixes">
-  <div class="head"><h2>Миксы</h2><span>включай и слушай</span></div>
+<!-- POPULAR -->
+<section class="page" id="view-popular">
+  <div class="page-head"><div><h1>Популярное</h1><p>Треки, которые слушают чаще всего</p></div></div>
+  <div id="popularContent" class="cards"></div>
+</section>
+
+<!-- FLOW -->
+<section class="page" id="view-flow">
+  <div class="page-head">
+    <div><h1>🔥 FENIX FLOW</h1><p>Бесконечный персональный поток</p></div>
+    <button class="primary" onclick="startFlow()">▶ Запустить FLOW</button>
+  </div>
+  <div class="hero" style="min-height:260px">
+    <div class="hero-content">
+      <div class="eyebrow">SMART DJ</div>
+      <h1 style="font-size:40px">Твой поток.<br>Без остановки.</h1>
+      <p>FENIX FLOW подбирает следующую музыку из доступного каталога, учитывая популярность, историю и текущую очередь.</p>
+      <button class="primary" onclick="startFlow()">🔥 Запустить FENIX FLOW</button>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-title"><h2>Следующие треки</h2></div>
+    <div id="flowContent" class="cards"></div>
+  </div>
+</section>
+
+<!-- RADIO -->
+<section class="page" id="view-radio">
+  <div class="page-head"><div><h1>📻 Радио</h1><p>Слушай станции FENIX</p></div></div>
+  <div id="radioContent" class="radio-grid"></div>
+</section>
+
+<!-- MIXES -->
+<section class="page" id="view-mixes">
+  <div class="page-head"><div><h1>🎧 Миксы</h1><p>Готовые подборки и персональные потоки</p></div></div>
   <div class="mix-grid">
-    <div class="mix" onclick="startBestMix()"><h3>🔥 Микс дня</h3><p>Лучшее из доступного каталога FENIX MUSIC.</p><button>▶ Слушать</button><span class="mix-icon">♫</span></div>
-    <div class="mix" onclick="startPopularMix()"><h3>⚡ Популярный микс</h3><p>Самые прослушиваемые треки прямо сейчас.</p><button>▶ Запустить</button><span class="mix-icon">↗</span></div>
-    <div class="mix" onclick="startGenreMix()"><h3>🌙 Ночной микс</h3><p>Спокойная случайная подборка для вечернего прослушивания.</p><button>▶ Запустить</button><span class="mix-icon">☾</span></div>
-    <div class="mix" onclick="showView('radio')"><h3>📻 Радио-микс</h3><p>Переключись на потоковое радио.</p><button>Открыть радио</button><span class="mix-icon">◉</span></div>
+    <div class="mix" onclick="startBestMix()"><div class="mix-icon">🔥</div><b>Микс дня</b><p>Персональная подборка</p></div>
+    <div class="mix" onclick="startPopularMix()"><div class="mix-icon">📈</div><b>Топ FENIX</b><p>Самые популярные песни</p></div>
+    <div class="mix" onclick="startGenreMix()"><div class="mix-icon">🌙</div><b>Ночной</b><p>Мягкий ночной поток</p></div>
+    <div class="mix" onclick="startFlow()"><div class="mix-icon">⚡</div><b>FENIX FLOW</b><p>Бесконечный DJ</p></div>
   </div>
-  <div class="section"><div class="head"><h2>Все треки микса</h2><span id="mixCount">0 треков</span></div><div id="mixCatalog" class="cards"></div></div>
 </section>
 
-<section class="view" id="view-artists"><div class="head"><h2>Исполнители</h2><span>из реального каталога</span></div><div id="artistsList" class="chips"></div></section>
-<section class="view" id="view-albums"><div class="head"><h2>Альбомы</h2><span>из реального каталога</span></div><div id="albumsList" class="chips"></div></section>
-<section class="view" id="view-genres"><div class="head"><h2>Жанры</h2><span>из реального каталога</span></div><div id="genresList" class="chips"></div></section>
-
-<section class="view" id="view-radio"><div class="head"><h2>Радио</h2><span>прямой эфир</span></div><div id="radioGrid" class="radio-grid"></div></section>
-
-<section class="view" id="view-collection">
-  <div class="head"><h2>Коллекция</h2><span>твоя музыка</span></div>
-  <div class="quick-grid">
-    <div class="quick" onclick="loadCollection('favorites')"><b>Любимые</b><p>Треки, которые ты отметил.</p><i>♡</i></div>
-    <div class="quick" onclick="loadCollection('history')"><b>История</b><p>Недавно прослушанные композиции.</p><i>↶</i></div>
-    <div class="quick" onclick="loadPlaylists()"><b>Плейлисты</b><p>Твои собственные подборки.</p><i>▣</i></div>
-    <div class="quick"><b>Скачанные</b><p>Подготовлено для мобильного режима.</p><i>↓</i></div>
-  </div>
-  <div class="section" id="collectionContent"></div>
+<!-- COLLECTION -->
+<section class="page" id="view-collection">
+  <div class="page-head"><div><h1>❤️ Любимое</h1><p>Твои сохранённые треки</p></div></div>
+  <div id="collectionContent" class="cards"></div>
 </section>
 
-<section class="view" id="view-profile"><div id="profileContent"></div></section>
+<!-- PLAYLISTS -->
+<section class="page" id="view-playlists">
+  <div class="page-head">
+    <div><h1>☷ Плейлисты</h1><p>Твои подборки</p></div>
+    <button class="primary" onclick="createPlaylist()">＋ Новый плейлист</button>
+  </div>
+  <div id="playlistsContent"></div>
+</section>
 
-<section class="view" id="view-admin">
-  <div class="head"><h2>Админ-панель</h2><span>управление каталогом</span></div>
+<!-- ARTISTS -->
+<section class="page" id="view-artists">
+  <div class="page-head"><div><h1>🎤 Артисты</h1><p>Исполнители из каталога</p></div></div>
+  <div id="artistsContent" class="chips"></div>
+</section>
+
+<!-- ALBUMS -->
+<section class="page" id="view-albums">
+  <div class="page-head"><div><h1>💿 Альбомы</h1><p>Альбомы из каталога</p></div></div>
+  <div id="albumsContent" class="chips"></div>
+</section>
+
+<!-- GENRES -->
+<section class="page" id="view-genres">
+  <div class="page-head"><div><h1>◈ Жанры</h1><p>Выбирай настроение</p></div></div>
+  <div id="genresContent" class="chips"></div>
+</section>
+
+<!-- HISTORY -->
+<section class="page" id="view-history">
+  <div class="page-head"><div><h1>◷ История</h1><p>Недавно прослушанное</p></div></div>
+  <div id="historyContent" class="cards"></div>
+</section>
+
+<!-- STATS -->
+<section class="page" id="view-stats">
+  <div class="page-head"><div><h1>📊 Статистика</h1><p>Твоя музыкальная активность</p></div></div>
+  <div id="statsContent"></div>
+</section>
+
+<!-- WRAPPED -->
+<section class="page" id="view-wrapped">
+  <div class="page-head"><div><h1>🏆 FENIX Wrapped</h1><p>Твоя музыка в цифрах</p></div></div>
+  <div id="wrappedContent"></div>
+</section>
+
+<!-- PREMIUM -->
+<section class="page" id="view-premium">
+  <div class="hero" style="min-height:300px">
+    <div class="hero-content">
+      <div class="eyebrow">FENIX PREMIUM</div>
+      <h1 style="font-size:42px">💎 Музыка<br>без ограничений.</h1>
+      <p>Без рекламы, повышенное качество, расширенные рекомендации, дополнительные возможности плеера и FENIX FLOW+.</p>
+      <button class="primary" onclick="toast('Раздел подписки готов к подключению оплаты')">💎 Подключить Premium</button>
+    </div>
+  </div>
+  <div class="section">
+    <div class="tiles">
+      <div class="tile"><div class="tile-icon">🚫</div><b>Без рекламы</b><p>Чистое прослушивание</p></div>
+      <div class="tile"><div class="tile-icon">🎧</div><b>Высокое качество</b><p>До 320 kbps</p></div>
+      <div class="tile"><div class="tile-icon">🔥</div><b>FLOW+</b><p>Расширенный DJ</p></div>
+      <div class="tile"><div class="tile-icon">🤖</div><b>FENIX AI</b><p>AI-плейлисты</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- PROFILE -->
+<section class="page" id="view-profile">
+  <div class="page-head"><div><h1>👤 Профиль</h1><p>Аккаунт FENIX MUSIC</p></div></div>
+  <div id="profileContent"></div>
+</section>
+
+<!-- ADMIN -->
+<section class="page" id="view-admin">
+  <div class="page-head">
+    <div><h1>⚙ Админ-консоль</h1><p>Управление каталогом FENIX MUSIC</p></div>
+  </div>
+
   <div class="admin-grid">
     <div class="panel">
-      <h3>Добавить музыку</h3>
-      <p style="color:#777">Загрузи аудио и, при желании, обложку. Трек появится в FENIX MUSIC после сохранения.</p>
-      <form class="form" id="uploadForm">
-        <input name="title" placeholder="Название трека" required>
-        <input name="artist" placeholder="Исполнитель" required>
-        <input name="album" placeholder="Альбом">
-        <input name="genre" placeholder="Жанр">
-        <label class="file">🎵 Аудиофайл<input name="audio" type="file" accept="audio/*" required></label>
-        <label class="file">🖼 Обложка<input name="cover" type="file" accept="image/*"></label>
-        <button class="primary" type="submit">Загрузить в FENIX MUSIC</button>
+      <h3>📤 Загрузить музыку</h3>
+      <form id="uploadForm">
+        <div class="form-grid">
+          <div class="field"><label>Название</label><input name="title" required></div>
+          <div class="field"><label>Исполнитель</label><input name="artist" required></div>
+          <div class="field"><label>Альбом</label><input name="album"></div>
+          <div class="field"><label>Жанр</label><input name="genre"></div>
+          <div class="field full"><label>Аудиофайл</label><input class="file" name="audio" type="file" accept="audio/*" required></div>
+          <div class="field full"><label>Обложка</label><input class="file" name="cover" type="file" accept="image/*"></div>
+        </div>
+        <button class="primary" style="margin-top:14px">＋ Добавить трек</button>
       </form>
     </div>
+
     <div class="panel">
-      <h3>Каталог</h3>
-      <p style="color:#777;line-height:1.6">Ручная загрузка выполняется здесь. Также можно положить файл в <b style="color:#ff4058">backend/media/music</b>.</p>
-      <p style="color:#ff4058">Исполнитель - Название.mp3</p>
-      <div id="adminStats" style="color:#888">Загрузка...</div>
+      <h3>📊 Dashboard</h3>
+      <div class="stats" style="grid-template-columns:1fr 1fr">
+        <div class="stat"><b id="adminTrackCount">0</b><span>треков</span></div>
+        <div class="stat"><b id="adminUserName">—</b><span>администратор</span></div>
+        <div class="stat"><b>LIVE</b><span>сервис</span></div>
+        <div class="stat"><b>FENIX</b><span>система</span></div>
+      </div>
     </div>
   </div>
-  <div class="section"><div class="head"><h2>Музыка</h2><span>без несуществующих файлов</span></div><div id="adminCatalog" class="cards"></div></div>
+
+  <div class="section panel">
+    <h3>🎵 Каталог</h3>
+    <div id="adminCatalog" class="cards"></div>
+  </div>
 </section>
+
 </main>
 </div>
 
-<div class="bottom">
-  <div class="now-cover" id="nowCover">♫</div>
-  <div class="now-info"><b id="nowTitle">Ничего не играет</b><small id="nowArtist">Выберите трек или радио</small></div>
-  <div class="controls">
-    <button onclick="prevTrack()">‹</button><button class="play" id="playBtn" onclick="toggleAudio()">▶</button><button onclick="nextTrack()">›</button><button onclick="openFull()">↗</button>
-  </div>
-  <div class="bar"><span class="time" id="cur">0:00</span><input id="progress" class="range" type="range" min="0" max="100" value="0" oninput="seek(this.value)"><span class="time" id="dur">0:00</span></div>
-  <input id="volume" class="volume" type="range" min="0" max="1" step=".01" value=".85" oninput="audio.volume=this.value">
-</div>
-
+<!-- MOBILE -->
 <nav class="mobile-nav">
-  <button data-view="home" class="active">⌂<br>Главная</button>
-  <button data-view="new">✦<br>Новинки</button>
-  <button data-view="mixes">◈<br>Миксы</button>
-  <button data-view="collection">♡<br>Коллекция</button>
-  <button data-view="profile">◯<br>Профиль</button>
+  <button data-view="home" class="active"><span>⌂</span>Главная</button>
+  <button data-view="searchPage"><span>⌕</span>Поиск</button>
+  <button data-view="flow"><span>🔥</span>Flow</button>
+  <button data-view="collection"><span>❤️</span>Музыка</button>
+  <button data-view="profile"><span>👤</span>Профиль</button>
 </nav>
 
-<div class="overlay" id="auth">
-  <div class="modal"><button class="close" onclick="closeOverlay('auth')">×</button>
-    <h2 id="authTitle">Вход</h2><p style="color:#777">FENIX MUSIC</p>
-    <div class="tabs"><button id="loginTab" class="active" onclick="authMode='login';updateAuth()">Войти</button><button id="regTab" onclick="authMode='register';updateAuth()">Регистрация</button></div>
-    <form class="form" id="authForm">
-      <input id="username" placeholder="Никнейм" style="display:none"><input id="email" type="email" placeholder="Email" required><input id="password" type="password" placeholder="Пароль" required>
-      <button class="primary">Продолжить</button>
-    </form>
+<!-- PLAYER -->
+<div class="player">
+  <div class="now">
+    <div class="now-cover" id="nowCover"><div class="cover-placeholder">♫</div></div>
+    <div class="now-info">
+      <b id="nowTitle">FENIX MUSIC</b>
+      <span id="nowArtist">Выбери трек</span>
+    </div>
+  </div>
+
+  <div class="player-center">
+    <div class="controls">
+      <button onclick="toggleShuffle()" id="shuffleBtn">🔀</button>
+      <button onclick="prevTrack()">⏮</button>
+      <button onclick="togglePlay()" class="main-play" id="playBtn">▶</button>
+      <button onclick="nextTrack()">⏭</button>
+      <button onclick="toggleRepeat()" id="repeatBtn">🔁</button>
+    </div>
+    <div class="progress-row">
+      <span class="time" id="currentTime">0:00</span>
+      <input class="range" id="progress" type="range" min="0" max="100" value="0">
+      <span class="time" id="duration">0:00</span>
+    </div>
+  </div>
+
+  <div class="player-right">
+    <button class="icon-btn" onclick="toggleLikeCurrent()">♡</button>
+    <input class="range" id="volume" type="range" min="0" max="1" step=".01" value=".85">
+    <button class="icon-btn" onclick="openQueue()">☷</button>
+    <button class="icon-btn" onclick="openFullscreen()">⛶</button>
   </div>
 </div>
 
-<div class="overlay" id="settings"><div class="modal"><button class="close" onclick="closeOverlay('settings')">×</button><h2>Настройки</h2><div class="form"><button class="secondary" onclick="toggleCompact();closeOverlay('settings')">Переключить компактный режим</button><button class="secondary" onclick="logout()">Выйти</button></div></div></div>
-
-<div class="overlay full" id="full"><div class="full-inner"><button class="icon" style="float:right" onclick="closeOverlay('full')">×</button><div class="full-cover" id="fullCover">♫</div><h1 id="fullTitle">Ничего не играет</h1><p id="fullArtist">FENIX MUSIC</p><input id="fullProgress" class="range" type="range" min="0" max="100" value="0" oninput="seek(this.value)"><div class="full-buttons"><button onclick="prevTrack()">‹</button><button class="main" onclick="toggleAudio()" id="fullPlay">▶</button><button onclick="nextTrack()">›</button></div></div></div>
-<div class="toast" id="toast"></div>
 <audio id="audio" preload="metadata"></audio>
 
+<!-- AUTH -->
+<div class="overlay" id="authOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="authTitle">Вход</h2>
+      <button class="close" onclick="closeOverlay('authOverlay')">×</button>
+    </div>
+    <div class="tabs">
+      <button id="loginTab" class="active" onclick="setAuthMode('login')">Вход</button>
+      <button id="regTab" onclick="setAuthMode('register')">Регистрация</button>
+    </div>
+    <form id="authForm" class="auth-form">
+      <div class="field"><label>E-mail</label><input id="email" type="email" required></div>
+      <div class="field hidden" id="usernameField"><label>Никнейм</label><input id="username"></div>
+      <div class="field"><label>Пароль</label><input id="password" type="password" required></div>
+      <button class="primary">Продолжить</button>
+    </form>
+    <button class="secondary" style="width:100%;margin-top:10px" onclick="telegramLogin()">Войти через Telegram</button>
+  </div>
+</div>
+
+<!-- QUEUE -->
+<div class="overlay" id="queueOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Очередь</h2>
+      <button class="close" onclick="closeOverlay('queueOverlay')">×</button>
+    </div>
+    <div id="queueContent"></div>
+  </div>
+</div>
+
+<!-- FULLSCREEN -->
+<div class="fullscreen-player" id="fullscreenPlayer">
+  <div class="fs-inner">
+    <button class="close" style="position:absolute;right:25px;top:20px" onclick="closeFullscreen()">×</button>
+    <div class="fs-cover" id="fsCover"><div class="cover-placeholder">♫</div></div>
+    <div class="fs-title" id="fsTitle">FENIX MUSIC</div>
+    <div class="fs-artist" id="fsArtist">Выбери трек</div>
+    <div class="fs-controls">
+      <button onclick="prevTrack()">⏮</button>
+      <button class="fs-play" onclick="togglePlay()" id="fsPlay">▶</button>
+      <button onclick="nextTrack()">⏭</button>
+    </div>
+    <div class="progress-row" style="margin-top:25px">
+      <span class="time" id="fsCurrent">0:00</span>
+      <input class="range" id="fsProgress" type="range" min="0" max="100" value="0">
+      <span class="time" id="fsDuration">0:00</span>
+    </div>
+  </div>
+</div>
+
+<!-- COMMAND -->
+<div class="command" id="command">
+  <div class="command-box">
+    <input id="commandInput" placeholder="Поиск по FENIX MUSIC..." autocomplete="off">
+    <div id="commandResults" class="command-results"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
 <script>
-const API=location.origin,audio=document.getElementById('audio');
-let authMode='login',tracks=[],queue=[],current=-1,currentTrack=null,radios=[],shuffle=false;
-const $=x=>document.getElementById(x);
-const token=()=>localStorage.getItem('fenix_token')||'';
-const getUser=()=>{try{return JSON.parse(localStorage.getItem('fenix_user')||'null')}catch{return null}};
-const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-function toast(s){$('toast').textContent=s;$('toast').classList.add('show');clearTimeout(window.tt);window.tt=setTimeout(()=>$('toast').classList.remove('show'),2600)}
-async function api(path,opt={}){
-  const h=new Headers(opt.headers||{});
-  let url=path;
-  const t=token();
-  if(t&&!/[?&]token=/.test(url)) url+=(url.includes('?')?'&':'?')+'token='+encodeURIComponent(t);
-  if(t) h.set('Authorization','Bearer '+t);
-  const r=await fetch(API+url,{...opt,headers:h});
-  let d=null;
-  const ct=r.headers.get('content-type')||'';
-  if(ct.includes('application/json')){try{d=await r.json()}catch{}}
-  if(!r.ok) throw Error(d?.detail||('Ошибка запроса: '+r.status));
-  return d;
+"use strict";
+
+/* ============================================================
+   FENIX MUSIC MAX
+   Single-file frontend
+============================================================ */
+
+const API = "";
+const $ = id => document.getElementById(id);
+
+let tracks = [];
+let radioStations = [];
+let queue = [];
+let queueIndex = -1;
+let currentTrack = null;
+let authMode = "login";
+let shuffled = false;
+let repeatMode = "all";
+let flowMode = false;
+let toastTimer = null;
+
+const audio = $("audio");
+
+/* ---------------- UTIL ---------------- */
+
+function token(){
+  return localStorage.getItem("fenix_token") || "";
 }
-function openOverlay(id){$(id).classList.add('open')}function closeOverlay(id){$(id).classList.remove('open')}
-function updateUser(){const u=getUser();$('sideName').textContent=u?.username||'Гость';$('sideSub').textContent=u?(u.is_admin?'Администратор':'Пользователь'):'Войти';$('sideAvatar').textContent=(u?.username||'F')[0].toUpperCase();$('adminBtn').style.display=u?.is_admin?'block':'none'}
-function logout(){localStorage.removeItem('fenix_token');localStorage.removeItem('fenix_user');updateUser();closeOverlay('settings');toast('Вы вышли');showView('home')}
-function openSettings(){openOverlay('settings')}
-function showView(v){
-  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));$('view-'+v)?.classList.add('active');
-  document.querySelectorAll('[data-view]').forEach(x=>x.classList.toggle('active',x.dataset.view===v));
-  if(v==='new')loadCatalog('/api/tracks','newCatalog');
-  if(v==='popular')loadPopular();
-  if(v==='mixes')loadMixCatalog();
-  if(['artists','albums','genres'].includes(v))loadMeta();
-  if(v==='radio')renderRadio('radioGrid');
-  if(v==='profile')renderProfile();
-  if(v==='admin')loadAdmin();
+
+function user(){
+  try{
+    return JSON.parse(localStorage.getItem("fenix_user") || "null");
+  }catch{
+    return null;
+  }
 }
-document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>showView(b.dataset.view)));
+
+function esc(value){
+  return String(value ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function formatTime(sec){
+  sec = Number(sec) || 0;
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60).toString().padStart(2,"0");
+  return `${m}:${s}`;
+}
+
+function toast(message){
+  const el = $("toast");
+  el.textContent = message;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"),2600);
+}
+
+async function api(path,options={}){
+  const opts = {...options};
+  opts.headers = new Headers(opts.headers || {});
+
+  const t = token();
+  if(t){
+    opts.headers.set("Authorization","Bearer "+t);
+  }
+
+  let url = API + path;
+
+  if(t && !/[?&]token=/.test(url)){
+    url += (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(t);
+  }
+
+  const res = await fetch(url,opts);
+
+  let data = null;
+  try{
+    data = await res.json();
+  }catch{}
+
+  if(!res.ok){
+    let message = data?.detail || data?.message || `Ошибка ${res.status}`;
+    if(Array.isArray(message)) message = message.map(x=>x.msg || x).join(", ");
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+/* ---------------- VIEWS ---------------- */
+
+function showView(name){
+  document.querySelectorAll(".page").forEach(x => x.classList.remove("active"));
+  const page = $("view-"+name);
+
+  if(!page){
+    name = "home";
+  }
+
+  $("view-"+name)?.classList.add("active");
+
+  document.querySelectorAll("[data-view]").forEach(btn => {
+    btn.classList.toggle("active",btn.dataset.view === name);
+  });
+
+  if(name === "home") loadHome();
+  if(name === "new") renderNew();
+  if(name === "popular") renderPopular();
+  if(name === "flow") renderFlow();
+  if(name === "radio") renderRadio();
+  if(name === "collection") loadFavorites();
+  if(name === "playlists") loadPlaylists();
+  if(name === "artists") renderMeta();
+  if(name === "albums") renderMeta();
+  if(name === "genres") renderMeta();
+  if(name === "history") loadHistory();
+  if(name === "stats") renderStats();
+  if(name === "wrapped") renderWrapped();
+  if(name === "profile") renderProfile();
+  if(name === "admin") loadAdmin();
+}
+
+document.querySelectorAll("[data-view]").forEach(btn=>{
+  btn.addEventListener("click",()=>showView(btn.dataset.view));
+});
+
+/* ---------------- TRACK DATA ---------------- */
 
 async function loadAllTracks(){
   try{
-    const d=await api('/api/tracks');
-    tracks=(Array.isArray(d)?d:[]).filter(t=>t.audio_url||t.file_available);
-    queue=tracks.slice();
-    return tracks;
-  }catch(e){tracks=[];return []}
-}
-async function loadRadio(){try{radios=await api('/api/radio')}catch{radios=[]}renderRadio('homeRadio')}
-function renderRadio(id){
-  const box=$(id);if(!box)return;
-  box.innerHTML=radios.map(r=>`<div class="radio-card"><div class="radio-art">◉</div><b>${esc(r.name)}</b><small>${esc(r.description||'Прямой эфир')}</small><button onclick='playRadio(${JSON.stringify(String(r.id))})'>▶ Слушать</button></div>`).join('')||'<div class="empty">Радиостанции пока недоступны.</div>'
-}
-function playRadio(id){
-  const r=radios.find(x=>String(x.id)===String(id));if(!r)return;
-  currentTrack=null;audio.src=r.stream||r.stream_url||'';audio.play().catch(()=>{});
-  $('nowTitle').textContent=r.name;$('nowArtist').textContent='Прямой эфир';$('nowCover').textContent='◉';syncFull();toast('Эфир: '+r.name)
-}
-function toggleAudio(){if(!audio.src){toast('Выберите трек или радио');return}audio.paused?audio.play():audio.pause()}
-audio.addEventListener('play',()=>{$('playBtn').textContent='❚❚';$('fullPlay').textContent='❚❚'});
-audio.addEventListener('pause',()=>{$('playBtn').textContent='▶';$('fullPlay').textContent='▶'});
-audio.addEventListener('timeupdate',()=>{if(!isFinite(audio.duration))return;const p=audio.currentTime/audio.duration*100;$('progress').value=p;$('fullProgress').value=p;$('cur').textContent=tm(audio.currentTime);$('dur').textContent=tm(audio.duration)});
-audio.addEventListener('ended',nextTrack);
-audio.addEventListener('error',()=>toast('Не удалось воспроизвести этот источник'));
-function tm(v){if(!isFinite(v))return'0:00';return Math.floor(v/60)+':'+String(Math.floor(v%60)).padStart(2,'0')}
-function seek(v){if(isFinite(audio.duration))audio.currentTime=audio.duration*v/100}
-function openFull(){openOverlay('full');syncFull()}
-function syncFull(){$('fullTitle').textContent=$('nowTitle').textContent;$('fullArtist').textContent=$('nowArtist').textContent;$('fullPlay').textContent=audio.paused?'▶':'❚❚';if(currentTrack?.cover_url)$('fullCover').innerHTML=`<img src="${esc(currentTrack.cover_url)}">`;else $('fullCover').textContent='♫'}
+    const data = await api("/api/tracks");
+    tracks = (Array.isArray(data) ? data : [])
+      .filter(t => t && (t.audio_url || t.stream_url || t.url))
+      .map(t => ({
+        ...t,
+        title:t.title || "Без названия",
+        artist:t.artist || "Неизвестный артист",
+        album:t.album || "",
+        genre:t.genre || ""
+      }));
+  }catch(err){
+    console.error(err);
+    tracks = [];
+  }
 
-async function loadCatalog(url,id){
-  try{const d=await api(url);const rows=(Array.isArray(d)?d:[]).filter(t=>t.audio_url||t.file_available);renderCatalog(id,rows)}catch(e){toast(e.message)}
+  renderNew();
+  renderPopular();
+  renderFlow();
+  renderMeta();
 }
-async function loadPopular(){
-  try{const d=await api('/api/tracks');const rows=(Array.isArray(d)?d:[]).filter(t=>t.audio_url||t.file_available).sort((a,b)=>(b.plays||0)-(a.plays||0));renderCatalog('popularCatalog',rows)}
-  catch(e){toast(e.message)}
+
+function trackUrl(t){
+  return t?.audio_url || t?.stream_url || t?.url || "";
 }
-function renderCatalog(id,rows){
-  const box=$(id);if(!rows.length){box.innerHTML='<div class="empty"><h2>Пока здесь пусто</h2><p>Добавьте реальные песни через админ-панель.</p></div>';return}
-  box.innerHTML=rows.map(t=>`<div class="music-card">
-    <div class="cover">${t.cover_url?`<img src="${esc(t.cover_url)}" loading="lazy">`:'♫'}<button class="play-overlay" onclick="playTrack(${t.id})">▶</button></div>
-    <strong>${esc(t.title)}</strong><small>${esc(t.artist)}${t.album?' · '+esc(t.album):''}</small>
-    <div class="card-buttons"><button onclick="playTrack(${t.id})">▶ Слушать</button><button class="like" onclick="likeTrack(${t.id})">♡</button></div>
-  </div>`).join('')
+
+function coverUrl(t){
+  return t?.cover_url || t?.cover || "";
 }
-async function playTrack(id){
+
+function card(t,index){
+  const liked = !!t.liked;
+  const cover = coverUrl(t);
+
+  return `
+  <article class="card">
+    <div class="cover">
+      ${cover
+        ? `<img src="${esc(cover)}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=cover-placeholder>♫</div>'">`
+        : `<div class="cover-placeholder">♫</div>`}
+    </div>
+    <div class="card-body">
+      <div class="card-title">${esc(t.title)}</div>
+      <div class="card-sub">${esc(t.artist)}${t.album ? " · "+esc(t.album) : ""}</div>
+      <div class="card-actions">
+        <button class="small-btn play-small" onclick="playByIndex(${index})">▶</button>
+        <button class="small-btn ${liked?"like-on":""}" onclick="likeTrack(${t.id},this)">♡</button>
+        <button class="small-btn" onclick="addToQueueById(${t.id})">＋</button>
+      </div>
+    </div>
+  </article>`;
+}
+
+function renderCards(target,list){
+  const el = $(target);
+  if(!el)return;
+
+  if(!list?.length){
+    el.className = "empty";
+    el.innerHTML = "Нет доступной музыки.";
+    return;
+  }
+
+  el.className = "cards";
+  el.innerHTML = list.map(t => card(t,tracks.findIndex(x=>x.id===t.id))).join("");
+}
+
+function renderNew(){
+  const list = [...tracks].reverse().slice(0,30);
+  renderCards("newContent",list);
+}
+
+function renderPopular(){
+  const list = [...tracks]
+    .sort((a,b)=>(Number(b.plays)||0)-(Number(a.plays)||0))
+    .slice(0,30);
+  renderCards("popularContent",list);
+}
+
+/* ---------------- PLAYER ---------------- */
+
+function setCurrent(t,index=-1){
+  if(!t)return;
+
+  currentTrack = t;
+
+  if(index >= 0) queueIndex = index;
+
+  const url = trackUrl(t);
+  if(!url){
+    toast("У этого трека нет доступного аудиофайла");
+    return;
+  }
+
+  audio.src = url;
+  audio.preload = "metadata";
+
+  $("nowTitle").textContent = t.title;
+  $("nowArtist").textContent = t.artist;
+
+  const cover = coverUrl(t);
+  $("nowCover").innerHTML = cover
+    ? `<img src="${esc(cover)}" alt="">`
+    : `<div class="cover-placeholder">♫</div>`;
+
+  $("fsCover").innerHTML = cover
+    ? `<img src="${esc(cover)}" alt="">`
+    : `<div class="cover-placeholder">♫</div>`;
+
+  $("fsTitle").textContent = t.title;
+  $("fsArtist").textContent = t.artist;
+
+  localStorage.setItem("fenix_last_track",String(t.id));
+}
+
+async function playTrack(t,index=-1){
+  if(!t)return;
+
+  setCurrent(t,index);
+
   try{
-    let t=tracks.find(x=>String(x.id)===String(id));
-    if(!t)t=await api('/api/tracks/'+id);
-    if(!t?.audio_url)throw Error('Аудиофайл отсутствует');
-    currentTrack=t;
-    if(!queue.length)queue=tracks.length?tracks.slice():[t];
-    current=queue.findIndex(x=>String(x.id)===String(id));if(current<0){queue.push(t);current=queue.length-1}
-    audio.src=t.audio_url;audio.play().catch(()=>{});
-    $('nowTitle').textContent=t.title;$('nowArtist').textContent=t.artist||'FENIX MUSIC';$('nowCover').innerHTML=t.cover_url?`<img src="${esc(t.cover_url)}">`:'♫';syncFull();
-    if(token())api('/api/tracks/'+id+'/play',{method:'POST'}).catch(()=>{})
-  }catch(e){toast(e.message)}
+    await audio.play();
+    $("playBtn").textContent = "Ⅱ";
+    $("fsPlay").textContent = "Ⅱ";
+    saveHistoryLocal(t);
+  }catch(err){
+    console.error(err);
+    toast("Не удалось запустить этот трек");
+  }
 }
-function prevTrack(){if(current>0)playTrack(queue[current-1].id)}
+
+function playByIndex(index){
+  if(index < 0 || !tracks[index])return;
+
+  if(!queue.length){
+    queue = [...tracks];
+    queueIndex = index;
+  }else{
+    const qIndex = queue.findIndex(x=>x.id===tracks[index].id);
+    if(qIndex >= 0) queueIndex = qIndex;
+    else{
+      queue.push(tracks[index]);
+      queueIndex = queue.length-1;
+    }
+  }
+
+  playTrack(queue[queueIndex],queueIndex);
+}
+
+function togglePlay(){
+  if(!currentTrack){
+    startBestMix();
+    return;
+  }
+
+  if(audio.paused){
+    audio.play().then(()=>{
+      $("playBtn").textContent="Ⅱ";
+      $("fsPlay").textContent="Ⅱ";
+    }).catch(()=>toast("Не удалось запустить"));
+  }else{
+    audio.pause();
+    $("playBtn").textContent="▶";
+    $("fsPlay").textContent="▶";
+  }
+}
+
 function nextTrack(){
+  if(!queue.length){
+    startBestMix();
+    return;
+  }
+
+  if(shuffled){
+    queueIndex = Math.floor(Math.random()*queue.length);
+  }else{
+    queueIndex++;
+    if(queueIndex >= queue.length){
+      if(repeatMode === "all") queueIndex=0;
+      else{
+        audio.pause();
+        $("playBtn").textContent="▶";
+        return;
+      }
+    }
+  }
+
+  playTrack(queue[queueIndex],queueIndex);
+}
+
+function prevTrack(){
+  if(audio.currentTime > 4){
+    audio.currentTime=0;
+    return;
+  }
+
   if(!queue.length)return;
-  let n;
-  if(shuffle)n=Math.floor(Math.random()*queue.length);
-  else n=current+1;
-  if(n>=queue.length){toast('Микс закончился — запускаем заново');n=0}
-  playTrack(queue[n].id)
+
+  queueIndex--;
+  if(queueIndex < 0) queueIndex=repeatMode==="all" ? queue.length-1 : 0;
+
+  playTrack(queue[queueIndex],queueIndex);
 }
-function startQueue(rows){if(!rows.length){toast('Нет доступных треков');return}queue=rows.slice();current=0;playTrack(queue[0].id)}
-async function startBestMix(){const rows=await loadAllTracks();startQueue(rows.sort(()=>Math.random()-.5).slice(0,30));toast('Микс дня запущен')}
-async function startPopularMix(){const d=await loadAllTracks();startQueue(d.sort((a,b)=>(b.plays||0)-(a.plays||0)).slice(0,30));toast('Популярный микс запущен')}
-async function startGenreMix(){const d=await loadAllTracks();startQueue(d.sort(()=>Math.random()-.5).slice(0,30));toast('Ночной микс запущен')}
-async function loadMixCatalog(){const d=await loadAllTracks();$('mixCount').textContent=d.length+' треков';renderCatalog('mixCatalog',d)}
-async function likeTrack(id){if(!token()){openOverlay('auth');return}try{const d=await api('/api/tracks/'+id+'/like',{method:'POST'});toast(d.liked?'Добавлено в коллекцию':'Удалено из коллекции')}catch(e){toast(e.message)}}
-async function loadMeta(){
+
+function toggleShuffle(){
+  shuffled=!shuffled;
+  $("shuffleBtn").style.color=shuffled?"#ff1740":"#ddd";
+  toast(shuffled?"Перемешивание включено":"Перемешивание выключено");
+}
+
+function toggleRepeat(){
+  repeatMode = repeatMode==="all" ? "one" : repeatMode==="one" ? "off" : "all";
+  $("repeatBtn").style.color = repeatMode==="off" ? "#ddd" : "#ff1740";
+  $("repeatBtn").textContent = repeatMode==="one" ? "🔂" : "🔁";
+  toast(
+    repeatMode==="one" ? "Повтор трека" :
+    repeatMode==="all" ? "Повтор очереди" :
+    "Повтор выключен"
+  );
+}
+
+audio.addEventListener("loadedmetadata",()=>{
+  $("duration").textContent=formatTime(audio.duration);
+  $("fsDuration").textContent=formatTime(audio.duration);
+});
+
+audio.addEventListener("timeupdate",()=>{
+  if(!audio.duration)return;
+
+  const value=(audio.currentTime/audio.duration)*100;
+
+  $("progress").value=value;
+  $("fsProgress").value=value;
+
+  $("currentTime").textContent=formatTime(audio.currentTime);
+  $("fsCurrent").textContent=formatTime(audio.currentTime);
+});
+
+audio.addEventListener("play",()=>{
+  $("playBtn").textContent="Ⅱ";
+  $("fsPlay").textContent="Ⅱ";
+});
+
+audio.addEventListener("pause",()=>{
+  $("playBtn").textContent="▶";
+  $("fsPlay").textContent="▶";
+});
+
+audio.addEventListener("ended",()=>{
+  if(repeatMode==="one"){
+    audio.currentTime=0;
+    audio.play();
+  }else{
+    nextTrack();
+  }
+});
+
+audio.addEventListener("error",()=>{
+  toast("Ошибка загрузки аудио");
+});
+
+$("progress").addEventListener("input",e=>{
+  if(audio.duration)
+    audio.currentTime=(Number(e.target.value)/100)*audio.duration;
+});
+
+$("fsProgress").addEventListener("input",e=>{
+  if(audio.duration)
+    audio.currentTime=(Number(e.target.value)/100)*audio.duration;
+});
+
+$("volume").addEventListener("input",e=>{
+  audio.volume=Number(e.target.value);
+  localStorage.setItem("fenix_volume",e.target.value);
+});
+
+audio.volume=Number(localStorage.getItem("fenix_volume") || .85);
+
+/* ---------------- QUEUE ---------------- */
+
+function addToQueueById(id){
+  const t=tracks.find(x=>x.id===id);
+  if(!t)return;
+
+  if(!queue.some(x=>x.id===id)){
+    queue.push(t);
+    toast("Добавлено в очередь");
+  }else{
+    toast("Трек уже в очереди");
+  }
+}
+
+function openQueue(){
+  renderQueue();
+  $("queueOverlay").classList.add("open");
+}
+
+function renderQueue(){
+  const el=$("queueContent");
+
+  if(!queue.length){
+    el.innerHTML=`<div class="empty">Очередь пуста.</div>`;
+    return;
+  }
+
+  el.innerHTML=queue.map((t,i)=>`
+    <div class="command-item">
+      <div style="width:45px;height:45px;border-radius:8px;overflow:hidden;background:#211015">
+        ${coverUrl(t)?`<img src="${esc(coverUrl(t))}" style="width:100%;height:100%;object-fit:cover">`:"♫"}
+      </div>
+      <div style="flex:1;min-width:0">
+        <b>${esc(t.title)}</b>
+        <small>${esc(t.artist)}</small>
+      </div>
+      <button class="small-btn" onclick="playTrack(queue[${i}],${i})">▶</button>
+      <button class="small-btn" onclick="removeQueue(${i})">×</button>
+    </div>
+  `).join("");
+}
+
+function removeQueue(i){
+  queue.splice(i,1);
+  if(queueIndex>=queue.length)queueIndex=queue.length-1;
+  renderQueue();
+}
+
+/* ---------------- FLOW ---------------- */
+
+function flowTracks(){
+  const historyIds=JSON.parse(localStorage.getItem("fenix_local_history")||"[]");
+
+  return [...tracks].sort((a,b)=>{
+    const ap=Number(a.plays)||0;
+    const bp=Number(b.plays)||0;
+    const ah=historyIds.includes(a.id)?50:0;
+    const bh=historyIds.includes(b.id)?50:0;
+    return (bp+bh)-(ap+ah);
+  });
+}
+
+function startFlow(){
+  if(!tracks.length){
+    toast("В каталоге пока нет доступной музыки");
+    return;
+  }
+
+  flowMode=true;
+  queue=flowTracks();
+  queueIndex=0;
+  playTrack(queue[0],0);
+  showView("flow");
+  renderFlow();
+}
+
+function renderFlow(){
+  renderCards("flowContent",flowTracks().slice(0,20));
+}
+
+function startBestMix(){
+  if(!tracks.length){
+    toast("Нет доступных треков");
+    return;
+  }
+
+  flowMode=false;
+  queue=flowTracks();
+  queueIndex=0;
+  playTrack(queue[0],0);
+}
+
+function startPopularMix(){
+  const list=[...tracks].sort((a,b)=>(Number(b.plays)||0)-(Number(a.plays)||0));
+
+  if(!list.length){
+    toast("Нет доступных треков");
+    return;
+  }
+
+  queue=list;
+  queueIndex=0;
+  playTrack(queue[0],0);
+}
+
+function startGenreMix(){
+  const list=[...tracks].sort((a,b)=>
+    String(a.genre).localeCompare(String(b.genre))
+  );
+
+  if(!list.length){
+    toast("Нет доступных треков");
+    return;
+  }
+
+  queue=list;
+  queueIndex=0;
+  playTrack(queue[0],0);
+}
+
+/* ---------------- FAVORITES ---------------- */
+
+async function likeTrack(id,button){
+  if(!token()){
+    openAuth();
+    return;
+  }
+
   try{
-    const d=await loadAllTracks();
-    const a=[...new Set(d.map(x=>x.artist).filter(Boolean))],b=[...new Set(d.map(x=>x.album).filter(Boolean))],g=[...new Set(d.map(x=>x.genre).filter(Boolean))];
-    $('artistsList').innerHTML=a.map(x=>`<button class="chip" onclick="searchFor('${esc(x)}')"><b>${esc(x)}</b><small>Исполнитель</small></button>`).join('')||'<div class="empty">Нет исполнителей.</div>';
-    $('albumsList').innerHTML=b.map(x=>`<button class="chip" onclick="searchFor('${esc(x)}')"><b>${esc(x)}</b><small>Альбом</small></button>`).join('')||'<div class="empty">Нет альбомов.</div>';
-    $('genresList').innerHTML=g.map(x=>`<button class="chip" onclick="searchFor('${esc(x)}')"><b>${esc(x)}</b><small>Жанр</small></button>`).join('')||'<div class="empty">Нет жанров.</div>';
-  }catch(e){toast(e.message)}
+    const d=await api(`/api/tracks/${id}/like`,{method:"POST"});
+
+    button.classList.toggle("like-on",!!d.liked);
+    toast(d.liked?"Добавлено в любимое":"Удалено из любимого");
+
+    const t=tracks.find(x=>x.id===id);
+    if(t)t.liked=!!d.liked;
+  }catch(err){
+    toast(err.message);
+  }
 }
-function searchFor(q){$('search').value=q;doSearch(q)}
-let st;$('search').addEventListener('input',e=>{clearTimeout(st);const q=e.target.value.trim();if(!q)return;st=setTimeout(()=>doSearch(q),250)});
-async function doSearch(q){try{const d=await api('/api/search?q='+encodeURIComponent(q));showView('new');renderCatalog('newCatalog',(d||[]).filter(t=>t.audio_url||t.file_available))}catch(e){toast(e.message)}}
-async function renderProfile(){
-  if(!token()){$('profileContent').innerHTML='<div class="empty"><h2>Войдите в FENIX MUSIC</h2><p>Сохраняйте любимые треки и историю.</p><button class="primary" onclick="openOverlay(\'auth\')">Войти</button></div>';return}
+
+async function toggleLikeCurrent(){
+  if(!currentTrack){
+    toast("Сначала запусти трек");
+    return;
+  }
+
+  if(!token()){
+    openAuth();
+    return;
+  }
+
   try{
-    const p=await api('/api/auth/me'),h=await api('/api/history'),f=await api('/api/favorites');
-    $('profileContent').innerHTML=`<div class="profile"><div class="big-avatar">${esc((p.username||'F')[0].toUpperCase())}</div><div><h2>${esc(p.username||'Пользователь')}</h2><p>${esc(p.email||'')}</p><p style="color:#ff4058">${p.is_admin?'⚙ Администратор':'FENIX MUSIC'}</p></div><div class="premium">${p.is_admin?'ADMIN':'FREE'}</div></div>
-    <div class="stats"><div class="stat"><b>${h.length}</b><span>прослушиваний</span></div><div class="stat"><b>${f.length}</b><span>любимых</span></div><div class="stat"><b>${tracks.length}</b><span>доступных треков</span></div><div class="stat"><b>${p.is_admin?'∞':'FREE'}</b><span>уровень</span></div></div>`;
-  }catch(e){toast(e.message)}
+    const d=await api(`/api/tracks/${currentTrack.id}/like`,{method:"POST"});
+    currentTrack.liked=!!d.liked;
+    toast(d.liked?"❤️ Добавлено в любимое":"Удалено из любимого");
+  }catch(err){
+    toast(err.message);
+  }
 }
-async function loadCollection(type){
-  if(!token()){openOverlay('auth');return}
-  try{const d=await api(type==='favorites'?'/api/favorites':'/api/history');showView('collection');$('collectionContent').innerHTML=`<div class="head"><h2>${type==='favorites'?'Любимые треки':'История прослушиваний'}</h2><span>${d.length} записей</span></div><div id="collectionCatalog" class="cards"></div>`;renderCatalog('collectionCatalog',d||[])}catch(e){toast(e.message)}
+
+async function loadFavorites(){
+  if(!token()){
+    $("collectionContent").className="empty";
+    $("collectionContent").innerHTML=`<h2>Войди в FENIX MUSIC</h2><button class="primary" onclick="openAuth()">Войти</button>`;
+    return;
+  }
+
+  try{
+    const d=await api("/api/favorites");
+    renderCards("collectionContent",d||[]);
+  }catch(err){
+    toast(err.message);
+  }
 }
+
+/* ---------------- HISTORY ---------------- */
+
+function saveHistoryLocal(t){
+  let ids=JSON.parse(localStorage.getItem("fenix_local_history")||"[]");
+  ids=ids.filter(x=>x!==t.id);
+  ids.unshift(t.id);
+  ids=ids.slice(0,100);
+  localStorage.setItem("fenix_local_history",JSON.stringify(ids));
+
+  if(token()){
+    api("/api/history",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        track_id:t.id,
+        position:Math.floor(audio.currentTime||0)
+      })
+    }).catch(()=>{});
+  }
+}
+
+async function loadHistory(){
+  if(!token()){
+    const ids=JSON.parse(localStorage.getItem("fenix_local_history")||"[]");
+    const list=ids.map(id=>tracks.find(t=>t.id===id)).filter(Boolean);
+    renderCards("historyContent",list);
+    return;
+  }
+
+  try{
+    const d=await api("/api/history");
+    renderCards("historyContent",d||[]);
+  }catch{
+    const ids=JSON.parse(localStorage.getItem("fenix_local_history")||"[]");
+    renderCards("historyContent",ids.map(id=>tracks.find(t=>t.id===id)).filter(Boolean));
+  }
+}
+
+/* ---------------- RADIO ---------------- */
+
+async function loadRadio(){
+  try{
+    const d=await api("/api/radio");
+    radioStations=Array.isArray(d)?d:[];
+  }catch{
+    radioStations=[];
+  }
+
+  renderRadio();
+}
+
+function radioCard(r){
+  return `
+    <div class="radio-card">
+      <div class="radio-cover">
+        ${r.cover?`<img src="${esc(r.cover)}" onerror="this.style.display='none'">`:"📻"}
+      </div>
+      <div class="radio-info">
+        <b>${esc(r.name)}</b>
+        <span>${esc(r.description||"Радиостанция")}</span>
+      </div>
+      <button class="primary" onclick='playRadio(${JSON.stringify(r)})'>▶</button>
+    </div>`;
+}
+
+function renderRadio(){
+  const html=radioStations.length
+    ?radioStations.map(r=>radioCard(r)).join("")
+    :`<div class="empty">Радиостанции пока недоступны.</div>`;
+
+  $("radioContent").innerHTML=html;
+  $("homeRadio").innerHTML=html;
+}
+
+function playRadio(r){
+  const stream=r.stream||r.stream_url;
+
+  if(!stream){
+    toast("У станции нет потока");
+    return;
+  }
+
+  currentTrack={
+    id:"radio-"+r.id,
+    title:r.name,
+    artist:"FENIX RADIO",
+    cover_url:r.cover,
+    audio_url:stream
+  };
+
+  queue=[];
+  setCurrent(currentTrack);
+
+  audio.src=stream;
+  audio.play().then(()=>{
+    $("playBtn").textContent="Ⅱ";
+    $("fsPlay").textContent="Ⅱ";
+  }).catch(()=>toast("Радиостанция не запустилась"));
+}
+
+/* ---------------- META ---------------- */
+
+function unique(field){
+  return [...new Set(tracks.map(t=>t[field]).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b)));
+}
+
+function renderMeta(){
+  const artists=unique("artist");
+  const albums=unique("album");
+  const genres=unique("genre");
+
+  $("artistsContent").innerHTML=artists.length
+    ?artists.map(x=>`<button class="chip" onclick="searchFor(${JSON.stringify(x)})">🎤 ${esc(x)}</button>`).join("")
+    :`<div class="empty">Нет исполнителей.</div>`;
+
+  $("albumsContent").innerHTML=albums.length
+    ?albums.map(x=>`<button class="chip" onclick="searchFor(${JSON.stringify(x)})">💿 ${esc(x)}</button>`).join("")
+    :`<div class="empty">Нет альбомов.</div>`;
+
+  $("genresContent").innerHTML=genres.length
+    ?genres.map(x=>`<button class="chip" onclick="searchFor(${JSON.stringify(x)})">◈ ${esc(x)}</button>`).join("")
+    :`<div class="empty">Нет жанров.</div>`;
+}
+
+function searchFor(q){
+  $("globalSearch").value=q;
+  doSearch(q);
+}
+
+async function doSearch(q){
+  q=String(q||"").trim();
+
+  showView("searchPage");
+
+  if(!q){
+    $("searchContent").innerHTML=`<div class="empty">Начни вводить название, артиста или альбом.</div>`;
+    return;
+  }
+
+  try{
+    const d=await api("/api/search?q="+encodeURIComponent(q));
+    $("searchContent").innerHTML=`
+      <div class="page-head">
+        <div><h2>Результаты</h2><p>${esc(q)}</p></div>
+      </div>
+      <div id="searchCards"></div>`;
+    renderCards("searchCards",d||[]);
+  }catch(err){
+    const d=tracks.filter(t=>
+      `${t.title} ${t.artist} ${t.album} ${t.genre}`
+      .toLowerCase()
+      .includes(q.toLowerCase())
+    );
+
+    $("searchContent").innerHTML=`
+      <div class="page-head"><div><h2>Результаты</h2></div></div>
+      <div id="searchCards"></div>`;
+
+    renderCards("searchCards",d);
+  }
+}
+
+let searchTimer;
+
+$("globalSearch").addEventListener("input",e=>{
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(()=>doSearch(e.target.value),250);
+});
+
+$("globalSearch").addEventListener("focus",()=>{
+  if(window.innerWidth<800)showView("searchPage");
+});
+
+/* ---------------- PLAYLISTS ---------------- */
+
 async function loadPlaylists(){
-  if(!token()){openOverlay('auth');return}
-  try{const d=await api('/api/playlists');showView('collection');$('collectionContent').innerHTML=d?.length?`<div class="chips">${d.map(p=>`<div class="chip"><b>${esc(p.name)}</b><small>${p.tracks?.length||0} треков</small></div>`).join('')}</div>`:'<div class="empty">Плейлистов пока нет.</div>'}catch(e){toast(e.message)}
+  if(!token()){
+    $("playlistsContent").innerHTML=`<div class="empty"><h2>Войди в аккаунт</h2><button class="primary" onclick="openAuth()">Войти</button></div>`;
+    return;
+  }
+
+  try{
+    const d=await api("/api/playlists");
+
+    if(!d?.length){
+      $("playlistsContent").innerHTML=`<div class="empty"><h2>Плейлистов пока нет</h2><p>Создай первый плейлист.</p><button class="primary" onclick="createPlaylist()">Создать</button></div>`;
+      return;
+    }
+
+    $("playlistsContent").innerHTML=`
+      <div class="tiles">
+        ${d.map(p=>`
+          <div class="tile" onclick="openPlaylist(${p.id})">
+            <div class="tile-icon">📋</div>
+            <b>${esc(p.name)}</b>
+            <p>${p.tracks?.length||0} треков</p>
+          </div>
+        `).join("")}
+      </div>`;
+  }catch(err){
+    toast(err.message);
+  }
 }
-async function loadAdmin(){
-  if(!getUser()?.is_admin){openOverlay('auth');return}
-  try{const d=await api('/api/tracks'),rows=(d||[]).filter(x=>x.audio_url||x.file_available);$('adminStats').textContent=rows.length+' доступных треков';renderCatalog('adminCatalog',rows)}catch(e){toast(e.message)}
+
+async function createPlaylist(){
+  if(!token()){
+    openAuth();
+    return;
+  }
+
+  const name=prompt("Название плейлиста:");
+
+  if(!name?.trim())return;
+
+  const fd=new FormData();
+  fd.append("name",name.trim());
+
+  try{
+    await api("/api/playlists",{
+      method:"POST",
+      body:fd
+    });
+
+    toast("Плейлист создан");
+    loadPlaylists();
+  }catch(err){
+    toast(err.message);
+  }
 }
-$('uploadForm').addEventListener('submit',async e=>{
-  e.preventDefault();if(!getUser()?.is_admin){openOverlay('auth');return}
-  const fd=new FormData(e.target);
-  try{const r=await fetch(API+'/api/admin/tracks/upload?token='+encodeURIComponent(token()),{method:'POST',headers:{Authorization:'Bearer '+token()},body:fd});let d=null;try{d=await r.json()}catch{}if(!r.ok)throw Error(d?.detail||'Ошибка загрузки');e.target.reset();toast('Трек добавлен в FENIX MUSIC');await loadAdmin();await loadAllTracks()}catch(err){toast(err.message)}
-});
-function updateAuth(){$('authTitle').textContent=authMode==='login'?'Вход':'Регистрация';$('username').style.display=authMode==='register'?'block':'none';$('username').required=authMode==='register';$('loginTab').classList.toggle('active',authMode==='login');$('regTab').classList.toggle('active',authMode==='register')}
-$('authForm').addEventListener('submit',async e=>{
+
+async function openPlaylist(id){
+  try{
+    const list=await api("/api/playlists");
+
+    const p=list.find(x=>x.id===id);
+
+    if(!p)return;
+
+    $("playlistsContent").innerHTML=`
+      <div class="page-head">
+        <div>
+          <h2>${esc(p.name)}</h2>
+          <p>${p.tracks?.length||0} треков</p>
+        </div>
+        <button class="primary" onclick='playPlaylist(${JSON.stringify(p.tracks||[])})'>▶ Слушать всё</button>
+      </div>
+      <div id="playlistTracks"></div>`;
+
+    renderCards("playlistTracks",p.tracks||[]);
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+function playPlaylist(list){
+  if(!list.length){
+    toast("Плейлист пуст");
+    return;
+  }
+
+  queue=list.filter(t=>trackUrl(t));
+  queueIndex=0;
+  playTrack(queue[0],0);
+}
+
+/* ---------------- PROFILE ---------------- */
+
+async function renderProfile(){
+  const u=user();
+
+  if(!u){
+    $("profileContent").innerHTML=`
+      <div class="empty">
+        <h2>Добро пожаловать в FENIX MUSIC</h2>
+        <p>Войди или создай аккаунт.</p>
+        <button class="primary" onclick="openAuth()">Войти</button>
+      </div>`;
+    return;
+  }
+
+  let history=[];
+  let favorites=[];
+
+  try{
+    history=await api("/api/history");
+  }catch{}
+
+  try{
+    favorites=await api("/api/favorites");
+  }catch{}
+
+  const name=u.username||u.email?.split("@")[0]||"FENIX";
+
+  $("profileContent").innerHTML=`
+    <div class="profile-box">
+      <div class="profile-avatar">${esc(name[0]?.toUpperCase()||"F")}</div>
+      <div>
+        <h1>${esc(name)}</h1>
+        <p>${esc(u.email||"")}</p>
+        <p style="color:#ff3557;font-weight:800">${u.is_admin?"⚙ ADMIN":"FENIX MUSIC · FREE"}</p>
+        <button class="secondary" onclick="logout()">Выйти</button>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><b>${history.length}</b><span>прослушиваний</span></div>
+      <div class="stat"><b>${favorites.length}</b><span>любимых треков</span></div>
+      <div class="stat"><b>${u.is_admin?"ADMIN":"FREE"}</b><span>уровень</span></div>
+      <div class="stat"><b>FENIX</b><span>аккаунт</span></div>
+    </div>`;
+}
+
+/* ---------------- STATS / WRAPPED ---------------- */
+
+async function renderStats(){
+  let history=[];
+
+  if(token()){
+    try{history=await api("/api/history")}catch{}
+  }
+
+  const localIds=JSON.parse(localStorage.getItem("fenix_local_history")||"[]");
+
+  const count=Math.max(history.length,localIds.length);
+  const artists=new Set(history.map(x=>x.artist).filter(Boolean));
+  const albums=new Set(history.map(x=>x.album).filter(Boolean));
+
+  $("statsContent").innerHTML=`
+    <div class="stats">
+      <div class="stat"><b>${count}</b><span>прослушиваний</span></div>
+      <div class="stat"><b>${artists.size}</b><span>артистов</span></div>
+      <div class="stat"><b>${albums.size}</b><span>альбомов</span></div>
+      <div class="stat"><b>${tracks.length}</b><span>доступных треков</span></div>
+    </div>
+
+    <div class="section panel">
+      <h3>🔥 Топ артистов</h3>
+      ${
+        history.length
+        ?[...history.reduce((m,t)=>{
+            m.set(t.artist,(m.get(t.artist)||0)+1);
+            return m;
+          },new Map())]
+          .sort((a,b)=>b[1]-a[1])
+          .slice(0,10)
+          .map((x,i)=>`<div class="command-item"><b>#${i+1}</b><span style="flex:1">${esc(x[0])}</span><small>${x[1]} прослуш.</small></div>`)
+          .join("")
+        :`<div class="empty">Статистика появится после прослушивания.</div>`
+      }
+    </div>`;
+}
+
+async function renderWrapped(){
+  let history=[];
+
+  if(token()){
+    try{history=await api("/api/history")}catch{}
+  }
+
+  const localIds=JSON.parse(localStorage.getItem("fenix_local_history")||"[]");
+
+  $("wrappedContent").innerHTML=`
+    <div class="hero">
+      <div class="hero-content">
+        <div class="eyebrow">FENIX WRAPPED</div>
+        <h1 style="font-size:44px">Твой музыкальный год.</h1>
+        <p>Твои главные цифры и музыкальные привычки.</p>
+        <div class="stats">
+          <div class="stat"><b>${history.length||localIds.length}</b><span>треков</span></div>
+          <div class="stat"><b>${new Set(history.map(x=>x.artist)).size||0}</b><span>артистов</span></div>
+          <div class="stat"><b>${new Set(history.map(x=>x.album)).size||0}</b><span>альбомов</span></div>
+          <div class="stat"><b>FENIX</b><span>music</span></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ---------------- AUTH ---------------- */
+
+function openAuth(){
+  $("authOverlay").classList.add("open");
+}
+
+function closeOverlay(id){
+  $(id)?.classList.remove("open");
+}
+
+function setAuthMode(mode){
+  authMode=mode;
+
+  $("authTitle").textContent=mode==="login"?"Вход":"Регистрация";
+  $("loginTab").classList.toggle("active",mode==="login");
+  $("regTab").classList.toggle("active",mode==="register");
+  $("usernameField").classList.toggle("hidden",mode!=="register");
+  $("username").required=mode==="register";
+}
+
+$("authForm").addEventListener("submit",async e=>{
   e.preventDefault();
-  try{const body=new FormData();
-    body.append('email',$('email').value.trim());
-    body.append('password',$('password').value);
-    if(authMode==='register')body.append('username',$('username').value.trim());
-    const d=await api('/api/auth/'+authMode,{method:'POST',body});
-    localStorage.setItem('fenix_token',d.token);localStorage.setItem('fenix_user',JSON.stringify(d.user));updateUser();closeOverlay('auth');toast('Добро пожаловать в FENIX MUSIC');showView('profile')
-  }catch(e){toast(e.message)}
+
+  const fd=new FormData();
+
+  fd.append("email",$("email").value.trim());
+  fd.append("password",$("password").value);
+
+  if(authMode==="register"){
+    fd.append("username",$("username").value.trim());
+  }
+
+  try{
+    const d=await api("/api/auth/"+authMode,{
+      method:"POST",
+      body:fd
+    });
+
+    localStorage.setItem("fenix_token",d.token);
+    localStorage.setItem("fenix_user",JSON.stringify(d.user));
+
+    closeOverlay("authOverlay");
+    updateUser();
+    toast("Добро пожаловать в FENIX MUSIC");
+    showView("profile");
+  }catch(err){
+    toast(err.message);
+  }
 });
-function toggleCompact(){document.body.classList.toggle('compact');toast('Режим изменён')}
+
+function updateUser(){
+  const u=user();
+
+  $("topLogin").textContent=u ? (u.username||"Профиль") : "Войти";
+
+  $("adminNav").classList.toggle("hidden",!u?.is_admin);
+
+  $("sideUser").innerHTML=u
+    ?`
+      <div class="user-mini-row">
+        <div class="avatar">${esc((u.username||"F")[0].toUpperCase())}</div>
+        <div>
+          <b>${esc(u.username||u.email||"FENIX")}</b>
+          <span>${u.is_admin?"Администратор":"FREE"}</span>
+        </div>
+      </div>`
+    :`
+      <button class="secondary" style="width:100%" onclick="openAuth()">Войти</button>`;
+}
+
+function logout(){
+  localStorage.removeItem("fenix_token");
+  localStorage.removeItem("fenix_user");
+  updateUser();
+  showView("home");
+  toast("Вы вышли из аккаунта");
+}
+
+async function telegramLogin(){
+  try{
+    const d=await api("/api/auth/telegram/start",{
+      method:"POST"
+    });
+
+    if(d.url){
+      window.open(d.url,"_blank");
+      toast("Подтверди вход в Telegram");
+    }else{
+      toast("Telegram авторизация не настроена");
+    }
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+/* ---------------- ADMIN ---------------- */
+
+async function loadAdmin(){
+  const u=user();
+
+  if(!u?.is_admin){
+    openAuth();
+    return;
+  }
+
+  try{
+    const d=await api("/api/tracks");
+    const list=(d||[]).filter(t=>trackUrl(t));
+
+    $("adminTrackCount").textContent=list.length;
+    $("adminUserName").textContent=u.username||"ADMIN";
+
+    renderCards("adminCatalog",list);
+  }catch(err){
+    toast(err.message);
+  }
+}
+
+$("uploadForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+
+  if(!user()?.is_admin){
+    openAuth();
+    return;
+  }
+
+  const fd=new FormData(e.target);
+
+  try{
+    const d=await api("/api/admin/tracks/upload",{
+      method:"POST",
+      body:fd
+    });
+
+    e.target.reset();
+
+    toast("🎵 Трек добавлен");
+
+    await loadAllTracks();
+    await loadAdmin();
+  }catch(err){
+    toast(err.message);
+  }
+});
+
+/* ---------------- COMMAND SEARCH ---------------- */
+
+function openCommand(){
+  $("command").classList.add("open");
+  $("commandInput").value="";
+  renderCommand("");
+  setTimeout(()=>$("commandInput").focus(),30);
+}
+
+function closeCommand(){
+  $("command").classList.remove("open");
+}
+
+function renderCommand(q){
+  q=q.toLowerCase();
+
+  const list=tracks.filter(t=>
+    !q ||
+    `${t.title} ${t.artist} ${t.album} ${t.genre}`.toLowerCase().includes(q)
+  ).slice(0,12);
+
+  $("commandResults").innerHTML=list.length
+    ?list.map(t=>`
+      <div class="command-item" onclick="closeCommand();playTrackById(${t.id})">
+        <div style="width:45px;height:45px;background:#211015;border-radius:8px;overflow:hidden">
+          ${coverUrl(t)?`<img src="${esc(coverUrl(t))}" style="width:100%;height:100%;object-fit:cover">`:"♫"}
+        </div>
+        <div style="flex:1">
+          <b>${esc(t.title)}</b>
+          <small>${esc(t.artist)}${t.album?" · "+esc(t.album):""}</small>
+        </div>
+        <span>▶</span>
+      </div>
+    `).join("")
+    :`<div class="empty">Ничего не найдено.</div>`;
+}
+
+$("commandInput").addEventListener("input",e=>renderCommand(e.target.value));
+
+$("command").addEventListener("click",e=>{
+  if(e.target === $("command"))closeCommand();
+});
+
+document.addEventListener("keydown",e=>{
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==="k"){
+    e.preventDefault();
+    openCommand();
+  }
+
+  if(e.key==="Escape"){
+    closeCommand();
+    closeFullscreen();
+  }
+
+  if(e.code==="Space" && !["INPUT","TEXTAREA"].includes(document.activeElement.tagName)){
+    e.preventDefault();
+    togglePlay();
+  }
+
+  if(e.key==="ArrowRight" && e.ctrlKey)nextTrack();
+  if(e.key==="ArrowLeft" && e.ctrlKey)prevTrack();
+});
+
+function playTrackById(id){
+  const t=tracks.find(x=>x.id===id);
+  if(!t)return;
+
+  queue=flowTracks();
+  queueIndex=queue.findIndex(x=>x.id===id);
+
+  if(queueIndex<0){
+    queue=[t];
+    queueIndex=0;
+  }
+
+  playTrack(queue[queueIndex],queueIndex);
+}
+
+/* ---------------- FULLSCREEN ---------------- */
+
+function openFullscreen(){
+  $("fullscreenPlayer").classList.add("open");
+}
+
+function closeFullscreen(){
+  $("fullscreenPlayer").classList.remove("open");
+}
+
+/* ---------------- HOME ---------------- */
+
+async function loadHome(){
+  renderRadio();
+}
+
+/* ---------------- STARTUP ---------------- */
+
+window.addEventListener("error",e=>{
+  console.error("FENIX JS ERROR:",e.error||e.message);
+});
+
+window.addEventListener("unhandledrejection",e=>{
+  console.error("FENIX PROMISE ERROR:",e.reason);
+});
+
 updateUser();
-loadRadio().catch(()=>toast('Не удалось загрузить радио'));
-loadAllTracks().catch(()=>toast('Не удалось загрузить каталог'));
-window.addEventListener('error',e=>{if(e?.message) console.error('FENIX MUSIC:',e.message)});
-window.addEventListener('unhandledrejection',e=>{console.error('FENIX MUSIC:',e.reason)});
+setAuthMode("login");
+loadAllTracks();
+loadRadio();
+loadHome();
+
 </script>
 </body>
 </html>
