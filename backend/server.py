@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
     StreamingResponse,
+    Response,
 )
 from fastapi.staticfiles import StaticFiles
 
@@ -541,6 +542,11 @@ def startup():
 # ============================================================
 # HEALTH
 # ============================================================
+
+@app.head("/", include_in_schema=False)
+def head_root():
+    return Response(status_code=200)
+
 
 @app.get("/health")
 def health():
@@ -1349,6 +1355,11 @@ async def admin_upload_track(
 # ============================================================
 # COVERS
 # ============================================================
+
+@app.get("/api/media/covers/{filename}")
+def get_media_cover(filename: str):
+    return get_cover(filename)
+
 
 @app.get("/api/covers/{filename}")
 def get_cover(
