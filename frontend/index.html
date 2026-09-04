@@ -334,7 +334,7 @@ function searchFor(q){$('search').value=q;doSearch(q)}
 let st;$('search').addEventListener('input',e=>{clearTimeout(st);const q=e.target.value.trim();if(!q)return;st=setTimeout(()=>doSearch(q),250)});
 async function doSearch(q){try{const d=await api('/api/search?q='+encodeURIComponent(q));showView('new');renderCatalog('newCatalog',(d||[]).filter(t=>t.audio_url||t.file_available))}catch(e){toast(e.message)}}
 async function renderProfile(){
-  if(!token()){$('profileContent').innerHTML='<div class="empty"><h2>Войдите в FENIX MUSIC</h2><p>Сохраняйте любимые треки и историю.</p><button class="primary" onclick="openOverlay('auth')">Войти</button></div>';return}
+  if(!token()){$('profileContent').innerHTML='<div class="empty"><h2>Войдите в FENIX MUSIC</h2><p>Сохраняйте любимые треки и историю.</p><button class="primary" onclick="openOverlay(\'auth\')">Войти</button></div>';return}
   try{
     const p=await api('/api/auth/me'),h=await api('/api/history'),f=await api('/api/favorites');
     $('profileContent').innerHTML=`<div class="profile"><div class="big-avatar">${esc((p.username||'F')[0].toUpperCase())}</div><div><h2>${esc(p.username||'Пользователь')}</h2><p>${esc(p.email||'')}</p><p style="color:#ff4058">${p.is_admin?'⚙ Администратор':'FENIX MUSIC'}</p></div><div class="premium">${p.is_admin?'ADMIN':'FREE'}</div></div>
