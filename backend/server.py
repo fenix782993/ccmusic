@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Request, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -70,14 +70,15 @@ def resolve_path(value: str | None):
             pass
     return None
 
-def current_user(request: Request, db: Session):
+def current_user(request: Request, db: Session, token: str | None = None):
     auth = request.headers.get("Authorization", "")
-    token = auth[7:] if auth.lower().startswith("bearer ") else request.cookies.get("fenix_token")
+    bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    token = token or bearer or request.cookies.get("fenix_token")
     uid = read_token(token) if token else None
     return db.get(User, uid) if uid else None
 
-def require_user(request: Request, db: Session):
-    user = current_user(request, db)
+def require_user(request: Request, db: Session, token: str | None = None):
+    user = current_user(request, db, token)
     if not user:
         raise HTTPException(401, "Требуется авторизация")
     return user
@@ -319,19 +320,54 @@ def cover(filename:str):
     return FileResponse(p)
 
 @app.post("/api/admin/tracks/upload")
-async def upload_track(request:Request, file:UploadFile=File(...), title:str="", artist:str="Unknown Artist", album:str="Single", genre:str="Pop", db:Session=Depends(get_db)):
-    u=require_user(request,db)
-    if not u.is_admin: raise HTTPException(403,"Admin only")
-    ext=Path(file.filename or "").suffix.lower()
-    if ext not in AUDIO_EXTS: raise HTTPException(400,"Неподдерживаемый аудиоформат")
-    name=f"{secrets.token_hex(12)}{ext}"
-    dest=AUDIO_DIR/name
-    with dest.open("wb") as out:
-        while chunk:=await file.read(1024*1024):
-            out.write(chunk)
-    t=Track(title=title or Path(file.filename).stem,artist=artist,album=album,genre=genre,audio_path=dest.resolve().relative_to(PROJECT_DIR.resolve()).as_posix())
-    db.add(t); db.commit(); db.refresh(t)
-    return track_json(t)
+async def upload_track(
+    request: Request,
+    title: str = Form(""), artist: str = Form(""), album: str = Form(""), genre: str = Form(""),
+    audio: UploadFile | None = File(None), file: UploadFile | None = File(None), cover: UploadFile | None = File(None),
+    token: str | None = Query(None), db: Session = Depends(get_db)
+):
+    u = require_user(request, db, token)
+    if not u.is_admin: raise HTTPException(403, "Admin only")
+    audio = audio or file
+    title, artist = title.strip(), artist.strip()
+    if not title: raise HTTPException(422, "Название трека обязательно")
+    if not artist: raise HTTPException(422, "Исполнитель обязателен")
+    if not audio or not audio.filename: raise HTTPException(422, "Аудиофайл не выбран")
+    ext = Path(audio.filename).suffix.lower()
+    if ext not in AUDIO_EXTS: raise HTTPException(400, "Неподдерживаемый аудиоформат")
+    dest = AUDIO_DIR / f"{secrets.token_hex(12)}{ext}"
+    cover_path = None
+    try:
+        with dest.open("wb") as out:
+            while True:
+                chunk = await audio.read(1024*1024)
+                if not chunk: break
+                out.write(chunk)
+        if dest.stat().st_size == 0: raise HTTPException(400, "Аудиофайл пустой")
+        cover_url = None
+        if cover and cover.filename:
+            cext = Path(cover.filename).suffix.lower()
+            if cext not in {".jpg",".jpeg",".png",".webp",".gif"}: raise HTTPException(400, "Неподдерживаемый формат обложки")
+            cover_path = COVER_DIR / f"{secrets.token_hex(16)}{cext}"
+            with cover_path.open("wb") as out:
+                while True:
+                    chunk = await cover.read(1024*1024)
+                    if not chunk: break
+                    out.write(chunk)
+            cover_url = f"/api/covers/{cover_path.name}"
+        rel = dest.resolve().relative_to(PROJECT_DIR.resolve()).as_posix()
+        t = Track(title=title[:255], artist=artist[:255], album=(album or "").strip()[:255], genre=(genre or "").strip()[:120], audio_path=rel)
+        if hasattr(t, "cover_url"): t.cover_url = cover_url
+        db.add(t); db.commit(); db.refresh(t)
+        return track_json(t)
+    except HTTPException:
+        db.rollback(); dest.unlink(missing_ok=True)
+        if cover_path: cover_path.unlink(missing_ok=True)
+        raise
+    except Exception as exc:
+        db.rollback(); dest.unlink(missing_ok=True)
+        if cover_path: cover_path.unlink(missing_ok=True)
+        raise HTTPException(500, f"Не удалось сохранить трек: {exc}")
 
 @app.post("/api/admin/tracks/{track_id}/cover")
 async def upload_cover(track_id:int, request:Request, file:UploadFile=File(...), db:Session=Depends(get_db)):
@@ -382,7 +418,8 @@ if DIST.exists():
 def spa(full_path:str):
     if full_path.startswith("api/"):
         raise HTTPException(404,"Not found")
-    index=DIST/"index.html"
-    if index.exists():
-        return FileResponse(index)
-    return HTMLResponse("<h1>FENIX MUSIC</h1><p>Frontend build not found.</p>")
+    built=DIST/"index.html"
+    source=PROJECT_DIR/"frontend"/"index.html"
+    if built.exists(): return FileResponse(built)
+    if source.exists(): return FileResponse(source)
+    return HTMLResponse("<h1>FENIX MUSIC</h1><p>Frontend not found.</p>")

@@ -1,55 +1,19 @@
-# FENIX MUSIC V5 — PC + Mobile
+# FENIX MUSIC 12.0 FULL
 
-Полный single-service проект: FastAPI + PostgreSQL + один `frontend/index.html`.
+Single-service FENIX MUSIC: FastAPI + PostgreSQL/SQLite + one-file frontend.
 
-## Дизайн
+## Music folders
+- `backend/media/music/` — manual music files
+- `backend/media/audio/` — files uploaded through admin panel
+- `backend/media/covers/` — uploaded covers
 
-Интерфейс сделан в стиле референса: тёмный premium UI, оранжевый FENIX, адаптивный iPhone/Android/PC layout, нижний плеер, полноэкранный плеер, поиск, коллекция, профиль, админка и радио.
-
-## Музыка
-
-Никаких выдуманных треков в интерфейсе нет.
-
-Для постоянной музыки проекта используйте:
-
-`backend/media/music/`
-
-Пример:
-
-`The Weeknd - Blinding Lights.mp3`
-
-При старте сервер сканирует `audio`, `music` и `uploads` и добавляет новые файлы в БД.
-
-Также администратор может загружать музыку через UI.
+Filename for manual import: `Artist - Title.mp3`.
 
 ## Render
+Build: `pip install -r requirements.txt`
+Start: `PYTHONPATH=/opt/render/project/src python -m backend.run_all`
+Health: `/health`
 
-Build:
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in Render. Database is PostgreSQL from `render.yaml`.
 
-`pip install -r requirements.txt`
-
-Start:
-
-`python -m backend.run_all`
-
-## Админ
-
-Render Environment:
-
-- `ADMIN_EMAIL`
-- `ADMIN_PASSWORD`
-- `ADMIN_USERNAME`
-
-Если `FenixAdmin` уже существует в PostgreSQL, сервер использует существующего пользователя вместо создания дубля. Это исправляет `duplicate key value violates unique constraint idx_users_username_lower`.
-
-## Telegram
-
-Настройте `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `PUBLIC_URL`.
-
-## Frontend
-
-Вся UI-часть находится в одном файле:
-
-`frontend/index.html`
-
-React и `lucide-react` не требуются.
+For persistence of uploaded media across redeploys, use a Render Persistent Disk and point `MEDIA_DIR` to its mount path.
