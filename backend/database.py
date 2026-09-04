@@ -9,7 +9,7 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
-Path(os.getenv("MEDIA_DIR", str(BASE_DIR / "media"))).mkdir(parents=True, exist_ok=True)
+Path(os.getenv("MEDIA_DIR", str(PROJECT_DIR / "media"))).mkdir(parents=True, exist_ok=True)
 Path(PROJECT_DIR / "data").mkdir(parents=True, exist_ok=True)
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{PROJECT_DIR / 'data' / 'fenix.db'}")
