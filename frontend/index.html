@@ -699,6 +699,21 @@ img{max-width:100%;display:block}
   .mix-grid{grid-template-columns:1fr}
   .hero-buttons button{width:100%}
 }
+
+/* ===== FENIX MUSIC FULL EXTENSIONS ===== */
+.full-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.full-card{background:linear-gradient(145deg,#171011,#0f0a0b);border:1px solid var(--line);border-radius:18px;padding:16px;transition:.2s}
+.full-card:hover{transform:translateY(-3px);border-color:#63202c;box-shadow:0 15px 40px rgba(0,0,0,.28)}
+.full-card h3{margin:10px 0 5px}.full-card p{color:var(--muted);margin:0;line-height:1.5}
+.full-cover{width:100%;aspect-ratio:1;border-radius:14px;object-fit:cover;background:#211015;display:grid;place-items:center;font-size:34px}
+.pill{display:inline-flex;padding:7px 11px;border-radius:999px;background:#241116;border:1px solid #4a202b;color:#ff7a91;margin:4px;font-size:12px}
+.action-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.danger-btn{background:#3a0d18!important;color:#ff6680!important;border:1px solid #701b2e!important}
+.feature-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.feature{padding:20px;border:1px solid var(--line);border-radius:20px;background:radial-gradient(circle at top right,rgba(255,23,64,.13),transparent 45%),var(--panel)}
+.progress-big{height:8px;width:100%;background:#28151a;border-radius:99px;overflow:hidden}.progress-big i{display:block;height:100%;background:linear-gradient(90deg,var(--red),var(--red2));width:45%}
+.lyrics-box{white-space:pre-wrap;line-height:2;font-size:16px;color:#e9dfe1;max-height:55vh;overflow:auto;padding:18px;border-radius:16px;background:#0d090a;border:1px solid var(--line)}
+.eq{display:flex;align-items:end;gap:7px;height:110px;padding:15px;background:#0d090a;border-radius:16px}.eq i{width:9px;background:var(--red);border-radius:5px 5px 0 0;animation:eq 1s ease-in-out infinite alternate}.eq i:nth-child(2n){animation-delay:.15s}.eq i:nth-child(3n){animation-delay:.3s}@keyframes eq{from{height:18px}to{height:90px}}
+.dropzone{border:1px dashed #6d2635;border-radius:18px;padding:28px;text-align:center;background:#130b0e}.dropzone.drag{border-color:var(--red);background:#1d0c11}
+@media(max-width:800px){.full-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.feature-grid{grid-template-columns:1fr}}
 </style>
 </head>
 
@@ -737,6 +752,11 @@ img{max-width:100%;display:block}
     <button data-view="wrapped"><span class="nav-icon">🏆</span>FENIX Wrapped</button>
     <button data-view="premium"><span class="nav-icon">💎</span>Premium</button>
     <button data-view="profile"><span class="nav-icon">👤</span>Профиль</button>
+    <button data-view="ai"><span class="nav-icon">✨</span>FENIX AI</button>
+    <button data-view="achievements"><span class="nav-icon">🏆</span>Достижения</button>
+    <button data-view="social"><span class="nav-icon">👥</span>Друзья</button>
+    <button data-view="artistStudio"><span class="nav-icon">🎤</span>FENIX for Artists</button>
+    <button data-view="settings"><span class="nav-icon">⚙</span>Настройки</button>
     <button id="adminNav" data-view="admin" class="hidden"><span class="nav-icon">⚙</span>Админка</button>
   </nav>
 
@@ -926,6 +946,29 @@ img{max-width:100%;display:block}
 </section>
 
 <!-- PROFILE -->
+
+<section class="page" id="view-ai">
+  <div class="page-head"><div><div class="eyebrow">FENIX AI</div><h1>Твоя музыка. Твои правила.</h1><p>Опиши настроение или цель — FENIX подберёт музыку из каталога.</p></div></div>
+  <div class="panel" style="padding:20px"><div class="field"><label>Запрос</label><textarea id="aiPrompt" rows="4" placeholder="Например: ночная поездка, энергия, без грустных песен"></textarea></div><button class="primary" onclick="runFenixAI()">✨ Создать микс</button></div>
+  <div id="aiResult" style="margin-top:18px"></div>
+</section>
+<section class="page" id="view-achievements">
+  <div class="page-head"><div><div class="eyebrow">ACHIEVEMENTS</div><h1>Твои достижения</h1><p>Слушай музыку, набирай XP и открывай новые уровни.</p></div></div><div id="achievementsContent" class="full-grid"></div>
+</section>
+<section class="page" id="view-social">
+  <div class="page-head"><div><div class="eyebrow">SOCIAL</div><h1>Друзья</h1><p>Музыка, которую слушают твои люди.</p></div></div><div id="socialContent" class="full-grid"></div>
+</section>
+<section class="page" id="view-artistStudio">
+  <div class="page-head"><div><div class="eyebrow">FENIX FOR ARTISTS</div><h1>Кабинет исполнителя</h1><p>Релизы, слушатели и статистика каталога.</p></div></div><div id="artistStudioContent"></div>
+</section>
+<section class="page" id="view-settings">
+  <div class="page-head"><div><div class="eyebrow">SETTINGS</div><h1>Настройки</h1><p>Настрой FENIX MUSIC под себя.</p></div></div>
+  <div class="feature-grid">
+    <div class="feature"><h3>🎚 Эквалайзер</h3><p>Управление усилением низких, средних и высоких частот.</p><div class="eq" id="eqViz"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="field"><label>Bass</label><input type="range" id="bass" min="-10" max="10" value="0"></div><div class="field"><label>Treble</label><input type="range" id="treble" min="-10" max="10" value="0"></div></div>
+    <div class="feature"><h3>🔊 Плеер</h3><label><input type="checkbox" id="crossfade"> Crossfade</label><br><label><input type="checkbox" id="gapless" checked> Gapless</label><br><label><input type="checkbox" id="autoplay" checked> Автоплей</label><div class="field"><label>Таймер сна</label><select id="sleepTimer"><option value="0">Выключен</option><option value="15">15 минут</option><option value="30">30 минут</option><option value="60">60 минут</option></select></div><button class="secondary" onclick="applySleepTimer()">Применить</button></div>
+    <div class="feature"><h3>📥 Офлайн</h3><p>Скачивание доступных треков для Premium. Файл берётся через защищённый API.</p><button class="secondary" onclick="downloadCurrent()">Скачать текущий трек</button></div>
+  </div>
+</section>
 <section class="page" id="view-profile">
   <div class="page-head"><div><h1>👤 Профиль</h1><p>Аккаунт FENIX MUSIC</p></div></div>
   <div id="profileContent"></div>
@@ -966,7 +1009,7 @@ img{max-width:100%;display:block}
 
   <div class="section panel">
     <h3>🎵 Каталог</h3>
-    <div id="adminCatalog" class="cards"></div>
+    <div id="adminFullStats" class="feature-grid" style="margin-bottom:18px"></div><div id="adminCatalog" class="cards"></div>
   </div>
 </section>
 
@@ -2298,6 +2341,28 @@ loadAllTracks();
 loadRadio();
 loadHome();
 
+
+/* ===== FULL FEATURE LAYER ===== */
+let sleepTimerHandle=null;
+async function renderFullExtras(){
+  if($('achievementsContent')){try{let a=await api('/api/achievements');$('achievementsContent').innerHTML=a.map(x=>`<div class="full-card"><div style="font-size:30px">${x.unlocked?'🏆':'🔒'}</div><h3>${esc(x.title)}</h3><p>${esc(x.description)}</p><span class="pill">+${x.xp} XP</span></div>`).join('')}catch(e){}}
+  if($('socialContent')){if(!token()){$('socialContent').innerHTML='<div class="empty">Войди в аккаунт, чтобы видеть друзей.</div>'}else{try{let a=await api('/api/social/friends');$('socialContent').innerHTML=a.length?a.map(x=>`<div class="full-card"><div class="avatar">${esc((x.username||'F')[0].toUpperCase())}</div><h3>${esc(x.username)}</h3><button class="secondary" onclick="showView('profile')">Открыть профиль</button></div>`).join(''):'<div class="empty">Пока нет друзей.</div>'}catch(e){}}}
+  if($('artistStudioContent')){try{let a=await api('/api/artist-studio');$('artistStudioContent').innerHTML=`<div class="stats"><div class="stat"><b>${a.tracks}</b><span>треков</span></div><div class="stat"><b>${a.plays}</b><span>прослушиваний</span></div><div class="stat"><b>${a.artists}</b><span>артистов</span></div><div class="stat"><b>${a.albums}</b><span>альбомов</span></div></div><div class="feature-grid" style="margin-top:18px"><div class="feature"><h3>🎤 Релизы</h3><p>Управление релизами и каталогом через админскую загрузку.</p></div><div class="feature"><h3>📈 Аналитика</h3><p>Слушатели и прослушивания обновляются из базы.</p></div></div>`}catch(e){}}
+}
+async function runFenixAI(){
+ const q=($('aiPrompt').value||'').trim().toLowerCase(); if(!q){toast('Напиши, какую музыку хочешь');return}
+ let list=tracks.slice(); const genreWords=['rock','pop','hip-hop','rap','phonk','jazz','chill','ambient','electronic','house','r&b','lofi']; const g=genreWords.find(x=>q.includes(x)); if(g)list=list.filter(t=>(t.genre||'').toLowerCase().includes(g));
+ if(q.includes('ноч')||q.includes('night'))list=list.slice().reverse(); else list.sort(()=>Math.random()-.5); list=list.slice(0,20); $('aiResult').innerHTML=`<div class="section panel"><h2>✨ FENIX AI MIX</h2><p>${list.length?'Микс собран из доступных треков.':'В каталоге пока недостаточно треков.'}</p><div class="cards" style="margin-top:15px">${list.map((t,i)=>card(t,i)).join('')}</div></div>`; if(list.length){queue=list;queueIndex=0;playTrack(list[0],0)}
+}
+async function renderAdminFullStats(){if(!user()?.is_admin||!$('adminFullStats'))return;try{let a=await api('/api/admin/stats');$('adminFullStats').innerHTML=[['👤',a.users,'пользователей'],['🎵',a.tracks,'треков'],['▶',a.plays,'прослушиваний'],['❤️',a.likes,'лайков'],['☷',a.playlists,'плейлистов'],['💎',a.premium,'Premium']].map(x=>`<div class="stat"><b>${x[0]} ${x[1]}</b><span>${x[2]}</span></div>`).join('')}catch(e){}}
+async function downloadCurrent(){if(!current){toast('Сначала включи трек');return} if(!token()){openAuth();return} try{const r=await fetch('/api/download/'+current.id+'?token='+encodeURIComponent(token()));if(!r.ok)throw new Error('Скачивание недоступно');const b=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=(current.artist+' - '+current.title+'.mp3').replace(/[\\/:*?"<>|]/g,'_');a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}catch(e){toast(e.message)}}
+function applySleepTimer(){clearTimeout(sleepTimerHandle);const m=Number($('sleepTimer')?.value||0);if(!m){toast('Таймер выключен');return}sleepTimerHandle=setTimeout(()=>{audio.pause();toast('😴 Таймер сна остановил плеер')},m*60000);toast('Таймер сна: '+m+' мин')}
+async function saveQueueServer(){if(!token())return;try{await api('/api/queue',{method:'POST',body:JSON.stringify({track_ids:queue.map(x=>x.id)})})}catch(e){}}
+const oldPlayTrack=window.playTrack;
+if(typeof oldPlayTrack==='function'){window.playTrack=async function(t,i=-1){const r=oldPlayTrack(t,i);setTimeout(saveQueueServer,200);return r}}
+const oldShowView=window.showView;
+window.showView=async function(name){oldShowView(name); if(name==='achievements'||name==='social'||name==='artistStudio')renderFullExtras(); if(name==='admin')setTimeout(renderAdminFullStats,50)};
+window.addEventListener('beforeunload',saveQueueServer);
 </script>
 </body>
 </html>
