@@ -20,7 +20,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
     StreamingResponse,
-    Response,
 )
 from fastapi.staticfiles import StaticFiles
 
@@ -45,6 +44,7 @@ from backend.models import (
     Playlist,
     PlaylistTrack,
     TelegramAuth,
+    Artist, Album, Genre, Subscription, Notification, QueueItem, ArtistFollow, UserFollow, PlaylistLike, SearchHistory, Achievement, UserAchievement,
 )
 
 from backend.auth import (
@@ -542,11 +542,6 @@ def startup():
 # ============================================================
 # HEALTH
 # ============================================================
-
-@app.head("/", include_in_schema=False)
-def head_root():
-    return Response(status_code=200)
-
 
 @app.get("/health")
 def health():
@@ -1356,11 +1351,6 @@ async def admin_upload_track(
 # COVERS
 # ============================================================
 
-@app.get("/api/media/covers/{filename}")
-def get_media_cover(filename: str):
-    return get_cover(filename)
-
-
 @app.get("/api/covers/{filename}")
 def get_cover(
     filename: str,
@@ -1492,6 +1482,176 @@ def telegram_auth_status(
             "is_admin": user.is_admin,
         },
     }
+
+
+# ============================================================
+# FULL FENIX MUSIC API
+# ============================================================
+def _clean_track(db,t):
+    return track_to_dict(t) if 'track_to_dict' in globals() else {"id":t.id,"title":t.title,"artist":t.artist,"album":t.album,"genre":t.genre,"duration":t.duration,"cover_url":t.cover_url,"audio_url":f"/api/tracks/{t.id}/stream","plays":t.plays,"lyrics":t.lyrics}
+def _seed_catalog_entities(db):
+    names={x[0] for x in db.query(Artist.name).all()}; albums={(x.title,x.artist) for x in db.query(Album).all()}; genres={x[0] for x in db.query(Genre.name).all()}
+    for t in db.query(Track).all():
+        if t.artist and t.artist not in names: db.add(Artist(name=t.artist)); names.add(t.artist)
+        if t.album and (t.album,t.artist) not in albums: db.add(Album(title=t.album,artist=t.artist,cover_url=t.cover_url)); albums.add((t.album,t.artist))
+        if t.genre and t.genre not in genres: db.add(Genre(name=t.genre)); genres.add(t.genre)
+    db.commit()
+@app.get("/api/new")
+def api_new(db:Session=Depends(get_db)):
+    return [_clean_track(db,t) for t in db.query(Track).order_by(Track.created_at.desc()).limit(50).all() if Path(t.audio_path).exists()]
+@app.get("/api/popular")
+def api_popular(db:Session=Depends(get_db)):
+    return [_clean_track(db,t) for t in db.query(Track).order_by(Track.plays.desc(),Track.created_at.desc()).limit(50).all() if Path(t.audio_path).exists()]
+@app.get("/api/artists")
+def api_artists(db:Session=Depends(get_db)):
+    _seed_catalog_entities(db); return [{"id":a.id,"name":a.name,"avatar_url":a.avatar_url,"bio":a.bio,"followers":a.followers} for a in db.query(Artist).order_by(Artist.name).all()]
+@app.get("/api/artists/{artist_id}")
+def api_artist(artist_id:int,db:Session=Depends(get_db)):
+    a=db.get(Artist,artist_id)
+    if not a: raise HTTPException(404,"Артист не найден")
+    ts=db.query(Track).filter(Track.artist==a.name).order_by(Track.plays.desc()).all()
+    return {"id":a.id,"name":a.name,"avatar_url":a.avatar_url,"bio":a.bio,"followers":a.followers,"tracks":[_clean_track(db,t) for t in ts if Path(t.audio_path).exists()]}
+@app.get("/api/albums")
+def api_albums(db:Session=Depends(get_db)):
+    _seed_catalog_entities(db); return [{"id":a.id,"title":a.title,"artist":a.artist,"year":a.year,"cover_url":a.cover_url} for a in db.query(Album).order_by(Album.created_at.desc()).all()]
+@app.get("/api/albums/{album_id}")
+def api_album(album_id:int,db:Session=Depends(get_db)):
+    a=db.get(Album,album_id)
+    if not a: raise HTTPException(404,"Альбом не найден")
+    ts=db.query(Track).filter(Track.album==a.title,Track.artist==a.artist).order_by(Track.id).all()
+    return {"id":a.id,"title":a.title,"artist":a.artist,"year":a.year,"cover_url":a.cover_url,"tracks":[_clean_track(db,t) for t in ts if Path(t.audio_path).exists()]}
+@app.get("/api/genres")
+def api_genres(db:Session=Depends(get_db)):
+    _seed_catalog_entities(db); return [{"id":g.id,"name":g.name,"tracks":db.query(Track).filter(Track.genre==g.name).count()} for g in db.query(Genre).order_by(Genre.name).all()]
+@app.get("/api/mixes")
+def api_mixes(db:Session=Depends(get_db)):
+    ts=[t for t in db.query(Track).order_by(Track.plays.desc(),Track.created_at.desc()).all() if Path(t.audio_path).exists()]
+    mixes=[{"id":"daily","title":"Микс дня","description":"Лучшее из каталога","track_ids":[t.id for t in ts[:30]]},{"id":"popular","title":"Популярное","description":"Самые прослушиваемые","track_ids":[t.id for t in ts[:30]]},{"id":"night","title":"Ночной микс","description":"Музыка для ночи","track_ids":[t.id for t in ts[::2][:30]]}]
+    by={}
+    for t in ts: by.setdefault(t.genre or "Mix",[]).append(t)
+    for g,arr in list(by.items())[:15]: mixes.append({"id":"genre-"+str(abs(hash(g))),"title":g,"description":"Микс по жанру","track_ids":[t.id for t in arr[:30]]})
+    return mixes
+@app.get("/api/mixes/{mix_id}")
+def api_mix(mix_id:str,db:Session=Depends(get_db)):
+    m=next((x for x in api_mixes(db) if x["id"]==mix_id),None)
+    if not m: raise HTTPException(404,"Микс не найден")
+    return {**m,"tracks":[_clean_track(db,db.get(Track,i)) for i in m["track_ids"] if db.get(Track,i) and Path(db.get(Track,i).audio_path).exists()]}
+@app.get("/api/queue")
+def api_queue(db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid:return []
+    rows=db.query(QueueItem).filter_by(user_id=uid).order_by(QueueItem.position).all(); out=[]
+    for r in rows:
+        t=db.get(Track,r.track_id)
+        if t and Path(t.audio_path).exists(): out.append(_clean_track(db,t))
+    return out
+@app.post("/api/queue")
+def api_queue_save(payload:dict,db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid: raise HTTPException(401,"Требуется авторизация")
+    db.query(QueueItem).filter_by(user_id=uid).delete()
+    for pos,tid in enumerate(payload.get("track_ids",[])):
+        if db.get(Track,int(tid)): db.add(QueueItem(user_id=uid,track_id=int(tid),position=pos))
+    db.commit(); return {"ok":True}
+@app.get("/api/subscription")
+def api_subscription(db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid:return {"plan":"FREE","active":False}
+    s=db.query(Subscription).filter_by(user_id=uid).first(); return {"plan":s.plan if s else "FREE","active":bool(s and s.active),"expires_at":s.expires_at.isoformat() if s and s.expires_at else None}
+@app.post("/api/subscription")
+def api_subscription_update(payload:dict,db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid: raise HTTPException(401,"Требуется авторизация")
+    plan=str(payload.get("plan","PREMIUM")).upper()
+    if plan not in {"FREE","PREMIUM","PREMIUM+"}: raise HTTPException(400,"Неверный тариф")
+    s=db.query(Subscription).filter_by(user_id=uid).first()
+    if not s:s=Subscription(user_id=uid);db.add(s)
+    s.plan=plan;s.active=plan!="FREE";s.expires_at=datetime.now(timezone.utc)+timedelta(days=30) if s.active else None;db.commit();return {"plan":s.plan,"active":s.active,"expires_at":s.expires_at.isoformat() if s.expires_at else None}
+@app.get("/api/notifications")
+def api_notifications(db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid:return []
+    return [{"id":n.id,"title":n.title,"body":n.body,"read":n.read,"created_at":n.created_at.isoformat()} for n in db.query(Notification).filter_by(user_id=uid).order_by(Notification.created_at.desc()).limit(100).all()]
+@app.post("/api/notifications/read")
+def api_notifications_read(db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid:raise HTTPException(401,"Требуется авторизация")
+    db.query(Notification).filter_by(user_id=uid).update({"read":True});db.commit();return {"ok":True}
+@app.get("/api/stats")
+def api_full_stats(db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token); total_tracks=db.query(Track).count(); total_plays=db.query(func.coalesce(func.sum(Track.plays),0)).scalar() or 0
+    if not uid:return {"tracks":total_tracks,"plays":total_plays,"hours":0,"artists":0,"albums":0,"level":1,"xp":0,"streak":0}
+    h=db.query(History).filter_by(user_id=uid).all();likes=db.query(Like).filter_by(user_id=uid).count();xp=len(h)*10+likes*5
+    arts={db.get(Track,x.track_id).artist for x in h if db.get(Track,x.track_id)}; albs={db.get(Track,x.track_id).album for x in h if db.get(Track,x.track_id)}
+    return {"tracks":total_tracks,"plays":total_plays,"hours":round(len(h)*3.5/60,2),"artists":len(arts),"albums":len(albs),"level":max(1,xp//500+1),"xp":xp,"streak":min(365,len(h))}
+@app.get("/api/achievements")
+def api_achievements(db:Session=Depends(get_db),token:str=Query("")):
+    defaults=[("first","Первый трек","Прослушай первый трек",50),("hundred","100 треков","Прослушай 100 треков",250),("thousand","1000 треков","Прослушай 1000 треков",1000),("night","Ночной слушатель","Слушай ночью",100),("collector","Коллекционер","Добавь 25 треков в избранное",300)]
+    for code,title,desc,xp in defaults:
+        if not db.query(Achievement).filter_by(code=code).first():db.add(Achievement(code=code,title=title,description=desc,xp=xp))
+    db.commit();uid=get_user_id_from_token(token);unlocked={x.achievement_id for x in db.query(UserAchievement).filter_by(user_id=uid).all()} if uid else set()
+    return [{"id":a.id,"code":a.code,"title":a.title,"description":a.description,"xp":a.xp,"unlocked":a.id in unlocked} for a in db.query(Achievement).order_by(Achievement.id).all()]
+@app.get("/api/search/history")
+def api_search_history(db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid:return []
+    return [x.query for x in db.query(SearchHistory).filter_by(user_id=uid).order_by(SearchHistory.created_at.desc()).limit(20).all()]
+@app.post("/api/search/history")
+def api_search_history_add(payload:dict,db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token);q=str(payload.get("query","")).strip()
+    if uid and q:db.add(SearchHistory(user_id=uid,query=q));db.commit()
+    return {"ok":bool(uid and q)}
+@app.post("/api/artists/{artist_id}/follow")
+def api_follow_artist(artist_id:int,db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid:raise HTTPException(401,"Требуется авторизация")
+    a=db.get(Artist,artist_id)
+    if not a:raise HTTPException(404,"Артист не найден")
+    r=db.query(ArtistFollow).filter_by(user_id=uid,artist_id=artist_id).first()
+    if r:db.delete(r);a.followers=max(0,a.followers-1);followed=False
+    else:db.add(ArtistFollow(user_id=uid,artist_id=artist_id));a.followers+=1;followed=True
+    db.commit();return {"followed":followed,"followers":a.followers}
+@app.get("/api/social/friends")
+def api_friends(db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid:return []
+    return [{"id":u.id,"username":u.username,"avatar_url":u.avatar_url} for r in db.query(UserFollow).filter_by(follower_id=uid).all() if (u:=db.get(User,r.following_id))]
+@app.post("/api/social/follow/{user_id}")
+def api_follow_user(user_id:int,db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token)
+    if not uid:raise HTTPException(401,"Требуется авторизация")
+    if uid==user_id:raise HTTPException(400,"Нельзя подписаться на себя")
+    if not db.get(User,user_id):raise HTTPException(404,"Пользователь не найден")
+    r=db.query(UserFollow).filter_by(follower_id=uid,following_id=user_id).first()
+    if r:db.delete(r);followed=False
+    else:db.add(UserFollow(follower_id=uid,following_id=user_id));followed=True
+    db.commit();return {"followed":followed}
+@app.get("/api/profile/public/{user_id}")
+def api_public_profile(user_id:int,db:Session=Depends(get_db)):
+    u=db.get(User,user_id)
+    if not u:raise HTTPException(404,"Пользователь не найден")
+    return {"id":u.id,"username":u.username,"avatar_url":u.avatar_url,"created_at":u.created_at.isoformat() if u.created_at else None}
+@app.get("/api/admin/stats")
+def api_admin_stats(db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token);u=db.get(User,uid) if uid else None
+    if not u or not u.is_admin:raise HTTPException(403,"Только администратор")
+    return {"users":db.query(User).count(),"tracks":db.query(Track).count(),"plays":db.query(func.coalesce(func.sum(Track.plays),0)).scalar() or 0,"likes":db.query(Like).count(),"playlists":db.query(Playlist).count(),"premium":db.query(Subscription).filter(Subscription.plan!="FREE",Subscription.active==True).count()}
+@app.delete("/api/admin/tracks/{track_id}")
+def api_admin_delete_track(track_id:int,db:Session=Depends(get_db),token:str=Query("")):
+    uid=get_user_id_from_token(token);u=db.get(User,uid) if uid else None
+    if not u or not u.is_admin:raise HTTPException(403,"Только администратор")
+    t=db.get(Track,track_id)
+    if not t:raise HTTPException(404,"Трек не найден")
+    p=Path(t.audio_path);db.delete(t);db.commit()
+    try:p.unlink(missing_ok=True)
+    except Exception:pass
+    return {"ok":True}
+@app.get("/api/download/{track_id}")
+def api_download(track_id:int,db:Session=Depends(get_db),token:str=Query("")):
+    if not get_user_id_from_token(token):raise HTTPException(401,"Требуется авторизация")
+    t=db.get(Track,track_id)
+    if not t or not Path(t.audio_path).exists():raise HTTPException(404,"Файл не найден")
+    return FileResponse(t.audio_path,filename=Path(t.audio_path).name,media_type="application/octet-stream")
 
 
 # ============================================================
