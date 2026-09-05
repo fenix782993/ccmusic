@@ -4,7 +4,7 @@ services:
     runtime: python
     rootDir: .
     buildCommand: pip install -r requirements.txt
-    startCommand: PYTHONPATH=/opt/render/project/src python -m backend.run_all
+    startCommand: python backend/run_all.py
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -23,7 +23,8 @@ services:
         value: FenixAdmin
       - key: MEDIA_DIR
         value: /opt/render/project/src/backend/media
-
+      - key: TELEGRAM_BOT_USERNAME
+        sync: false
 databases:
   - name: fenix-music-db
     databaseName: fenixmusic

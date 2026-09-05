@@ -1,1 +1,1 @@
-{"name":"fenix-music","private":true,"version":"12.0.0","scripts":{"start":"PYTHONPATH=/opt/render/project/src python -m backend.run_all"}}
+{"name":"fenix-music","private":true,"scripts":{"build":"npm --prefix frontend install && npm --prefix frontend run build","start":"python backend/run_all.py"}}

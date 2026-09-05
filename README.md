@@ -1,19 +1,39 @@
-# FENIX MUSIC 12.0 FULL
+# FENIX MUSIC FULL
 
-Single-service FENIX MUSIC: FastAPI + PostgreSQL/SQLite + one-file frontend.
+Single-service FastAPI + PostgreSQL + single-file frontend. The frontend is kept in `frontend/index.html`.
 
-## Music folders
-- `backend/media/music/` — manual music files
-- `backend/media/audio/` — files uploaded through admin panel
-- `backend/media/covers/` — uploaded covers
+## Local
 
-Filename for manual import: `Artist - Title.mp3`.
+```bash
+python -m venv .venv
+.venv\\Scripts\\activate
+pip install -r requirements.txt
+python backend/run_all.py
+```
+
+Open http://127.0.0.1:8000
 
 ## Render
+
 Build: `pip install -r requirements.txt`
-Start: `PYTHONPATH=/opt/render/project/src python -m backend.run_all`
-Health: `/health`
+Start: `python backend/run_all.py`
+Root: `.`
 
-Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in Render. Database is PostgreSQL from `render.yaml`.
+Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in Render.
 
-For persistence of uploaded media across redeploys, use a Render Persistent Disk and point `MEDIA_DIR` to its mount path.
+## Music
+
+Manual files: `backend/media/music/Artist - Title.mp3`
+Admin uploads: `backend/media/audio/`
+
+## Android
+
+The `android/` directory is a native WebView wrapper. It points at the Render deployment URL. With Android SDK + Gradle installed:
+
+```bash
+cd android
+./gradlew assembleDebug
+./gradlew bundleRelease
+```
+
+For a signed Play release, configure your own signing key in `android/app/build.gradle`.

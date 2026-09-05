@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Float
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 def utcnow():
     return datetime.now(timezone.utc)
@@ -52,6 +52,8 @@ class Playlist(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    is_public: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 class PlaylistTrack(Base):
@@ -71,21 +73,20 @@ class TelegramAuth(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used: Mapped[bool] = mapped_column(Boolean, default=False)
 
-# ================= FULL FENIX MUSIC MODELS =================
 class Artist(Base):
     __tablename__ = "artists"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    avatar_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
-    followers: Mapped[int] = mapped_column(Integer, default=0)
+    avatar_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 class Album(Base):
     __tablename__ = "albums"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    title: Mapped[str] = mapped_column(String(255), index=True)
-    artist: Mapped[str] = mapped_column(String(255), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    artist: Mapped[str] = mapped_column(String(255), default="Unknown Artist")
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cover_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -94,32 +95,7 @@ class Album(Base):
 class Genre(Base):
     __tablename__ = "genres"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-
-class Subscription(Base):
-    __tablename__ = "subscriptions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
-    plan: Mapped[str] = mapped_column(String(32), default="FREE")
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-class Notification(Base):
-    __tablename__ = "notifications"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    title: Mapped[str] = mapped_column(String(255))
-    body: Mapped[str] = mapped_column(Text, default="")
-    read: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-class QueueItem(Base):
-    __tablename__ = "queue_items"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
-    position: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String(120), unique=True, index=True)
 
 class ArtistFollow(Base):
     __tablename__ = "artist_follows"
@@ -135,26 +111,46 @@ class UserFollow(Base):
     following_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     __table_args__ = (UniqueConstraint("follower_id", "following_id", name="uq_user_follow"),)
 
-class PlaylistLike(Base):
-    __tablename__ = "playlist_likes"
+class Dislike(Base):
+    __tablename__ = "dislikes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    playlist_id: Mapped[int] = mapped_column(ForeignKey("playlists.id", ondelete="CASCADE"))
-    __table_args__ = (UniqueConstraint("user_id", "playlist_id", name="uq_playlist_like"),)
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    __table_args__ = (UniqueConstraint("user_id", "track_id", name="uq_dislike"),)
 
-class SearchHistory(Base):
-    __tablename__ = "search_history"
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    plan: Mapped[str] = mapped_column(String(32), default="FREE")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class ListeningProgress(Base):
+    __tablename__ = "listening_progress"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    query: Mapped[str] = mapped_column(String(500))
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    seconds: Mapped[float] = mapped_column(Float, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (UniqueConstraint("user_id", "track_id", name="uq_progress"),)
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(64), default="system")
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 class Achievement(Base):
     __tablename__ = "achievements"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    code: Mapped[str] = mapped_column(String(80), unique=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True)
     title: Mapped[str] = mapped_column(String(255))
-    description: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(String(1000))
     xp: Mapped[int] = mapped_column(Integer, default=0)
 
 class UserAchievement(Base):
@@ -162,5 +158,44 @@ class UserAchievement(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     achievement_id: Mapped[int] = mapped_column(ForeignKey("achievements.id", ondelete="CASCADE"))
-    unlocked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    earned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     __table_args__ = (UniqueConstraint("user_id", "achievement_id", name="uq_user_achievement"),)
+
+class Comment(Base):
+    __tablename__ = "comments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    text: Mapped[str] = mapped_column(String(2000))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class Mix(Base):
+    __tablename__ = "mixes"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True)
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    mood: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cover_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+
+class MixTrack(Base):
+    __tablename__ = "mix_tracks"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    mix_id: Mapped[int] = mapped_column(ForeignKey("mixes.id", ondelete="CASCADE"))
+    track_id: Mapped[int] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+class Presence(Base):
+    __tablename__ = "presence"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    track_id: Mapped[int | None] = mapped_column(ForeignKey("tracks.id", ondelete="SET NULL"), nullable=True)
+    is_listening: Mapped[bool] = mapped_column(Boolean, default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+class ArtistRelease(Base):
+    __tablename__ = "artist_releases"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    artist_id: Mapped[int] = mapped_column(ForeignKey("artists.id", ondelete="CASCADE"))
+    title: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(64), default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
