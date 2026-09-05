@@ -17,5 +17,9 @@ dependencies = [
     "aiogram>=3.0,<4"
 ]
 
+[tool.setuptools.packages.find]
+include = ["backend*"]
+exclude = ["android*", "frontend*"]
+
 [tool.fastapi]
 entrypoint = "backend.server:app"
