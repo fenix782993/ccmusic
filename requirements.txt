@@ -5,7 +5,8 @@ psycopg[binary]>=3.2,<4
 python-multipart>=0.0.9,<1
 python-dotenv>=1.0,<2
 PyJWT>=2.9,<3
-passlib[bcrypt]>=1.7,<2
+passlib
+PyJWT
 httpx>=0.27,<1
 
 aiogram>=3.0,<4
