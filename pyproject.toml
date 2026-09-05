@@ -1,0 +1,21 @@
+[project]
+name = "fenix-music"
+version = "1.0.0"
+description = "FENIX MUSIC"
+requires-python = "==3.12.*"
+dependencies = [
+    "fastapi[standard]",
+    "uvicorn[standard]",
+    "sqlalchemy",
+    "psycopg[binary]",
+    "python-multipart",
+    "passlib[bcrypt]",
+    "PyJWT",
+    "email-validator",
+    "aiofiles",
+    "httpx",
+    "aiogram>=3.0,<4"
+]
+
+[tool.fastapi]
+entrypoint = "backend.server:app"
